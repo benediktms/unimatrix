@@ -35,6 +35,7 @@ ROLE_TITLES = {
     "drone": "Tactical Adjunct",
     "vinculum": "Auxiliary Processor",
     "probe": "Adjunct",
+    "cortex": "Cortical Processing Adjunct",
 }
 
 
@@ -66,7 +67,7 @@ def designate(n: int, role: str | None = None, swarm: bool = False) -> list[str]
 def main():
     parser = argparse.ArgumentParser(description="Generate Borg-style designations")
     parser.add_argument("n", type=int, help="Number of designations to generate (1-12)")
-    parser.add_argument("--role", choices=["drone", "vinculum", "probe"],
+    parser.add_argument("--role", choices=["drone", "vinculum", "probe", "cortex"],
                         help="Agent type (determines Borg functional title)")
     parser.add_argument("--swarm", action="store_true",
                         help="Use Trimatrix <random> instead of Unimatrix Zero")

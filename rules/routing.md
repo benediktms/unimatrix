@@ -22,6 +22,14 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - The user asks for a code review
 - Changes are complex enough to warrant a second look
 
+## Route to `cortex` (Opus) when:
+- The user asks for an architectural audit or review
+- Dependency analysis or coupling assessment is needed
+- Security posture review is requested
+- Performance bottleneck analysis is needed
+- Codebase health assessment is requested
+- The user asks "how healthy is X" or "audit Y"
+
 ## Route to `probe` (Sonnet) when:
 - You need to find files, search for patterns, or understand structure
 - Reconnaissance is needed before planning

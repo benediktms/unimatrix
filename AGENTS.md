@@ -28,6 +28,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 | drone | Sonnet | Worker — implements a single well-defined step |
 | vinculum | Opus | Reviewer — validates correctness and quality |
 | probe | Sonnet | Scout — codebase search and reconnaissance |
+| cortex | Opus | Analyst — deep architectural audits, security reviews, and codebase health assessments |
 | subroutine | Haiku | Housekeeping — git commits, docs, brain task management |
 
 ## Skills

@@ -26,10 +26,24 @@ AGENT_STYLES = {
     "drone": (GREEN + BOLD, "DRONE"),
     "vinculum": (CYAN + BOLD, "VINCULUM"),
     "probe": (YELLOW + BOLD, "PROBE"),
+    "cortex": (CYAN + BOLD, "CORTEX"),
     "subroutine": (DIM, "SUBROUTINE"),
 }
 
 STALE_SECONDS = 15 * 60  # 15 minutes
+
+
+def get_compaction_count(session_id):
+    """Read compaction count from the state file written by track-compactions.py."""
+    if not session_id:
+        return 0
+    try:
+        path = f"/tmp/unimatrix-compactions-{session_id}.json"
+        with open(path, "r") as f:
+            state = json.load(f)
+        return state.get("compaction_count", 0)
+    except (IOError, OSError, json.JSONDecodeError):
+        return 0
 
 
 def get_active_agents(session_id):
@@ -191,7 +205,11 @@ def main():
         git_ref = f"{repo_name}:{branch}" if repo_name and branch else repo_name or branch
         parts.append(f"\033[95m{git_ref}{RESET}")
     parts.extend([f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"])
-    parts.append(f"{bar} {ctx_col}{pct}%{RESET}")
+    compactions = get_compaction_count(session_id)
+    ctx_str = f"{bar} {ctx_col}{pct}%{RESET}"
+    if compactions > 0:
+        ctx_str += f" {DIM}({compactions}x compact){RESET}"
+    parts.append(ctx_str)
 
     if input_tok > 0 or output_tok > 0:
         tok_parts = [f"↓{format_tokens(output_tok)}", f"↑{format_tokens(input_tok)}"]
@@ -220,7 +238,7 @@ def main():
 
     # Subagent type counts
     if type_counts:
-        TYPE_ORDER = ["drone", "probe", "vinculum", "subroutine", "queen"]
+        TYPE_ORDER = ["drone", "probe", "vinculum", "cortex", "subroutine", "queen"]
         count_parts = []
         for t in TYPE_ORDER:
             n = type_counts.get(t, 0)
