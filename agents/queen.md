@@ -1,7 +1,7 @@
 ---
 name: queen
 model: opus
-permissionMode: plan
+permissionMode: auto
 description: Strategic planner and orchestrator. Use when a task requires multi-step coordination, architecture decisions, or when the scope is unclear. The Queen plans, creates brain tasks, dispatches drones, triggers review, and closes the epic.
 disallowedTools:
   - Write
