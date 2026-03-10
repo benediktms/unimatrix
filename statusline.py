@@ -7,6 +7,7 @@ and renders a Borg-themed status line.
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -27,6 +28,14 @@ AGENT_STYLES = {
     "probe": (YELLOW + BOLD, "PROBE"),
     "subroutine": (DIM, "SUBROUTINE"),
 }
+
+# Matches "Seven of Nine — desc" or "Three of Five, Tertiary Adjunct... — desc"
+DESIGNATION_RE = re.compile(
+    r"^(\w+ of \w+)(?:,\s*\w+ Adjunct of Unimatrix Zero)?\s*(?:—|-)\s*(.*)$",
+    re.IGNORECASE,
+)
+
+STALE_SECONDS = 30 * 60  # 30 minutes
 
 
 def parse_active_agents(transcript_path):
@@ -91,6 +100,7 @@ def parse_active_agents(transcript_path):
     now = time.time()
     for tool_id, info in pending.items():
         if tool_id not in completed:
+            elapsed = 0
             duration = ""
             if info["ts"]:
                 try:
@@ -103,10 +113,26 @@ def parse_active_agents(transcript_path):
                         duration = f"{elapsed}s"
                 except (ValueError, TypeError):
                     pass
+
+            # Skip stale agents (>30min likely orphaned)
+            if elapsed > STALE_SECONDS:
+                continue
+
+            # Parse designation from description
+            desc = info.get("desc", "")
+            designation = ""
+            task_desc = desc
+            m = DESIGNATION_RE.match(desc)
+            if m:
+                designation = m.group(1)
+                task_desc = m.group(2)
+
             active.append({
                 "name": info["name"],
                 "duration": duration,
-                "desc": info.get("desc", ""),
+                "designation": designation,
+                "desc": task_desc,
+                "stale": elapsed > STALE_SECONDS,
             })
 
     return active
@@ -180,9 +206,10 @@ def main():
             connector = "└─" if i == len(active) - 1 else "├─"
             name = a["name"]
             style_a, label_a = AGENT_STYLES.get(name, (DIM, name.upper()))
+            tag = f"{label_a} {a['designation']}" if a.get("designation") else label_a
             dur = f" {DIM}{a['duration']}{RESET}" if a["duration"] else ""
             desc = f" {DIM}{a['desc']}{RESET}" if a.get("desc") else ""
-            print(f" {DIM}{connector}{RESET} {style_a}{label_a}{RESET}{dur}{desc}")
+            print(f" {DIM}{connector}{RESET} {style_a}[{tag}]{RESET}{dur}{desc}")
 
 
 if __name__ == "__main__":
