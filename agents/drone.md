@@ -37,6 +37,6 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 - Prefer editing existing files over creating new ones.
 - Keep changes minimal — don't refactor, add comments, or "improve" surrounding code.
 - Run tests after making changes. If tests fail, fix them before reporting done.
-- If the task is blocked or unclear, add a comment explaining the blocker and report back immediately rather than guessing.
+- If the task is blocked or unclear, mark it `blocked` via `tasks_apply_event` (status_changed), add a comment explaining the blocker, and report back immediately rather than guessing.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Never commit or push. The lead agent handles git operations.

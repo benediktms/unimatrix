@@ -37,6 +37,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 | `/plan` | End-to-end: plan, create tasks, dispatch drones, review |
 | `/start-work` | Resume execution of a previously planned epic |
 | `/review` | Validate changes via adjunct agent |
+| `/swarm` | Partition files and dispatch parallel drones for bulk changes |
 
 ## Git Conventions
 
@@ -147,6 +148,8 @@ When working on tasks:
 1. **Before starting**: Mark the task `in_progress` via `tasks_apply_event` (status_changed)
 2. **While working**: Add comments via `tasks_apply_event` (comment_added) for significant decisions or blockers
 3. **On completion**: Close the task via `tasks_close` (or `tasks_apply_event` with status_changed to `done`)
+
+**Assignee**: Borg agents (queen, drone, adjunct, subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
 
 **Cross-task insights**: If you discover during work on one task that something affects or should be captured on a different task, immediately add a comment to that task with the relevant context. Don't defer — the insight is freshest now and costs seconds to capture vs. minutes to reconstruct later.
 

@@ -33,6 +33,11 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - Brain tasks need to be closed or marked done after completion
 - Any post-work cleanup that follows explicit instructions
 
+## Route to `/swarm` when:
+- The user wants to apply the same change across many files
+- Bulk refactoring, migrations, or convention enforcement
+- The task is parallelizable by file group with no cross-group dependencies
+
 ## Do NOT delegate when:
 - You can answer directly from your existing context
 - The task is conversational (questions, explanations)
