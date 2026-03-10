@@ -28,24 +28,6 @@ AGENT_STYLES = {
     "subroutine": (DIM, "SUBROUTINE"),
 }
 
-# Model tier indicators: uppercase = Opus, lowercase = Sonnet, dim lowercase = Haiku
-MODEL_TIER = {
-    "opus": lambda name: name[0].upper(),
-    "sonnet": lambda name: name[0].lower(),
-    "haiku": lambda name: DIM + name[0].lower() + RESET,
-}
-
-
-def get_tier_code(agent_name, model_hint=""):
-    """Single-char code for an agent, case-encoded by model tier."""
-    style = AGENT_STYLES.get(agent_name, (DIM, agent_name.upper()))
-    label = style[1]
-    model = model_hint.lower()
-    for tier, fmt in MODEL_TIER.items():
-        if tier in model:
-            return fmt(label)
-    return label[0]
-
 
 def parse_active_agents(transcript_path):
     """Parse JSONL transcript tail to find active subagents."""
@@ -54,7 +36,7 @@ def parse_active_agents(transcript_path):
 
     try:
         size = os.path.getsize(transcript_path)
-        read_bytes = min(size, 512 * 1024)  # tail 512KB like OMC
+        read_bytes = min(size, 512 * 1024)  # tail 512KB
 
         with open(transcript_path, "r") as f:
             if size > read_bytes:
@@ -64,8 +46,7 @@ def parse_active_agents(transcript_path):
     except (IOError, OSError):
         return []
 
-    # Track agent tool_use calls and their results
-    pending = {}  # tool_use_id -> {name, start_time, model}
+    pending = {}
     completed = set()
 
     for line in lines:
@@ -86,12 +67,10 @@ def parse_active_agents(transcript_path):
             if not isinstance(block, dict):
                 continue
 
-            # Detect Agent tool_use (subagent spawn)
             if block.get("type") == "tool_use" and block.get("name") == "Agent":
                 tool_id = block.get("id", "")
                 inp = block.get("input", {})
                 agent_name = inp.get("subagent_type") or inp.get("name") or "agent"
-                # Normalize known agent names
                 desc = (inp.get("description", "") + " " + inp.get("prompt", "")).lower()
                 for known in AGENT_STYLES:
                     if known in agent_name.lower() or known in desc:
@@ -103,22 +82,19 @@ def parse_active_agents(transcript_path):
                     "desc": inp.get("description", ""),
                 }
 
-            # Detect tool_result (subagent completed)
             if block.get("type") == "tool_result":
                 tool_id = block.get("tool_use_id", "")
                 if tool_id in pending:
                     completed.add(tool_id)
 
-    # Active = spawned but not yet completed
     active = []
     now = time.time()
     for tool_id, info in pending.items():
         if tool_id not in completed:
-            # Estimate duration from timestamp
             duration = ""
             if info["ts"]:
                 try:
-                    from datetime import datetime, timezone
+                    from datetime import datetime
                     ts = datetime.fromisoformat(info["ts"].replace("Z", "+00:00"))
                     elapsed = int(now - ts.timestamp())
                     if elapsed >= 60:
@@ -136,12 +112,21 @@ def parse_active_agents(transcript_path):
     return active
 
 
-def ctx_color(pct):
+def color_for_pct(pct):
     if pct >= 80:
         return RED
-    elif pct >= 50:
+    if pct >= 50:
         return YELLOW
     return GREEN
+
+
+def progress_bar(pct, width=20):
+    """Render a progress bar with color based on fill percentage."""
+    filled = round(pct / 100 * width)
+    empty = width - filled
+    color = color_for_pct(pct)
+    bar = "█" * filled + "░" * empty
+    return f"{color}{bar}{RESET}"
 
 
 def format_tokens(n):
@@ -160,24 +145,27 @@ def main():
     pct = int(data.get("context_window", {}).get("used_percentage", 0) or 0)
     transcript = data.get("transcript_path", "")
 
-    cost = data.get("cost", {})
-    total_tokens = (cost.get("total_input_tokens", 0) or 0) + (cost.get("total_output_tokens", 0) or 0)
-    cost_usd = cost.get("total_cost_usd", 0) or 0
+    cost_data = data.get("cost", {})
+    input_tok = cost_data.get("total_input_tokens", 0) or 0
+    output_tok = cost_data.get("total_output_tokens", 0) or 0
+    cost_usd = cost_data.get("total_cost_usd", 0) or 0
 
-    # Main agent designation
+    # Line 1: [AGENT] model  tokens ↑in ↓out  $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
-    line1 = f"{style}[{label}]{RESET} {DIM}{model}{RESET} {ctx_color(pct)}{pct}%{RESET}"
+    parts = [f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"]
 
-    # Token/cost suffix
-    parts = []
-    if total_tokens > 0:
-        parts.append(f"{format_tokens(total_tokens)}tok")
+    if input_tok > 0 or output_tok > 0:
+        parts.append(f"{DIM}↑{format_tokens(input_tok)} ↓{format_tokens(output_tok)}{RESET}")
+
     if cost_usd > 0:
-        parts.append(f"${cost_usd:.2f}")
-    if parts:
-        line1 += f" {DIM}{' '.join(parts)}{RESET}"
+        parts.append(f"{DIM}${cost_usd:.2f}{RESET}")
 
-    print(line1)
+    print("  ".join(parts))
+
+    # Line 2: context progress bar + percentage
+    bar = progress_bar(pct)
+    ctx_col = color_for_pct(pct)
+    print(f" {DIM}ctx{RESET} {bar} {ctx_col}{pct}%{RESET}")
 
     # Active subagents from transcript
     active = parse_active_agents(transcript)
