@@ -38,6 +38,35 @@ A modular, symlink-friendly agent framework for Claude Code.
 | `/start-work` | Resume execution of a previously planned epic |
 | `/review` | Validate changes via adjunct agent |
 
+## Git Conventions
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). All commit messages **must** follow this format:
+
+```
+<type>: <description>
+```
+
+### Types
+
+| Type | Use For |
+|------|---------|
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `refactor` | Code restructuring without behavior change |
+| `docs` | Documentation only |
+| `chore` | Maintenance, deps, config, tooling |
+| `style` | Formatting, whitespace (no code change) |
+| `test` | Adding or updating tests |
+| `perf` | Performance improvement |
+
+### Rules
+
+- **Lowercase** type and description (e.g., `feat: add session greeting hook`)
+- **No scope** — keep it simple, scopes are not used in this project
+- **Imperative mood** in description ("add", not "added" or "adds")
+- Body is optional — use it for multi-line explanations when the "why" isn't obvious from the title
+- When making changes that affect documented surface area, **update AGENTS.md in the same commit**
+
 <!-- brain:start -->
 ## Task Management
 
