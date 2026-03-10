@@ -178,6 +178,20 @@ def main():
     cache_read = current_usage.get("cache_read_input_tokens", 0) or 0
     cache_create = current_usage.get("cache_creation_input_tokens", 0) or 0
     cost_usd = data.get("cost", {}).get("total_cost_usd", 0) or 0
+    session_id = data.get("session_id", "")
+
+    # Read subagent cost state
+    subagent_cost = 0
+    type_counts = {}
+    if session_id:
+        try:
+            state_path = f"/tmp/unimatrix-costs-{session_id}.json"
+            with open(state_path, "r") as f:
+                cost_state = json.load(f)
+            subagent_cost = cost_state.get("total_subagent_cost_usd", 0)
+            type_counts = cost_state.get("type_counts", {})
+        except (IOError, OSError, json.JSONDecodeError, KeyError):
+            pass
 
     # Single line: [AGENT] model | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
@@ -191,13 +205,28 @@ def main():
         tok_parts = [f"↓{format_tokens(output_tok)}", f"↑{format_tokens(input_tok)}"]
         total_input = cache_read + cache_create + current_usage.get("input_tokens", 0)
         if total_input > 0:
-            cache_pct = int(cache_read / total_input * 100)
+            cache_pct = cache_read / total_input * 100
             cache_col = GREEN if cache_pct >= 80 else YELLOW if cache_pct >= 50 else RED
-            tok_parts.append(f"{cache_col}⚡{cache_pct}%{RESET}{DIM}")
+            tok_parts.append(f"{cache_col}⚡{cache_pct:.1f}%{RESET}{DIM}")
         parts.append(f"{DIM}{' '.join(tok_parts)}{RESET}")
 
     if cost_usd > 0:
-        parts.append(f"{DIM}${cost_usd:.2f}{RESET}")
+        cost_str = f"${cost_usd:.2f}"
+        if subagent_cost > 0:
+            cost_str += f" (+${subagent_cost:.2f})"
+        parts.append(f"{DIM}{cost_str}{RESET}")
+
+    # Subagent type counts
+    if type_counts:
+        TYPE_ORDER = ["drone", "probe", "vinculum", "subroutine", "queen"]
+        count_parts = []
+        for t in TYPE_ORDER:
+            n = type_counts.get(t, 0)
+            if n > 0:
+                label_t = t + ("s" if n != 1 else "")
+                count_parts.append(f"{n} {label_t}")
+        if count_parts:
+            parts.append(f"{DIM}{' \u00b7 '.join(count_parts)}{RESET}")
 
     print("  ".join(parts))
 

@@ -18,6 +18,18 @@ Invoke the **queen** agent to handle a complex task end-to-end: plan it, create 
    - Trigger vinculum review when all steps complete
    - Close the epic on PASS
 
+## Dispatch Prompt
+
+When spawning the queen agent, use this prompt template:
+
+```
+You are the Queen of Unimatrix Zero. A new directive has entered the collective:
+
+"<user request>"
+
+Designate this objective. Begin at once.
+```
+
 ## Usage
 
 ```
