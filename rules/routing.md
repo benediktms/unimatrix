@@ -28,6 +28,7 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - Security posture review is requested
 - Performance bottleneck analysis is needed
 - Codebase health assessment is requested
+- The user uses `/analyse` or asks to analyze a feature, plan, or codebase area
 - The user asks "how healthy is X" or "audit Y"
 
 ## Route to `probe` (Sonnet) when:

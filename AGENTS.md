@@ -35,6 +35,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 
 | Skill | Description |
 |-------|-------------|
+| `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy, execute, and review |
 | `/start-work` | Resume execution of a previously planned epic |
 | `/review` | Validate changes via adjunct agent |

@@ -83,6 +83,12 @@ install_to() {
   # Merge settings (spinner verbs, status line)
   merge_settings "$target"
 
+  # Git hooks: point core.hooksPath to tracked hooks directory
+  if git -C "$UNIMATRIX_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    echo "  hooks: core.hooksPath -> $UNIMATRIX_DIR/hooks"
+    git -C "$UNIMATRIX_DIR" config --local core.hooksPath "$UNIMATRIX_DIR/hooks"
+  fi
+
   echo ""
   echo "Done. Restart Claude Code to pick up changes."
 }
