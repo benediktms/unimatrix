@@ -84,34 +84,23 @@ def get_active_agents(session_id):
 
 
 def get_session_start(transcript_path):
-    """Get session start time from first transcript entry."""
+    """Get session start time from first timestamped transcript entry."""
     if not transcript_path or not os.path.exists(transcript_path):
         return None
     try:
+        from datetime import datetime
         with open(transcript_path, "r") as f:
-            first_line = f.readline().strip()
-        if first_line:
-            entry = json.loads(first_line)
-            ts = entry.get("timestamp", "")
-            if ts:
-                from datetime import datetime
-                return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                ts = entry.get("timestamp", "")
+                if ts:
+                    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except (IOError, OSError, json.JSONDecodeError, ValueError):
         pass
     return None
-
-
-def get_subagent_duration(session_id):
-    """Get cumulative subagent duration from the agents state file."""
-    if not session_id:
-        return 0
-    try:
-        path = f"/tmp/unimatrix-agents-{session_id}.json"
-        with open(path, "r") as f:
-            state = json.load(f)
-        return state.get("total_subagent_seconds", 0)
-    except (IOError, OSError, json.JSONDecodeError):
-        return 0
 
 
 def format_duration(seconds):
@@ -205,6 +194,13 @@ def main():
         git_ref = f"{repo_name}:{branch}" if repo_name and branch else repo_name or branch
         parts.append(f"\033[95m{git_ref}{RESET}")
     parts.extend([f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"])
+
+    # Session duration
+    session_start = get_session_start(transcript)
+    if session_start:
+        elapsed = time.time() - session_start
+        parts.append(f"{YELLOW}{format_duration(elapsed)}{RESET}")
+
     compactions = get_compaction_count(session_id)
     ctx_str = f"{bar} {ctx_col}{pct}%{RESET}"
     if compactions > 0:
@@ -225,16 +221,6 @@ def main():
         if subagent_cost > 0:
             cost_str += f" (+${subagent_cost:.2f})"
         parts.append(f"{DIM}{cost_str}{RESET}")
-
-    # Session duration
-    session_start = get_session_start(transcript)
-    if session_start:
-        elapsed = time.time() - session_start
-        dur_str = format_duration(elapsed)
-        subagent_secs = get_subagent_duration(session_id)
-        if subagent_secs > 0:
-            dur_str += f" (+{format_duration(subagent_secs)})"
-        parts.append(f"{DIM}{dur_str}{RESET}")
 
     # Subagent type counts
     if type_counts:
