@@ -56,5 +56,32 @@
     "type": "command",
     "command": "__UNIMATRIX_DIR__/statusline.py"
   },
-  "hooks": {}
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/track-agents.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/track-cost.py"
+          },
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/track-agents.py"
+          }
+        ]
+      }
+    ]
+  }
 }

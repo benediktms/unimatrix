@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Unimatrix status line for Claude Code.
 
-Reads JSON from stdin, parses transcript for active subagents,
-and renders a Borg-themed status line.
+Reads JSON from stdin and renders a Borg-themed status line.
+Active subagents are tracked via hooks (track-agents.py).
 """
 
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -30,113 +29,85 @@ AGENT_STYLES = {
     "subroutine": (DIM, "SUBROUTINE"),
 }
 
-# Matches "Seven of Nine — desc" or "Three of Five, Tertiary Tactical Adjunct of Trimatrix 42 — desc"
-DESIGNATION_RE = re.compile(
-    r"^(\w+ of \w+)(?:,\s*.+?of (?:Unimatrix Zero|Trimatrix \d+))?\s*(?:—|-)\s*(.*)$",
-    re.IGNORECASE,
-)
-
-STALE_SECONDS = 30 * 60  # 30 minutes
+STALE_SECONDS = 15 * 60  # 15 minutes
 
 
-def parse_active_agents(transcript_path):
-    """Parse JSONL transcript tail to find active subagents."""
-    if not transcript_path or not os.path.exists(transcript_path):
+def get_active_agents(session_id):
+    """Read active subagents from the state file written by track-agents.py."""
+    if not session_id:
         return []
 
     try:
-        size = os.path.getsize(transcript_path)
-        read_bytes = min(size, 512 * 1024)  # tail 512KB
-
-        with open(transcript_path, "r") as f:
-            if size > read_bytes:
-                f.seek(size - read_bytes)
-                f.readline()  # skip partial line
-            lines = f.readlines()
-    except (IOError, OSError):
+        path = f"/tmp/unimatrix-agents-{session_id}.json"
+        with open(path, "r") as f:
+            state = json.load(f)
+    except (IOError, OSError, json.JSONDecodeError):
         return []
-
-    pending = {}
-    completed = set()
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        msg = entry.get("message", {})
-        content = msg.get("content", [])
-        if not isinstance(content, list):
-            continue
-
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-
-            if block.get("type") == "tool_use" and block.get("name") == "Agent":
-                tool_id = block.get("id", "")
-                inp = block.get("input", {})
-                agent_name = inp.get("subagent_type") or inp.get("name") or "agent"
-                desc = (inp.get("description", "") + " " + inp.get("prompt", "")).lower()
-                for known in AGENT_STYLES:
-                    if known in agent_name.lower() or known in desc:
-                        agent_name = known
-                        break
-                pending[tool_id] = {
-                    "name": agent_name,
-                    "ts": entry.get("timestamp", ""),
-                    "desc": inp.get("description", ""),
-                }
-
-            if block.get("type") == "tool_result":
-                tool_id = block.get("tool_use_id", "")
-                if tool_id in pending:
-                    completed.add(tool_id)
 
     active = []
     now = time.time()
-    for tool_id, info in pending.items():
-        if tool_id not in completed:
-            elapsed = 0
+    for agent_id, info in state.get("active", {}).items():
+        started_at = info.get("started_at", 0)
+        elapsed = int(now - started_at) if started_at else 0
+
+        # Skip stale agents (>30min likely orphaned)
+        if elapsed > STALE_SECONDS:
+            continue
+
+        if elapsed >= 60:
+            duration = f"{elapsed // 60}m"
+        elif elapsed >= 10:
+            duration = f"{elapsed}s"
+        else:
             duration = ""
-            if info["ts"]:
-                try:
-                    from datetime import datetime
-                    ts = datetime.fromisoformat(info["ts"].replace("Z", "+00:00"))
-                    elapsed = int(now - ts.timestamp())
-                    if elapsed >= 60:
-                        duration = f"{elapsed // 60}m"
-                    elif elapsed >= 10:
-                        duration = f"{elapsed}s"
-                except (ValueError, TypeError):
-                    pass
 
-            # Skip stale agents (>30min likely orphaned)
-            if elapsed > STALE_SECONDS:
-                continue
-
-            # Parse designation from description
-            desc = info.get("desc", "")
-            designation = ""
-            task_desc = desc
-            m = DESIGNATION_RE.match(desc)
-            if m:
-                designation = m.group(1)
-                task_desc = m.group(2)
-
-            active.append({
-                "name": info["name"],
-                "duration": duration,
-                "designation": designation,
-                "desc": task_desc,
-                "stale": elapsed > STALE_SECONDS,
-            })
+        active.append({
+            "name": info.get("type", "agent"),
+            "duration": duration,
+        })
 
     return active
+
+
+def get_session_start(transcript_path):
+    """Get session start time from first transcript entry."""
+    if not transcript_path or not os.path.exists(transcript_path):
+        return None
+    try:
+        with open(transcript_path, "r") as f:
+            first_line = f.readline().strip()
+        if first_line:
+            entry = json.loads(first_line)
+            ts = entry.get("timestamp", "")
+            if ts:
+                from datetime import datetime
+                return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (IOError, OSError, json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def get_subagent_duration(session_id):
+    """Get cumulative subagent duration from the agents state file."""
+    if not session_id:
+        return 0
+    try:
+        path = f"/tmp/unimatrix-agents-{session_id}.json"
+        with open(path, "r") as f:
+            state = json.load(f)
+        return state.get("total_subagent_seconds", 0)
+    except (IOError, OSError, json.JSONDecodeError):
+        return 0
+
+
+def format_duration(seconds):
+    """Format seconds into a human-readable duration."""
+    seconds = int(seconds)
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
 
 
 def color_for_pct(pct):
@@ -237,6 +208,16 @@ def main():
             cost_str += f" (+${subagent_cost:.2f})"
         parts.append(f"{DIM}{cost_str}{RESET}")
 
+    # Session duration
+    session_start = get_session_start(transcript)
+    if session_start:
+        elapsed = time.time() - session_start
+        dur_str = format_duration(elapsed)
+        subagent_secs = get_subagent_duration(session_id)
+        if subagent_secs > 0:
+            dur_str += f" (+{format_duration(subagent_secs)})"
+        parts.append(f"{DIM}{dur_str}{RESET}")
+
     # Subagent type counts
     if type_counts:
         TYPE_ORDER = ["drone", "probe", "vinculum", "subroutine", "queen"]
@@ -251,17 +232,15 @@ def main():
 
     print("  ".join(parts))
 
-    # Active subagents from transcript
-    active = parse_active_agents(transcript)
+    # Active subagents from state file
+    active = get_active_agents(session_id)
     if active:
         for i, a in enumerate(active):
             connector = "└─" if i == len(active) - 1 else "├─"
             name = a["name"]
             style_a, label_a = AGENT_STYLES.get(name, (DIM, name.upper()))
-            tag = f"{label_a} {a['designation']}" if a.get("designation") else label_a
             dur = f" {DIM}{a['duration']}{RESET}" if a["duration"] else ""
-            desc = f" {DIM}{a['desc']}{RESET}" if a.get("desc") else ""
-            print(f" {DIM}{connector}{RESET} {style_a}[{tag}]{RESET}{dur}{desc}")
+            print(f" {DIM}{connector}{RESET} {style_a}[{label_a}]{RESET}{dur}")
 
 
 if __name__ == "__main__":
