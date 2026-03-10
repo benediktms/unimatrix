@@ -120,8 +120,8 @@ def color_for_pct(pct):
     return GREEN
 
 
-def progress_bar(pct, width=20):
-    """Render a progress bar with color based on fill percentage."""
+def progress_bar(pct, width=12):
+    """Render a compact progress bar with color based on fill percentage."""
     filled = round(pct / 100 * width)
     empty = width - filled
     color = color_for_pct(pct)
@@ -150,9 +150,13 @@ def main():
     output_tok = cost_data.get("total_output_tokens", 0) or 0
     cost_usd = cost_data.get("total_cost_usd", 0) or 0
 
-    # Line 1: [AGENT] model  tokens ↑in ↓out  $cost
+    # Single line: [AGENT] model | ▐bar▌ ctx% | ↑in ↓out | $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
+    bar = progress_bar(pct)
+    ctx_col = color_for_pct(pct)
+
     parts = [f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"]
+    parts.append(f"{bar} {ctx_col}{pct}%{RESET}")
 
     if input_tok > 0 or output_tok > 0:
         parts.append(f"{DIM}↑{format_tokens(input_tok)} ↓{format_tokens(output_tok)}{RESET}")
@@ -161,11 +165,6 @@ def main():
         parts.append(f"{DIM}${cost_usd:.2f}{RESET}")
 
     print("  ".join(parts))
-
-    # Line 2: context progress bar + percentage
-    bar = progress_bar(pct)
-    ctx_col = color_for_pct(pct)
-    print(f" {DIM}ctx{RESET} {bar} {ctx_col}{pct}%{RESET}")
 
     # Active subagents from transcript
     active = parse_active_agents(transcript)

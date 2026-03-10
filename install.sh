@@ -29,6 +29,39 @@ link() {
   ln -sfn "$src" "$dst"
 }
 
+merge_settings() {
+  local target="$1"
+  local settings_file="$target/settings.json"
+  local unimatrix_settings="$UNIMATRIX_DIR/settings.json"
+
+  # Replace placeholder with actual path
+  local resolved
+  resolved=$(sed "s|__UNIMATRIX_DIR__|$UNIMATRIX_DIR|g" "$unimatrix_settings")
+
+  if [ -f "$settings_file" ]; then
+    echo "  merge: unimatrix settings into $settings_file"
+    # Merge unimatrix settings into existing, preserving user's other keys
+    local merged
+    merged=$(python3 -c "
+import json, sys
+existing = json.load(open('$settings_file'))
+incoming = json.loads('''$resolved''')
+existing.update(incoming)
+json.dump(existing, sys.stdout, indent=2)
+print()
+")
+    echo "$merged" > "$settings_file"
+  else
+    echo "  create: $settings_file"
+    echo "$resolved" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+json.dump(d, sys.stdout, indent=2)
+print()
+" > "$settings_file"
+  fi
+}
+
 install_to() {
   local target="$1"
   mkdir -p "$target"
@@ -47,13 +80,9 @@ install_to() {
     link "$skill_dir" "$target/skills/$skill_name"
   done
 
-  echo ""
-  echo "Note: To enable the Unimatrix status line, add to $target/settings.json:"
-  echo ""
-  echo "  \"statusLine\": {"
-  echo "    \"type\": \"command\","
-  echo "    \"command\": \"$UNIMATRIX_DIR/statusline.sh\""
-  echo "  }"
+  # Merge settings (spinner verbs, status line)
+  merge_settings "$target"
+
   echo ""
   echo "Done. Restart Claude Code to pick up changes."
 }
