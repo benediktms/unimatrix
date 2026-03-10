@@ -5,7 +5,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 ## Structure
 
 - `agents/` — Agent definitions (markdown + YAML frontmatter)
-- `skills/` — Slash command skills (`/plan`, `/start-work`, `/review`)
+- `skills/` — Slash command skills (`/assemble`, `/start-work`, `/review`)
 - `rules/` — Routing and coordination rules
 - `hooks/` — Shell scripts for automation (future)
 - `install.sh` — Symlink installer (global or per-project)
@@ -35,7 +35,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 
 | Skill | Description |
 |-------|-------------|
-| `/plan` | End-to-end: plan, create tasks, dispatch drones, review |
+| `/assemble` | Assemble the collective — plan, decide dispatch strategy, execute, and review |
 | `/start-work` | Resume execution of a previously planned epic |
 | `/review` | Validate changes via adjunct agent |
 | `/swarm` | Partition files and dispatch parallel drones for bulk changes |

@@ -10,7 +10,7 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - The task requires multiple coordinated changes across files
 - Architecture decisions are needed
 - The scope is unclear and needs decomposition
-- The user explicitly asks for a plan
+- The user explicitly asks for a plan or uses `/assemble`
 
 ## Route to `drone` (Sonnet) when:
 - A clear, well-scoped implementation task is defined
