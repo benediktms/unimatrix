@@ -26,7 +26,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 |-------|-------|------|
 | queen | Opus | Strategic mind — plans, orchestrates, dispatches drones |
 | drone | Sonnet | Worker — implements a single well-defined step |
-| adjunct | Opus | Reviewer — validates correctness and quality |
+| vinculum | Opus | Reviewer — validates correctness and quality |
 | probe | Sonnet | Scout — codebase search and reconnaissance |
 | subroutine | Haiku | Housekeeping — git commits, docs, brain task management |
 
@@ -149,7 +149,7 @@ When working on tasks:
 2. **While working**: Add comments via `tasks_apply_event` (comment_added) for significant decisions or blockers
 3. **On completion**: Close the task via `tasks_close` (or `tasks_apply_event` with status_changed to `done`)
 
-**Assignee**: Borg agents (queen, drone, adjunct, subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
+**Assignee**: Borg agents (queen, drone, vinculum, subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
 
 **Cross-task insights**: If you discover during work on one task that something affects or should be captured on a different task, immediately add a comment to that task with the relevant context. Don't defer — the insight is freshest now and costs seconds to capture vs. minutes to reconstruct later.
 

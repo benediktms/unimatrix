@@ -21,7 +21,7 @@ description: Rules for multi-agent coordination and team communication
 ## Error Handling
 - If a drone fails, do not retry with the same approach
 - Report the failure context to the Queen/user and wait for guidance
-- If an adjunct finds critical issues, route back to a drone with specific fix instructions
+- If the vinculum finds critical issues, route back to a drone with specific fix instructions
 
 ## Git Discipline
 - Only the lead agent commits and pushes

@@ -29,8 +29,8 @@ case "$AGENT" in
     echo -e "${MAGENTA}${BOLD}[QUEEN]${RESET} ${DIM}${MODEL}${RESET} ${CTX_COLOR}${PCT}%${RESET}" ;;
   drone)
     echo -e "${GREEN}${BOLD}[DRONE]${RESET} ${DIM}${MODEL}${RESET} ${CTX_COLOR}${PCT}%${RESET}" ;;
-  adjunct)
-    echo -e "${CYAN}${BOLD}[ADJUNCT]${RESET} ${DIM}${MODEL}${RESET} ${CTX_COLOR}${PCT}%${RESET}" ;;
+  vinculum)
+    echo -e "${CYAN}${BOLD}[VINCULUM]${RESET} ${DIM}${MODEL}${RESET} ${CTX_COLOR}${PCT}%${RESET}" ;;
   probe)
     echo -e "${YELLOW}${BOLD}[PROBE]${RESET} ${DIM}${MODEL}${RESET} ${CTX_COLOR}${PCT}%${RESET}" ;;
   subroutine)

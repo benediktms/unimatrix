@@ -24,14 +24,14 @@ RESET = "\033[0m"
 AGENT_STYLES = {
     "queen": (MAGENTA + BOLD, "QUEEN"),
     "drone": (GREEN + BOLD, "DRONE"),
-    "adjunct": (CYAN + BOLD, "ADJUNCT"),
+    "vinculum": (CYAN + BOLD, "VINCULUM"),
     "probe": (YELLOW + BOLD, "PROBE"),
     "subroutine": (DIM, "SUBROUTINE"),
 }
 
-# Matches "Seven of Nine — desc" or "Three of Five, Tertiary Adjunct... — desc"
+# Matches "Seven of Nine — desc" or "Three of Five, Tertiary Tactical Adjunct of Trimatrix 42 — desc"
 DESIGNATION_RE = re.compile(
-    r"^(\w+ of \w+)(?:,\s*\w+ Adjunct of Unimatrix Zero)?\s*(?:—|-)\s*(.*)$",
+    r"^(\w+ of \w+)(?:,\s*.+?of (?:Unimatrix Zero|Trimatrix \d+))?\s*(?:—|-)\s*(.*)$",
     re.IGNORECASE,
 )
 

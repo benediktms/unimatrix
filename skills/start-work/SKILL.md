@@ -17,7 +17,7 @@ Resume work on a brain epic that was created by the Queen. Use this when executi
 3. Use `tasks_next` to find ready (unblocked) subtasks
 4. Dispatch **drone** agents for each ready subtask (parallel if independent)
 5. Monitor progress, dispatch next waves as subtasks unblock
-6. When all subtasks complete, invoke **adjunct** for review
+6. When all subtasks complete, invoke **vinculum** for review
 7. Handle verdict (PASS → close, NEEDS_CHANGES → fix, BLOCK → escalate)
 
 ## Usage

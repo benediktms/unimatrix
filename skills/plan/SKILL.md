@@ -15,7 +15,7 @@ Invoke the **queen** agent to handle a complex task end-to-end: plan it, create 
    - Present the plan for user approval (plan mode)
    - After approval, create brain tasks with dependencies
    - Dispatch drone agents to execute each step
-   - Trigger adjunct review when all steps complete
+   - Trigger vinculum review when all steps complete
    - Close the epic on PASS
 
 ## Usage

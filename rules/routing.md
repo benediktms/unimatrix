@@ -17,7 +17,7 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - A plan step needs to be carried out
 - Code changes, file creation, or refactoring is needed
 
-## Route to `adjunct` (Opus) when:
+## Route to `vinculum` (Opus) when:
 - Implementation is complete and needs validation
 - The user asks for a code review
 - Changes are complex enough to warrant a second look
