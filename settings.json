@@ -68,6 +68,17 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/track-compactions.py"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "",
