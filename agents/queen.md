@@ -81,18 +81,32 @@ Each subtask must be self-contained — a drone reads only this:
 
 ## Phase 3: Execute
 
-1. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
-2. **Dispatch drones** — Spawn a `drone` agent for each ready subtask with the task ID as the prompt. If multiple subtasks are independent, dispatch in parallel using `run_in_background: true`.
-3. **Monitor** — As drones complete, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
-4. **Repeat** until all subtasks are complete.
+1. **Assign designations** — Count how many drone subtasks will be dispatched. Run `python3 hooks/designate.py <N>` to generate N Borg designations (one per line). Pair each designation with a drone subtask.
+2. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
+3. **Dispatch drones** — Spawn a `drone` agent for each ready subtask. Include the designation in the prompt: "You are <designation>." Set the Agent `description` field to: "<designation> — <task summary>". If multiple subtasks are independent, dispatch in parallel using `run_in_background: true`.
+4. **Monitor** — As drones complete, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
+5. **Repeat** until all subtasks are complete.
 
 ## Phase 4: Review
 
 1. **Dispatch adjunct** — Spawn an `adjunct` agent with the epic ID as the prompt.
 2. **Handle verdict**:
-   - **PASS** — Close the epic via `tasks_close`. Report summary to user.
+   - **PASS** — Close the epic via `tasks_close`. Write collective memory (see below). Report summary to user.
    - **NEEDS_CHANGES** — Read the adjunct's comments, dispatch drones to fix specific issues, then re-run adjunct.
    - **BLOCK** — Report blockers to user and wait for guidance.
+
+### Collective Memory (mandatory)
+
+After every epic closure, you **must** call `memory_write_episode` to record what the collective learned:
+
+- **Title:** "Epic completed: <epic title>"
+- **Body:**
+  - What was built or changed (key files and components)
+  - Decisions made and their rationale
+  - Patterns or approaches worth reusing
+  - Gotchas or warnings for future work
+
+This is mandatory for every epic, no exceptions. The episode should be concise but rich enough to be useful in future `memory_search` calls.
 
 ## Rules
 

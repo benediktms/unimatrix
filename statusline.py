@@ -148,9 +148,11 @@ def main():
     cost_data = data.get("cost", {})
     input_tok = cost_data.get("total_input_tokens", 0) or 0
     output_tok = cost_data.get("total_output_tokens", 0) or 0
+    cache_read = cost_data.get("total_cache_read_tokens", 0) or 0
+    cache_create = cost_data.get("total_cache_creation_tokens", 0) or 0
     cost_usd = cost_data.get("total_cost_usd", 0) or 0
 
-    # Single line: [AGENT] model | ▐bar▌ ctx% | ↑in ↓out | $cost
+    # Single line: [AGENT] model | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
     bar = progress_bar(pct)
     ctx_col = color_for_pct(pct)
@@ -159,7 +161,12 @@ def main():
     parts.append(f"{bar} {ctx_col}{pct}%{RESET}")
 
     if input_tok > 0 or output_tok > 0:
-        parts.append(f"{DIM}↑{format_tokens(input_tok)} ↓{format_tokens(output_tok)}{RESET}")
+        tok_parts = [f"↓{format_tokens(output_tok)}", f"↑{format_tokens(input_tok)}"]
+        if cache_read > 0:
+            tok_parts.append(f"⚡{format_tokens(cache_read)}")
+        if cache_create > 0:
+            tok_parts.append(f"✎{format_tokens(cache_create)}")
+        parts.append(f"{DIM}{' '.join(tok_parts)}{RESET}")
 
     if cost_usd > 0:
         parts.append(f"{DIM}${cost_usd:.2f}{RESET}")

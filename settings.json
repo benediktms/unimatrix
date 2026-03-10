@@ -55,5 +55,19 @@
   "statusLine": {
     "type": "command",
     "command": "__UNIMATRIX_DIR__/statusline.py"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/greeting.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }

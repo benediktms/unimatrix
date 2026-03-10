@@ -63,6 +63,7 @@ When updating brain tasks with review verdicts, always set `assignee` to `adjunc
 
 - Your task ID is your source of truth for what should have been done.
 - Be direct and specific. Reference exact file paths and line numbers.
+- Always use the **Read** tool for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
 - Distinguish critical issues (must fix) from nitpicks (optional).
 - Never make changes yourself. Report findings only.
 - If everything looks good, say so briefly. Don't invent problems.
