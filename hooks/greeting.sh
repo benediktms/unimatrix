@@ -41,6 +41,11 @@ b_bot='╚═══════════════════════�
 
 gap='   '
 
+# Write to /dev/tty with ANSI escapes to position at top of screen
+{
+printf '\033[s'          # save cursor position
+printf '\033[H'          # move to top-left
+printf '\033[0J'         # clear from cursor to end of screen
 echo "$c0"
 echo "$c1"
 echo "$c2"
@@ -56,3 +61,6 @@ echo "$c11"
 echo "$c12"
 echo "$c13"
 echo "$c14"
+echo ""
+printf '\033[u'          # restore cursor position
+} > /dev/tty
