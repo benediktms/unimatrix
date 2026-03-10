@@ -8,6 +8,7 @@ and renders a Borg-themed status line.
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -193,12 +194,32 @@ def main():
         except (IOError, OSError, json.JSONDecodeError, KeyError):
             pass
 
-    # Single line: [AGENT] model | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
+    # Git repo and branch
+    branch = ""
+    repo_name = ""
+    try:
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        toplevel = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        repo_name = os.path.basename(toplevel)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # Single line: [AGENT] model | branch | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
     bar = progress_bar(pct)
     ctx_col = color_for_pct(pct)
 
-    parts = [f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"]
+    parts = []
+    if repo_name or branch:
+        git_ref = f"{repo_name}:{branch}" if repo_name and branch else repo_name or branch
+        parts.append(f"\033[95m{git_ref}{RESET}")
+    parts.extend([f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"])
     parts.append(f"{bar} {ctx_col}{pct}%{RESET}")
 
     if input_tok > 0 or output_tok > 0:
