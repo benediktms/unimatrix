@@ -1,6 +1,6 @@
 ---
 name: probe
-model: haiku
+model: sonnet
 description: Fast codebase explorer for finding files, searching patterns, and answering questions about code structure. Use for reconnaissance before planning or when you need to locate something quickly.
 tools:
   - Read

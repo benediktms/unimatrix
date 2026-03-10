@@ -22,15 +22,16 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - The user asks for a code review
 - Changes are complex enough to warrant a second look
 
-## Route to `probe` (Haiku) when:
+## Route to `probe` (Sonnet) when:
 - You need to find files, search for patterns, or understand structure
 - Reconnaissance is needed before planning
 - The user asks "where is X" or "how does Y work"
 
 ## Route to `subroutine` (Haiku) when:
-- The task is a single-file, obvious change (typo, rename, toggle)
-- No planning or review is needed
-- The change can be verified at a glance
+- Work is done and changes need to be committed
+- Documentation needs to be synced with completed changes
+- Brain tasks need to be closed or marked done after completion
+- Any post-work cleanup that follows explicit instructions
 
 ## Do NOT delegate when:
 - You can answer directly from your existing context
