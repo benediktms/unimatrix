@@ -171,12 +171,13 @@ def main():
     pct = int(data.get("context_window", {}).get("used_percentage", 0) or 0)
     transcript = data.get("transcript_path", "")
 
-    cost_data = data.get("cost", {})
-    input_tok = cost_data.get("total_input_tokens", 0) or 0
-    output_tok = cost_data.get("total_output_tokens", 0) or 0
-    cache_read = cost_data.get("total_cache_read_tokens", 0) or 0
-    cache_create = cost_data.get("total_cache_creation_tokens", 0) or 0
-    cost_usd = cost_data.get("total_cost_usd", 0) or 0
+    ctx_data = data.get("context_window", {})
+    input_tok = ctx_data.get("total_input_tokens", 0) or 0
+    output_tok = ctx_data.get("total_output_tokens", 0) or 0
+    current_usage = ctx_data.get("current_usage") or {}
+    cache_read = current_usage.get("cache_read_input_tokens", 0) or 0
+    cache_create = current_usage.get("cache_creation_input_tokens", 0) or 0
+    cost_usd = data.get("cost", {}).get("total_cost_usd", 0) or 0
 
     # Single line: [AGENT] model | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
     style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
@@ -188,10 +189,11 @@ def main():
 
     if input_tok > 0 or output_tok > 0:
         tok_parts = [f"↓{format_tokens(output_tok)}", f"↑{format_tokens(input_tok)}"]
-        if cache_read > 0:
-            tok_parts.append(f"⚡{format_tokens(cache_read)}")
-        if cache_create > 0:
-            tok_parts.append(f"✎{format_tokens(cache_create)}")
+        total_input = cache_read + cache_create + current_usage.get("input_tokens", 0)
+        if total_input > 0:
+            cache_pct = int(cache_read / total_input * 100)
+            cache_col = GREEN if cache_pct >= 80 else YELLOW if cache_pct >= 50 else RED
+            tok_parts.append(f"{cache_col}⚡{cache_pct}%{RESET}{DIM}")
         parts.append(f"{DIM}{' '.join(tok_parts)}{RESET}")
 
     if cost_usd > 0:
