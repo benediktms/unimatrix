@@ -48,6 +48,13 @@ install_to() {
   done
 
   echo ""
+  echo "Note: To enable the Unimatrix status line, add to $target/settings.json:"
+  echo ""
+  echo "  \"statusLine\": {"
+  echo "    \"type\": \"command\","
+  echo "    \"command\": \"$UNIMATRIX_DIR/statusline.sh\""
+  echo "  }"
+  echo ""
   echo "Done. Restart Claude Code to pick up changes."
 }
 
