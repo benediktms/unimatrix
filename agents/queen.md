@@ -100,12 +100,31 @@ Each subtask must be self-contained — a drone reads only this:
    WORKTREE ISOLATION ACTIVE. You are running in an isolated git worktree — NOT the main repository. Run `pwd` as your very first action to discover your worktree root. ALL file reads, edits, and writes must use absolute paths under your worktree root. Do NOT use paths from task descriptions verbatim — translate them to your worktree root first.
    ```
 
+   **c) Sequence relay (for long sequential chains):** When the plan has a long sequential chain (3+ dependent steps) and queen compaction is a risk, use sequence mode. Instead of staying alive to orchestrate each wave, dispatch one drone at a time — each drone saves a handoff snapshot for the next via Brain records. No worktree isolation needed (drones run serially on the main tree). You **must** append this to the prompt:
+   ```
+   SEQUENCE HANDOFF ACTIVE. You are step <N> of <total> in a sequence relay for epic <epic-id>. After completing your task, you MUST save a handoff snapshot via `records_save_snapshot` for the next drone. The snapshot must be a concise markdown document (under 2KB) with these sections:
+   ## Summary
+   What you changed and why (file paths, key decisions).
+   ## Context for Next Step
+   Specific information the next drone needs to continue (state, gotchas, open items).
+
+   Use title: "Sequence handoff: <epic-id> step <N>" and tags: ["sequence:<epic-id>", "step:<N>"]. Associate it with your task ID via the task_id parameter. The data must be base64-encoded markdown with media_type "text/markdown".
+   ```
+
    If multiple subtasks are independent, dispatch in parallel using `run_in_background: true`.
 5. **After a wave completes:**
    - **Worktree drones:** Merge their branches into the main tree before dispatching the next wave. For each completed worktree: review the diff (`git diff main...<worktree-branch>`), squash-merge (`git merge --squash <worktree-branch>`), commit. If merge conflicts occur: abort (`git merge --abort`), dispatch a drone to rebase, then retry.
    - **File-partitioned drones:** No merge needed — changes are already on the main tree. Just verify all drones committed successfully.
-6. **Monitor** — Check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
-7. **Repeat** until all subtasks are complete.
+   - **Sequence relay drones:** No merge needed — drones run serially on the main tree. Each drone's commits are visible to the next.
+6. **Sequence relay execution loop** (for dispatch mode c):
+   1. Dispatch the first drone in the chain with the `SEQUENCE HANDOFF ACTIVE` prompt block (no prior snapshot for the first step).
+   2. Wait for completion. Check the drone's task status and comments.
+   3. If the drone succeeded: query `records_list` with tag `sequence:<epic-id>` to find the handoff snapshot. Fetch it via `records_fetch_content` and base64-decode the content.
+   4. Dispatch the next drone with the decoded snapshot prepended to its prompt: `"PRIOR STEP CONTEXT:\n<snapshot content>\n\n"` followed by the `SEQUENCE HANDOFF ACTIVE` block.
+   5. Repeat until all steps complete or a drone fails.
+   6. On drone failure: the sequence halts. Assess whether to re-dispatch, adjust the plan, or escalate to the user.
+7. **Monitor** — For non-sequence dispatches, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
+8. **Repeat** until all subtasks are complete.
 
 ## Phase 4: Review
 

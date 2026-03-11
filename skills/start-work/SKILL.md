@@ -15,11 +15,17 @@ Resume work on a brain epic that was created by the Queen. Use this when executi
    - **Never auto-select an epic** — always confirm with the user which plan to execute
 2. Use `tasks_get` with `expand: children` to load all subtasks
 3. Check for stale `in_progress` subtasks from a prior crashed session. If found, present them to the user — they may need to be reset to `open` (if incomplete) or closed (if actually done). Do not auto-reset.
-4. Use `tasks_next` to find ready (unblocked) subtasks
-5. Dispatch **drone** agents for each ready subtask (parallel if independent)
-6. Monitor progress, dispatch next waves as subtasks unblock
-7. When all subtasks complete, invoke **vinculum** for review
-8. Handle verdict (PASS → close all subtasks and the epic via `tasks_close`, then call `memory_write_episode` to record what was accomplished and decisions made; NEEDS_CHANGES → fix; BLOCK → escalate)
+4. **Detect sequence mode** — Check if the epic has handoff snapshots by querying `records_list` with tag `sequence:<epic-id>`. If snapshots exist:
+   - This epic was using sequence dispatch mode
+   - Find the highest step number from the snapshot tags to determine the last completed step
+   - Fetch the latest handoff snapshot via `records_fetch_content` to get context for the next drone
+   - When dispatching the next drone, prepend the snapshot content to its prompt as `PRIOR STEP CONTEXT:` and include the `SEQUENCE HANDOFF ACTIVE` block
+   - Continue the sequence relay pattern (one drone at a time, each saves a handoff)
+5. Use `tasks_next` to find ready (unblocked) subtasks
+6. Dispatch **drone** agents for each ready subtask. For sequence mode epics, dispatch one drone at a time with handoff context rather than all ready subtasks in parallel. For non-sequence epics, dispatch in parallel if independent.
+7. Monitor progress, dispatch next waves as subtasks unblock
+8. When all subtasks complete, invoke **vinculum** for review
+9. Handle verdict (PASS → close all subtasks and the epic via `tasks_close`, then call `memory_write_episode` to record what was accomplished and decisions made; NEEDS_CHANGES → fix; BLOCK → escalate)
 
 ## Usage
 
