@@ -40,6 +40,8 @@ A modular, symlink-friendly agent framework for Claude Code.
 | `/start-work` | Resume execution of a previously planned epic |
 | `/review` | Validate changes via adjunct agent |
 | `/swarm` | Partition files and dispatch parallel drones for bulk changes |
+| `/adapt` | Iterative refinement loop — drone implements, vinculum reviews, repeat until pass |
+| `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 
 ## Git Conventions
 

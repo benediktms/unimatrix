@@ -49,6 +49,12 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - Brain tasks need to be closed or marked done after completion
 - Any post-work cleanup that follows explicit instructions
 
+## Route to `/adapt` when:
+- A task needs iterative refinement with automated review feedback
+- The user wants implement-then-review without manual intervention
+- Quality gates must be met and the drone may need multiple passes
+- The user explicitly uses `/adapt`
+
 ## Route to `/swarm` when:
 - The user wants to apply the same change across many files
 - Bulk refactoring, migrations, or convention enforcement
