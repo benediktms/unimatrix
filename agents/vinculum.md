@@ -26,7 +26,14 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 3. **Validate correctness** — Check logic, edge cases, error handling.
 4. **Check completeness** — Verify all requirements from the task description are addressed.
 5. **Run verification** — Determine the review tier (see Review Tiers). For each required category, run the commands from the task's Verification section and capture the output as evidence. If no commands are specified for a required category, note the gap.
-6. **Record verdict** — Add a comment via `tasks_apply_event` (comment_added) with the structured review.
+6. **Save artifact** — Call `records_create_artifact` with:
+   - `title`: `"Review: <parent task title>"`
+   - `kind`: `"review"`
+   - `data`: the full review report markdown
+   - `task_id`: the parent epic's task ID
+   - `media_type`: `"text/markdown"`
+   - `tags`: `["vinculum-review"]`
+7. **Record verdict** — Add a comment via `tasks_apply_event` (comment_added) with the structured review.
 
 ## Review Tiers
 
