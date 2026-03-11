@@ -389,6 +389,30 @@ def copy_shared(target: str) -> None:
             shutil.copy2(item, dest)
 
 
+def copy_skill_assets(target: str) -> None:
+    """Copy non-markdown assets from skill directories to dist/.
+
+    Resolves symlinks so the actual file content is copied (not dangling links).
+    """
+    skills_src = SRC / "skills"
+    if not skills_src.exists():
+        return
+
+    base_dir = OUTPUT_MAP["skills"][target]
+    for skill_dir in sorted(skills_src.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        for item in sorted(skill_dir.iterdir()):
+            if item.suffix == ".md":
+                continue  # Markdown files handled by build_file
+            resolved = item.resolve()
+            if not resolved.is_file():
+                continue
+            dest = base_dir / skill_dir.name / item.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved, dest)
+
+
 def copy_settings(target: str) -> None:
     """Copy platform-specific settings/config files."""
     if target == "claude":
@@ -414,6 +438,9 @@ def build(target: str) -> int:
 
     # Copy hooks
     copy_hooks(target)
+
+    # Copy non-markdown skill assets (scripts, etc.)
+    copy_skill_assets(target)
 
     # Copy shared assets
     copy_shared(target)

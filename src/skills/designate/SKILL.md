@@ -10,7 +10,11 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 ## Behavior
 
 1. **Count subtasks** — Determine how many agents will be dispatched.
-2. **Generate designations** — Run `python3 hooks/designate.py <N> [--role Drone|Vinculum|Probe] [--trimatrix]` via Bash. Each line of output is one designation. Role determines the Borg functional title:
+2. **Generate designations** — Run the following via Bash, replacing `<N>` with the number of agents and adding the appropriate flags:
+   ```bash
+   SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/designate ] && echo .claude/skills/designate/SKILL.md || echo ~/.claude/skills/designate/SKILL.md)")")" && python3 "$SKILL_DIR/designate.py" <N> [--role Drone|Vinculum|Probe] [--trimatrix]
+   ```
+   Each line of output is one designation. Role determines the Borg functional title:
    - `Drone` → Tactical Adjunct
    - `Vinculum` → Auxiliary Processor
    - `Probe` → Adjunct
