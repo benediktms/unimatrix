@@ -57,9 +57,10 @@ When creating or claiming brain tasks, always set `assignee` to `Queen`. Subtask
 ## Phase 2: Materialize (after user approval)
 
 1. **Create an epic** — `tasks_apply_event` (task_created, type: epic) for the overall goal.
-2. **Create subtasks** — `tasks_apply_event` (task_created) for each step. Write self-contained descriptions (see format below).
-3. **Set parent** — `tasks_apply_event` (parent_set) to link each subtask to the epic.
-4. **Set dependencies** — `tasks_deps_batch` with `chain` for sequential steps, `fan` for parallel steps.
+2. **Mark epic in_progress** — `tasks_apply_event` (status_changed, new_status: in_progress) so the plan checkpoint hook can find it.
+3. **Create subtasks** — `tasks_apply_event` (task_created) for each step. Write self-contained descriptions (see format below).
+4. **Set parent** — `tasks_apply_event` (parent_set) to link each subtask to the epic.
+5. **Set dependencies** — `tasks_deps_batch` with `chain` for sequential steps, `fan` for parallel steps.
 
 ### Task Description Format
 

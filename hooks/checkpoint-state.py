@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""PreCompact hook: capture orchestration state before context compaction.
+"""PreCompact / PreToolUse(ExitPlanMode) hook: capture orchestration state.
+
+Fires on two events:
+- PreCompact: before context compaction (existing behaviour)
+- PreToolUse(ExitPlanMode): before the Queen's plan context is cleared
 
 Queries brain for open/in-progress tasks, reads active subagent and cost state
 from sibling hooks, builds a concise markdown checkpoint, saves it as a brain
@@ -191,6 +195,63 @@ def atomic_write(path, content):
             pass
 
 
+def detect_event(data):
+    """Detect whether this is a PreCompact or PreToolUse(ExitPlanMode) event.
+
+    Returns ("plan", tool_name) or ("compact", trigger).
+    """
+    if data.get("tool_name") == "ExitPlanMode":
+        return "plan"
+    return "compact"
+
+
+def find_queen_epic(tasks_in_progress):
+    """Find the Queen's in-progress epic from a task list.
+
+    Returns the epic dict or None. If multiple match, returns the most
+    recently created (highest task_id, which contains a ULID).
+    """
+    epics = [
+        t for t in tasks_in_progress
+        if t.get("assignee", "").lower() == "queen"
+        and t.get("task_type") == "epic"
+    ]
+    if not epics:
+        return None
+    # Sort by task_id descending (ULID = chronological)
+    epics.sort(key=lambda t: t.get("task_id", ""), reverse=True)
+    return epics[0]
+
+
+def build_plan_checkpoint(epic, tasks_open, tasks_in_progress):
+    """Build a plan-specific checkpoint with epic + subtask structure."""
+    sections = []
+    epic_id = epic.get("task_id", "?")
+    epic_title = epic.get("title", "Untitled")
+    sections.append(f"# Plan Checkpoint")
+    sections.append(f"\n## Epic")
+    sections.append(f"**ID:** {epic_id}")
+    sections.append(f"**Title:** {epic_title}")
+
+    # Collect subtasks (children of this epic)
+    subtasks = [
+        t for t in (tasks_open + tasks_in_progress)
+        if t.get("parent_task_id") == epic_id
+    ]
+
+    if subtasks:
+        sections.append("\n## Subtasks")
+        sections.append(format_task_table(
+            subtasks, ["ID", "Title", "Status", "Assignee", "Priority"]))
+
+    sections.append(
+        "\n## Recommended Action\n"
+        f"Use `/reengage` or dispatch Drones for epic **{epic_id}**."
+    )
+
+    return "\n".join(sections)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -201,10 +262,7 @@ def main():
     if not session_id:
         return
 
-    # Load compaction count (already incremented by track-compactions.py which runs first)
-    compactions_path = os.path.join(STATE_DIR, f"unimatrix-compactions-{session_id}.json")
-    compactions_state = load_json_file(compactions_path)
-    compaction_num = compactions_state.get("compaction_count", 1) if compactions_state else 1
+    event = detect_event(data)
 
     # Query brain for tasks
     tasks_in_progress = query_tasks("in_progress")
@@ -221,18 +279,61 @@ def main():
     costs_path = os.path.join(STATE_DIR, f"unimatrix-costs-{session_id}.json")
     costs_state = load_json_file(costs_path)
 
-    # Build checkpoint markdown
-    checkpoint = build_checkpoint(
-        compaction_num, tasks_in_progress, tasks_open, tasks_blocked,
-        agents_state, costs_state,
-    )
+    if event == "plan":
+        # Plan exit: look for the Queen's epic and build a plan-focused checkpoint
+        epic = find_queen_epic(tasks_in_progress)
+        if not epic:
+            return  # No epic found — nothing to checkpoint
+
+        checkpoint = build_plan_checkpoint(epic, tasks_open, tasks_in_progress)
+        epic_id = epic.get("task_id", "unknown")
+        snapshot_title = f"Plan checkpoint: {epic.get('title', 'Untitled')}"
+        snapshot_tags = ["plan-checkpoint", f"parent:{epic_id}"]
+    else:
+        # Compaction: existing behaviour
+        compactions_path = os.path.join(STATE_DIR, f"unimatrix-compactions-{session_id}.json")
+        compactions_state = load_json_file(compactions_path)
+        compaction_num = compactions_state.get("compaction_count", 1) if compactions_state else 1
+
+        checkpoint = build_checkpoint(
+            compaction_num, tasks_in_progress, tasks_open, tasks_blocked,
+            agents_state, costs_state,
+        )
+        # Build a descriptive title
+        parts = [f"Compaction #{compaction_num}"]
+
+        # Include epic title if there's an active one
+        epic = find_queen_epic(tasks_in_progress)
+        if epic:
+            parts.append(epic.get("title", "Untitled"))
+
+        # Task counts
+        counts = []
+        if tasks_in_progress:
+            counts.append(f"{len(tasks_in_progress)} in-progress")
+        if tasks_open:
+            counts.append(f"{len(tasks_open)} open")
+        if tasks_blocked:
+            counts.append(f"{len(tasks_blocked)} blocked")
+        if counts:
+            parts.append(", ".join(counts))
+
+        # Active subagents
+        n_active = len(agents_state.get("active", {})) if agents_state else 0
+        if n_active:
+            parts.append(f"{n_active} subagent{'s' if n_active != 1 else ''}")
+
+        snapshot_title = " — ".join(parts)
+        snapshot_tags = ["compaction-checkpoint"]
 
     # Save snapshot to brain (best-effort, don't fail if brain is unavailable)
+    tag_args = []
+    for tag in snapshot_tags:
+        tag_args.extend(["--tag", tag])
     run_brain(
         ["snapshots", "save", "--stdin",
-         "--title", f"Compaction checkpoint #{compaction_num}",
-         "--tag", "compaction-checkpoint",
-         "--media-type", "text/markdown"],
+         "--title", snapshot_title] + tag_args +
+        ["--media-type", "text/markdown"],
         stdin_data=checkpoint,
     )
 
