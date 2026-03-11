@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """UserPromptSubmit hook: inject relevant error/fix patterns from Brain memory.
 
-Reads the learner state file written by learner-capture.py. If there are
+Reads the learner state file written by learner-track.py. If there are
 recent pending errors, searches Brain for matching auto-learn episodes and
 injects them as additionalContext so the model can apply known fixes.
 
@@ -54,34 +54,41 @@ def atomic_write(path, data):
             pass
 
 
+def call_brain_mcp(method, params):
+    """Call a brain MCP method via JSON-RPC on stdin/stdout. Returns result or None."""
+    request = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1})
+    try:
+        result = subprocess.run(
+            [BRAIN_CLI, "mcp"],
+            input=request,
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+            stdin=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            return None
+        response = json.loads(result.stdout)
+        return response.get("result")
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
 def search_brain(query):
     """Search Brain memory for episodes matching query, tagged auto-learn.
 
     Returns a list of episode dicts or an empty list on any failure.
     """
-    try:
-        result = subprocess.run(
-            [
-                BRAIN_CLI,
-                "memory", "search",
-                "--query", query,
-                "--json",
-                "--limit", "3",
-                "--tag", "auto-learn",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT,
-            stdin=subprocess.DEVNULL,
-        )
-        if result.returncode != 0:
-            return []
-        parsed = json.loads(result.stdout)
-        if isinstance(parsed, list):
-            return parsed
+    result = call_brain_mcp(
+        "memory_search_minimal",
+        {"query": query, "intent": "lookup", "tags": ["auto-learn"]},
+    )
+    if not result:
         return []
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError, OSError):
-        return []
+    items = result if isinstance(result, list) else result.get("results", [])
+    if isinstance(items, list):
+        return items
+    return []
 
 
 def format_context(episodes):

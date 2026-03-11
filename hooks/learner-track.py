@@ -45,7 +45,7 @@ GENERAL_ERROR_PATTERNS = [
     "ModuleNotFoundError:",
     "SyntaxError:",
     "ReferenceError:",
-    "TypeError:",
+    "NameError:",
     "RangeError:",
     "error[E",  # Rust errors
     "thread 'main' panicked",  # Rust panics
@@ -226,38 +226,38 @@ def score_pattern(error_entry, resolution_text, resolution_input, now):
     return round(min(score, 1.0), 2)
 
 
-def run_brain(args, stdin_data=None):
-    """Run a brain CLI command, returning parsed JSON or None on any failure."""
+def call_brain_mcp(method, params):
+    """Call a brain MCP method via JSON-RPC on stdin/stdout. Returns result or None."""
+    request = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1})
     try:
-        kwargs = {
-            "capture_output": True,
-            "text": True,
-            "timeout": SUBPROCESS_TIMEOUT,
-        }
-        if stdin_data is not None:
-            kwargs["input"] = stdin_data
-        else:
-            kwargs["stdin"] = subprocess.DEVNULL
-        result = subprocess.run([BRAIN_CLI] + args, **kwargs)
+        result = subprocess.run(
+            [BRAIN_CLI, "mcp"],
+            input=request,
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+            stdin=subprocess.PIPE,
+        )
         if result.returncode != 0:
             return None
-        return json.loads(result.stdout)
+        response = json.loads(result.stdout)
+        return response.get("result")
     except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError, OSError):
         return None
 
 
 def is_duplicate(error_summary):
     """Return True if a similar pattern already exists in brain memory."""
-    result = run_brain(
-        ["memory", "search", "--query", error_summary, "--json", "--limit", "3"]
+    result = call_brain_mcp(
+        "memory_search_minimal",
+        {"query": error_summary, "intent": "lookup", "tags": ["auto-learn"]},
     )
     if not result:
         return False
-    # Result may be a list or dict with results key
     items = result if isinstance(result, list) else result.get("results", [])
     for item in items:
-        similarity = item.get("similarity", 0.0)
-        if similarity > SIMILARITY_THRESHOLD:
+        score = item.get("score", 0.0)
+        if score > SIMILARITY_THRESHOLD:
             return True
     return False
 
@@ -283,21 +283,14 @@ def write_episode(error_entry, resolution_text, resolution_input, score):
         f"Input: {resolution_input_summary}"
     )
 
-    episode = {
-        "title": title,
-        "body": body,
-        "tags": ["auto-learn", "pattern:error-fix"],
-    }
-
-    run_brain(
-        [
-            "memory", "write-episode",
-            "--stdin",
-            "--tag", "auto-learn",
-            "--tag", "pattern:error-fix",
-            "--importance", str(score),
-        ],
-        stdin_data=json.dumps(episode),
+    call_brain_mcp(
+        "memory_write_episode",
+        {
+            "title": title,
+            "body": body,
+            "tags": ["auto-learn", "pattern:error-fix"],
+            "importance": score,
+        },
     )
 
 
