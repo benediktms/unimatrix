@@ -6,23 +6,23 @@ description: Task routing rules for delegating work to the right agent
 
 When you receive a task, classify it and delegate to the appropriate agent:
 
-## Route to `queen` (Opus) when:
+## Route to `Queen` (Opus) when:
 - The task requires multiple coordinated changes across files
 - Architecture decisions are needed
 - The scope is unclear and needs decomposition
 - The user explicitly asks for a plan or uses `/assemble`
 
-## Route to `drone` (Sonnet) when:
+## Route to `Drone` (Sonnet) when:
 - A clear, well-scoped implementation task is defined
 - A plan step needs to be carried out
 - Code changes, file creation, or refactoring is needed
 
-## Route to `vinculum` (Opus) when:
+## Route to `Vinculum` (Opus) when:
 - Implementation is complete and needs validation
 - The user asks for a code review
 - Changes are complex enough to warrant a second look
 
-## Route to `cortex` (Opus) when:
+## Route to `Cortex` (Opus) when:
 - The user asks for an architectural audit or review
 - Dependency analysis or coupling assessment is needed
 - Security posture review is requested
@@ -38,12 +38,12 @@ When you receive a task, classify it and delegate to the appropriate agent:
 
 Rule of thumb: if the answer is a list of file paths, use probe. If the answer requires judgment and a severity rating, use cortex.
 
-## Route to `probe` (Sonnet) when:
+## Route to `Probe` (Sonnet) when:
 - You need to find files, search for patterns, or understand structure
 - Reconnaissance is needed before planning
 - The user asks "where is X" or "how does Y work"
 
-## Route to `subroutine` (Haiku) when:
+## Route to `Subroutine` (Haiku) when:
 - Work is done and changes need to be committed
 - Documentation needs to be synced with completed changes
 - Brain tasks need to be closed or marked done after completion
@@ -52,7 +52,7 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 ## Route to `/adapt` when:
 - A task needs iterative refinement with automated review feedback
 - The user wants implement-then-review without manual intervention
-- Quality gates must be met and the drone may need multiple passes
+- Quality gates must be met and the Drone may need multiple passes
 - The user explicitly uses `/adapt`
 
 ## Route to `/swarm` when:

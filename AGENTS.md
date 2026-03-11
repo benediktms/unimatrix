@@ -24,12 +24,12 @@ A modular, symlink-friendly agent framework for Claude Code.
 
 | Agent | Model | Role |
 |-------|-------|------|
-| queen | Opus | Strategic mind — plans, orchestrates, dispatches drones |
-| drone | Sonnet | Worker — implements a single well-defined step |
-| vinculum | Opus | Reviewer — validates correctness and quality with evidence-based verification |
-| probe | Sonnet | Scout — codebase search and reconnaissance |
-| cortex | Opus | Analyst — deep architectural audits, security reviews, and codebase health assessments |
-| subroutine | Haiku | Housekeeping — git commits, docs, brain task management |
+| Queen | Opus | Strategic mind — plans, orchestrates, dispatches Drones |
+| Drone | Sonnet | Worker — implements a single well-defined step |
+| Vinculum | Opus | Reviewer — validates correctness and quality with evidence-based verification |
+| Probe | Sonnet | Scout — codebase search and reconnaissance |
+| Cortex | Opus | Analyst — deep architectural audits, security reviews, and codebase health assessments |
+| Subroutine | Haiku | Housekeeping — git commits, docs, brain task management |
 
 ## Skills
 
@@ -38,9 +38,9 @@ A modular, symlink-friendly agent framework for Claude Code.
 | `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
 | `/reengage` | Re-engage the collective on a previously planned task |
-| `/comply` | Validate changes via vinculum agent. You will comply. |
-| `/swarm` | Partition files and dispatch parallel drones for bulk changes |
-| `/adapt` | Iterative refinement loop — drone implements, vinculum reviews, repeat until pass |
+| `/comply` | Validate changes via Vinculum agent. You will comply. |
+| `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
+| `/adapt` | Iterative refinement loop — Drone implements, Vinculum reviews, repeat until pass |
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 
 ## Git Conventions
@@ -153,7 +153,7 @@ When working on tasks:
 2. **While working**: Add comments via `tasks_apply_event` (comment_added) for significant decisions or blockers
 3. **On completion**: Close the task via `tasks_close` (or `tasks_apply_event` with status_changed to `done`)
 
-**Assignee**: Borg agents (queen, drone, vinculum, subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
+**Assignee**: Borg agents (Queen, Drone, Vinculum, Subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
 
 **Cross-task insights**: If you discover during work on one task that something affects or should be captured on a different task, immediately add a comment to that task with the relevant context. Don't defer — the insight is freshest now and costs seconds to capture vs. minutes to reconstruct later.
 
