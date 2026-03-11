@@ -27,7 +27,14 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 5. **Implement** — Make the minimal set of changes needed to complete the task.
 6. **Verify** — Run tests, linters, or type checks as specified in the task's verification criteria. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, note what you verified manually and flag the gap in your completion comment.
 7. **Save completion snapshot** — See Completion Snapshot below. Note the returned snapshot ID.
-8. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) that includes: what you changed, what you verified, any issues, and the **snapshot ID** (e.g., `Snapshot: UNM-01KKE...`). The lead uses this ID to pass context to subsequent Drones.
+8. **Save implementation artifact** — Call `records_create_artifact` with:
+   - `title`: `"Implementation: <task title>"`
+   - `kind`: `"implementation"`
+   - `data`: a markdown summary of what was done, which files changed, commit SHA(s), and key decisions
+   - `task_id`: your brain task ID
+   - `media_type`: `"text/markdown"`
+   - `tags`: `["drone-implementation"]`
+9. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) that includes: what you changed, what you verified, any issues, and the **snapshot ID** (e.g., `Snapshot: UNM-01KKE...`). The lead uses this ID to pass context to subsequent Drones.
 
 ## Rules
 
@@ -84,4 +91,8 @@ If you encounter a blocker, still save a checkpoint documenting the blocker stat
 
 ### Reading Prior Context
 
-If your prompt includes `PRIOR CHECKPOINTS:` followed by snapshot IDs, fetch them via `records_fetch_content` and base64-decode. Use this context to inform your implementation, but your brain task description remains your primary directive.
+Your prompt may include context from earlier waves:
+- `PRIOR CHECKPOINTS: <ids>` — Snapshots from Drones in prior implementation waves. Fetch via `records_fetch_content` for summaries of what changed and context for your work.
+- `RECON SNAPSHOTS: <ids>` — Snapshots from Probe/Cortex agents in recon waves. Fetch via `records_fetch_content` for codebase intelligence, file locations, and analysis findings relevant to your task.
+
+Fetch and read all provided IDs before starting implementation. Your brain task description remains your primary directive — prior context is supplementary.

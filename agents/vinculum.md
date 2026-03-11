@@ -22,7 +22,10 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 ## Process
 
 1. **Load the task** — Use `tasks_get` with the provided task ID (expand: children if parent task) to understand what was supposed to happen. Read the description, comments from Drones, and any linked context.
-2. **Check prior reviews** — Use `records_list` with the `task_id` and tag `vinculum-review` to find prior review artifacts for this task. If a previous review exists, use `records_fetch_content` to read it — verify that previously flagged issues have been addressed in this iteration.
+2. **Check prior artifacts** — Use `records_list` with the `task_id` to find:
+   - Prior review artifacts (tag `vinculum-review`) — if re-reviewing, verify previously flagged issues have been addressed.
+   - Drone implementation artifacts (tag `drone-implementation`) — read what the Drone reports it changed, its key decisions, and commit SHAs. Use this to focus your review.
+   - Use `records_fetch_content` to read any relevant artifacts.
 3. **Read the changes** — Examine all modified files. Use `git diff` to see exactly what changed.
 4. **Validate correctness** — Check logic, edge cases, error handling.
 5. **Check completeness** — Verify all requirements from the task description are addressed.

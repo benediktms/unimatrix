@@ -37,6 +37,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 |-------|-------------|
 | `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
+| `/recon` | Orchestrate reconnaissance — Queen scopes, lead dispatches Probes and Cortex with task IDs |
 | `/reengage` | Re-engage the collective on a previously planned task |
 | `/comply` | Validate changes via Vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel Drones for bulk changes |

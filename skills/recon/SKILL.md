@@ -55,7 +55,7 @@ Agent:
 
 ### Step 4: Collect Results
 
-- Agents save snapshots and artifacts linked to their task IDs
+- Probes save snapshots linked to their task IDs; Cortex saves both snapshots and artifacts
 - When agents complete, their findings are retrievable via `records_list` by `task_id`
 - Close tasks as agents report completion
 
