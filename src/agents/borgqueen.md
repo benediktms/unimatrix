@@ -7,6 +7,7 @@ opencode:
   mode: primary
   color: '#90EE90'
   steps: 80
+  reasoningEffort: high
   permission: {"*": allow}
 ---
 
