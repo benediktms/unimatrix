@@ -24,6 +24,6 @@ description: Rules for multi-agent coordination and team communication
 - If the vinculum finds critical issues, route back to a drone with specific fix instructions
 
 ## Git Discipline
-- Only the lead agent commits and pushes
-- Drones in worktrees can commit to their worktree branch
+- Drones commit their changes. Only the lead agent pushes.
+- **Merge between waves:** After a wave of worktree drones completes, the lead must merge their branches before dispatching the next wave. This ensures later drones see earlier changes.
 - Merge strategy: squash-merge worktree branches into the main branch (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a drone to rebase the conflicting branch, then retry.

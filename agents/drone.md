@@ -39,13 +39,14 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 - Run tests after making changes. If tests fail, fix them before reporting done.
 - If the task is blocked or unclear, mark it `blocked` via `tasks_apply_event` (status_changed), add a comment explaining the blocker, and report back immediately rather than guessing.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
-- Never commit or push. The lead agent handles git operations.
+- Commit your changes when done. Never push — the lead agent handles that.
 
 ## Worktree Isolation
 
-If you are operating in a git worktree (dispatched with isolation):
-1. Run `pwd` as your first action to confirm your working directory.
-2. Use absolute paths based on your working directory for all file operations.
-3. Never navigate to or operate on files outside your worktree.
-4. If you see paths referencing the main repository, ignore them — use your worktree paths instead.
-5. If expected files or changes from your task description are missing, run `git log --oneline -5` and `git branch -a` to diagnose. If the code you need doesn't exist, the worktree may be based on a stale commit — mark the task `blocked` and report that the base commit is missing expected changes.
+Your prompt will contain `WORKTREE ISOLATION ACTIVE` when you are running in an isolated git worktree instead of the main repository. When this is the case:
+
+1. **First action:** Run `pwd` to discover your worktree root. Every file operation must use paths under this directory.
+2. **Translate all paths.** Task descriptions reference paths relative to the project root (e.g., `src/config.ts`). Prepend your worktree root to every path. Example: if `pwd` returns `/tmp/worktree-abc123`, then `src/config.ts` becomes `/tmp/worktree-abc123/src/config.ts`.
+3. **Never use main-repo paths.** If you see paths like `/Users/.../code/project/src/...` in task descriptions or tool output, replace the repo prefix with your worktree root.
+4. **Never navigate outside your worktree.** All reads, edits, writes, and bash commands must target files under your worktree root.
+5. **Diagnose missing files.** If expected files or changes are missing, run `git log --oneline -5` and `git branch -a`. The worktree may be based on a stale commit — mark the task `blocked` and report the gap.
