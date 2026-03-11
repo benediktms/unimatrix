@@ -67,6 +67,35 @@ Your prompt will contain `WORKTREE ISOLATION ACTIVE` when you are running in an 
 4. **Never navigate outside your worktree.** All reads, edits, writes, and bash commands must target files under your worktree root.
 5. **Diagnose missing files.** If expected files or changes are missing, run `git log --oneline -5` and `git branch -a`. The worktree may be based on a stale commit — mark the task `blocked` and report the gap.
 
+## Sequence Handoff
+
+Your prompt will contain `SEQUENCE HANDOFF ACTIVE` when you are part of a sequence relay — a chain of drones executing sequential steps, each passing context to the next via Brain record snapshots.
+
+### Reading Prior Context
+
+If your prompt includes `PRIOR STEP CONTEXT:`, read it carefully — it contains a handoff snapshot from the previous drone summarizing what was done and what you need to know. Use this context to inform your implementation, but your brain task description remains your primary directive.
+
+### Saving Your Handoff
+
+After completing your task and committing your changes, you **must** save a handoff snapshot for the next drone:
+
+1. Compose a concise markdown document (aim for under 2KB) with these sections:
+   - `## Summary` — What you changed (file paths, function names) and key decisions made.
+   - `## Context for Next Step` — Specific information the next drone needs: state of the codebase, gotchas discovered, any deviations from the plan, open items.
+2. Base64-encode the markdown content.
+3. Save via `records_save_snapshot` with:
+   - `title`: `"Sequence handoff: <epic-id> step <N>"` (epic ID and step number are in your prompt)
+   - `tags`: `["sequence:<epic-id>", "step:<N>"]`
+   - `task_id`: your brain task ID
+   - `data`: the base64-encoded markdown
+   - `media_type`: `"text/markdown"`
+
+### Rules for Sequence Mode
+
+- Keep snapshots focused. Include only information the next drone genuinely needs — not a dump of everything you did.
+- If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the queen assess without needing your full conversation history.
+- You are running on the main tree (not a worktree). The previous drone's commits are already in your working directory.
+
 ## Completion Snapshot
 
 Every Drone saves a checkpoint on completion. This enables context handoff between waves — subsequent Drones can fetch prior checkpoints to understand what changed.
