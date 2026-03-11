@@ -105,6 +105,7 @@ The installer:
 - Merges Unimatrix settings (spinner verbs, status line, hooks) into your `settings.json`
 - Configures `core.hooksPath` for git hooks
 - Backs up existing files before overwriting
+- Skips project-level `.claude/skills/` when installing OpenCode to the unimatrix repo itself (if Claude Code skills are already installed globally) to prevent duplicate skills
 
 Restart Claude Code after installation to pick up changes.
 

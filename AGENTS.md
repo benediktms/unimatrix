@@ -30,6 +30,8 @@ python3 build.py --target all
 ./install.sh --both --global
 ```
 
+> **Note:** When installing OpenCode to the unimatrix repo itself (`--opencode --project .`), the installer skips `.claude/skills/` symlinks if Claude Code skills are already installed globally. This prevents Claude Code from seeing every skill twice (global + project).
+
 ## Agents
 
 | Agent | Model | Role |
