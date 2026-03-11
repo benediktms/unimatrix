@@ -185,7 +185,6 @@ def main():
         pass
 
     # Single line: [AGENT] model | branch | ▐bar▌ ctx% | ↓out ↑in ⚡cache | $cost
-    style, label = AGENT_STYLES.get(agent, (DIM, "UNIMATRIX"))
     bar = progress_bar(pct)
     ctx_col = color_for_pct(pct)
 
@@ -193,7 +192,10 @@ def main():
     if repo_name or branch:
         git_ref = f"{repo_name}:{branch}" if repo_name and branch else repo_name or branch
         parts.append(f"\033[95m{git_ref}{RESET}")
-    parts.extend([f"{style}[{label}]{RESET}", f"{DIM}{model}{RESET}"])
+    if agent in AGENT_STYLES:
+        style, label = AGENT_STYLES[agent]
+        parts.append(f"{style}[{label}]{RESET}")
+    parts.append(f"{DIM}{model}{RESET}")
 
     # Session duration
     session_start = get_session_start(transcript)
