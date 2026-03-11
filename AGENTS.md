@@ -35,6 +35,7 @@ python3 build.py --target all
 | Agent | Model | Role |
 |-------|-------|------|
 | Queen | Opus | Strategic mind — plans, orchestrates, dispatches Drones |
+| BorgQueen | Opus | Lead agent (OpenCode) — strategic mind + direct execution |
 | Drone | Sonnet | Worker — implements a single well-defined step |
 | Vinculum | Opus | Reviewer — validates correctness and quality with evidence-based verification |
 | Probe | Sonnet | Scout — codebase search and reconnaissance |
@@ -87,6 +88,8 @@ Before acting on any request, classify it:
 | **Cortex** | Architecture audits, security reviews, performance analysis | Simple searches (use Probe), writing code |
 | **Subroutine** | Git commits, documentation sync, brain task cleanup | Code changes, decisions, planning |
 
+> **Note (OpenCode):** In OpenCode, BorgQueen is the primary lead agent and handles planning directly — no Queen dispatch needed.
+
 ### Dispatch Syntax
 
 **Claude Code:**
@@ -97,9 +100,10 @@ Agent(subagent_type="Drone", description="Implement JWT validation", run_in_back
 
 **OpenCode:**
 ```
-task(subagent_type="queen", description="Plan the auth refactoring", ...)
 task(subagent_type="drone", description="Implement JWT validation", run_in_background=true, ...)
 ```
+
+> **Note (OpenCode):** BorgQueen is the primary lead agent in OpenCode and handles planning directly — no Queen dispatch needed.
 
 ### Background Agent Patterns
 

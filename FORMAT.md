@@ -117,14 +117,14 @@ hidden: true
 model: sonnet              # default
 
 claude:
-  name: Queen
-  permissionMode: auto
-  maxTurns: 40
+  name: Drone
+  permissionMode: bypassPermissions
+  maxTurns: 50
 
 opencode:
   model: opus              # override: OpenCode gets opus instead of sonnet
-  mode: primary
-  steps: 60
+  mode: subagent
+  steps: 50
 ---
 ```
 
@@ -284,7 +284,8 @@ task(subagent_type="vinculum", ...)
 
 | Agent | Model | Claude `permissionMode` | Claude `disallowedTools` | OC `mode` | OC `permission` | OC `tools` | OC `steps` |
 |-------|-------|------------------------|-------------------------|-----------|-----------------|------------|-----------|
-| Queen | opus | auto | — | subagent | *(default)* | — | 40 |
+| Queen | opus | auto | — | *(n/a — `platforms: [claude]`)* | — | — | — |
+| BorgQueen | opus | *(n/a — `platforms: [opencode]`)* | — | primary | `"*": allow` | — | 80 |
 | Drone | sonnet | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 50 |
 | Vinculum | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 20 |
 | Probe | sonnet | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 25 |
@@ -317,7 +318,8 @@ task(subagent_type="vinculum", ...)
 ```
 src/
 ├── agents/                    # Combined agent definitions
-│   ├── queen.md
+│   ├── queen.md               # platforms: [claude]
+│   ├── borgqueen.md           # platforms: [opencode]
 │   ├── drone.md
 │   ├── vinculum.md
 │   ├── probe.md
