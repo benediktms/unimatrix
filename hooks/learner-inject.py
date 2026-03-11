@@ -64,7 +64,6 @@ def call_brain_mcp(method, params):
             capture_output=True,
             text=True,
             timeout=SUBPROCESS_TIMEOUT,
-            stdin=subprocess.PIPE,
         )
         if result.returncode != 0:
             return None
