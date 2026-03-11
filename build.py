@@ -143,13 +143,11 @@ def render_frontmatter(fm: dict[str, Any], target: str, category: str) -> str:
     """Render a merged frontmatter dict as a YAML frontmatter block.
 
     Applies platform-specific post-processing:
-    - OpenCode agents: remove 'name' field (derived from filename).
     - OpenCode agents: map model short aliases to anthropic/model-id format.
     """
     output = dict(fm)
 
     if target == "opencode" and category == "agents":
-        output.pop("name", None)
         # Map short model aliases to OpenCode's anthropic/model-id format
         model = output.get("model")
         if model and "/" not in model:

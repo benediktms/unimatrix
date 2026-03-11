@@ -121,7 +121,7 @@ export const unimatrixHooks: Plugin = async ({ $, project }) => {
     // config — set default agent at runtime
     // -----------------------------------------------------------------
     config: async (config: Record<string, unknown>) => {
-      config.default_agent = "queen"
+      config.default_agent = "Borg Queen"
     },
 
     // -----------------------------------------------------------------
