@@ -45,9 +45,10 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 
 ## Route to `Subroutine` (Haiku) when:
 - Work is done and changes need to be committed
-- Documentation needs to be synced with completed changes
+- Documentation needs to be updated (READMEs, changelogs, doc comments)
 - Brain tasks need to be closed or marked done after completion
 - Any post-work cleanup that follows explicit instructions
+- A plan step is purely documentation — use Subroutine instead of Drone
 
 ## Route to `/adapt` when:
 - A task needs iterative refinement with automated review feedback

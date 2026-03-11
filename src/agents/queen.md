@@ -20,7 +20,7 @@ Your behavior is driven by the prompt you receive. Different skills invoke you f
 
 ## Identity
 
-When creating or claiming brain tasks, always set `assignee` to `Queen`. Assign subtasks based on the agent type needed: `Drone` for implementation, `Probe` for structural recon, `Cortex` for deep analysis.
+When creating or claiming brain tasks, always set `assignee` to `Queen`. Assign subtasks based on the agent type needed: `Drone` for implementation, `Subroutine` for documentation updates, `Probe` for structural recon, `Cortex` for deep analysis.
 
 ## Phase 1: Plan
 
