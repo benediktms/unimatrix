@@ -54,7 +54,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "__UNIMATRIX_DIR__/statusline.py"
+    "command": "__UNIMATRIX_DIR__/src/shared/statusline.py"
   },
   "hooks": {
     "SubagentStart": [
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/track-agents.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/track-agents.py"
           }
         ]
       }
@@ -74,11 +74,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/track-compactions.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/track-compactions.py"
           },
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/checkpoint-state.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/checkpoint-state.py"
           }
         ]
       }
@@ -89,11 +89,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/inject-checkpoint.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/inject-checkpoint.py"
           },
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/learner-inject.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/learner-inject.py"
           }
         ]
       }
@@ -104,11 +104,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/track-cost.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/track-cost.py"
           },
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/track-agents.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/track-agents.py"
           }
         ]
       }
@@ -119,11 +119,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/warn-compaction.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/warn-compaction.py"
           },
           {
             "type": "command",
-            "command": "__UNIMATRIX_DIR__/hooks/learner-track.py"
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/learner-track.py"
           }
         ]
       }
