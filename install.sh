@@ -183,13 +183,40 @@ install_opencode() {
   fi
 
   # Skills: global uses ~/.config/opencode/skills/, project uses .claude/skills/
-  mkdir -p "$skills_target"
-  for skill_dir in "$dist_claude_skills/"*/; do
-    [ -d "$skill_dir" ] || continue
-    skill_name="$(basename "$skill_dir")"
-    link "$skill_dir" "$skills_target/$skill_name"
-  done
-  cleanup_stale_links "$skills_target" "$dist_claude_skills/"
+  # Skip project-level .claude/skills/ when the project IS the unimatrix repo and
+  # Claude Code skills are already installed globally — otherwise Claude Code sees
+  # both global and project skills, causing every skill to appear twice.
+  local skip_skills=false
+  if [ "$is_global" = "false" ]; then
+    local resolved_project resolved_unimatrix
+    resolved_project="$(cd "$project_root" 2>/dev/null && pwd)"
+    resolved_unimatrix="$(cd "$UNIMATRIX_DIR" 2>/dev/null && pwd)"
+    if [ "$resolved_project" = "$resolved_unimatrix" ] && [ -d "$HOME/.claude/skills" ]; then
+      # Check if at least one global skill symlink points into our dist
+      for glink in "$HOME/.claude/skills/"*; do
+        if [ -L "$glink" ]; then
+          case "$(readlink "$glink")" in
+            "$UNIMATRIX_DIR/dist/claude-code/"*)
+              skip_skills=true
+              break
+              ;;
+          esac
+        fi
+      done
+    fi
+  fi
+
+  if [ "$skip_skills" = "true" ]; then
+    echo "  skip: .claude/skills/ (Claude Code skills already installed globally)"
+  else
+    mkdir -p "$skills_target"
+    for skill_dir in "$dist_claude_skills/"*/; do
+      [ -d "$skill_dir" ] || continue
+      skill_name="$(basename "$skill_dir")"
+      link "$skill_dir" "$skills_target/$skill_name"
+    done
+    cleanup_stale_links "$skills_target" "$dist_claude_skills/"
+  fi
 
   # Plugins: symlink OpenCode hook plugins (if present)
   if [ -d "$UNIMATRIX_DIR/src/hooks/opencode" ] && [ "$(ls -A "$UNIMATRIX_DIR/src/hooks/opencode" 2>/dev/null)" ]; then
