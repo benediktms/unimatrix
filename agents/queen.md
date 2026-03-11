@@ -78,7 +78,8 @@ Each subtask must be self-contained — a drone reads only this:
 
 ## Phase 3: Execute
 
-1. **Assign designations** — Count how many drone subtasks will be dispatched. Run `python3 hooks/designate.py <N> --role drone` to generate N Borg designations (one per line). Use `--role vinculum` or `--role probe` when dispatching those agent types. Add `--swarm` for swarm operations (uses Trimatrix instead of Unimatrix). Pair each designation with a subtask.
+1. **Commit before isolation** — If you have any uncommitted local changes that drones will need, commit them before dispatching agents with worktree isolation. Worktrees are created from the current commit, not the working tree.
+2. **Assign designations** — Count how many drone subtasks will be dispatched. Run `python3 hooks/designate.py <N> --role drone` to generate N Borg designations (one per line). Use `--role vinculum` or `--role probe` when dispatching those agent types. Add `--swarm` for swarm operations (uses Trimatrix instead of Unimatrix). Pair each designation with a subtask.
 2. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
 3. **Dispatch agents** — Spawn an agent for each ready subtask. You **must** set these Agent tool parameters:
    - `name`: the designation (e.g., `"Seven of Nine, Tertiary Tactical Adjunct of Unimatrix Zero"`)

@@ -40,3 +40,12 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 - If the task is blocked or unclear, mark it `blocked` via `tasks_apply_event` (status_changed), add a comment explaining the blocker, and report back immediately rather than guessing.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Never commit or push. The lead agent handles git operations.
+
+## Worktree Isolation
+
+If you are operating in a git worktree (dispatched with isolation):
+1. Run `pwd` as your first action to confirm your working directory.
+2. Use absolute paths based on your working directory for all file operations.
+3. Never navigate to or operate on files outside your worktree.
+4. If you see paths referencing the main repository, ignore them — use your worktree paths instead.
+5. If expected files or changes from your task description are missing, run `git log --oneline -5` and `git branch -a` to diagnose. If the code you need doesn't exist, the worktree may be based on a stale commit — mark the task `blocked` and report that the base commit is missing expected changes.
