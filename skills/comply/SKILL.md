@@ -31,20 +31,52 @@ Task: <task-id>
 Analyze the implementation. Validate against requirements. Collect evidence. Report.
 ```
 
-**If a file path or no arguments:**
+**If `--branch` flag is provided, or no arguments and no uncommitted changes:**
 
 ```
 Vinculum — verification sequence initiated.
 
-Scope: <file path, or "all uncommitted changes">
+Scope: all changes on current branch vs main
+
+Use `git diff main...HEAD` to determine the full diff. Analyze the changes. Validate correctness. Collect evidence. Report.
+```
+
+**If no arguments and there ARE uncommitted changes:**
+
+```
+Vinculum — verification sequence initiated.
+
+Scope: all uncommitted changes
+
+Use `git diff` (unstaged) and `git diff --cached` (staged) to determine the full diff. Analyze the changes. Validate correctness. Collect evidence. Report.
+```
+
+**If a file path is provided:**
+
+```
+Vinculum — verification sequence initiated.
+
+Scope: <file path>
 
 Analyze the changes. Validate correctness. Collect evidence. Report.
 ```
 
+## Scope Resolution
+
+Before dispatching, determine the scope:
+
+1. If a brain task ID is provided → use the task prompt
+2. If `--branch` flag is provided → review all committed changes on the branch vs main
+3. If a file path is provided → review that file
+4. If no arguments → check for uncommitted changes:
+   - **Uncommitted changes exist** → review only uncommitted changes
+   - **No uncommitted changes** → review all committed changes on the branch vs main
+
 ## Usage
 
 ```
-/comply                    # Review all uncommitted changes
+/comply                    # Uncommitted changes, or full branch if clean
+/comply --branch           # Force review of full branch vs main
 /comply <task-id>          # Review changes for a brain task
 /comply <file-or-path>     # Review changes in specific files
 ```
