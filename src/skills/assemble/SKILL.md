@@ -1,6 +1,6 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task. The lead plans, dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
+description: Assemble the collective to execute a complex task. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
 ---
 
 # /assemble
@@ -31,21 +31,43 @@ Orchestrate a complex task end-to-end: you assess, recon runs if needed, you pla
 
 ## Dispatch Modes
 
-The dispatch plan specifies one of three modes for each wave of work:
+<!-- @claude -->
+The Queen's dispatch plan specifies one of three modes for each wave of work:
+<!-- @end -->
+<!-- @opencode -->
+Your dispatch plan specifies one of three modes for each wave of work:
+<!-- @end -->
 
-### Sequential (lead-supervised)
-Steps have dependencies — drones execute in waves, the lead stays alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when the lead needs to make decisions between steps.
+<!-- @claude -->
+### Sequential (queen-supervised)
+Steps have dependencies — drones execute in waves, the queen stays alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when the queen needs to make decisions between steps.
 
-**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring lead judgment between waves.
+**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring queen judgment between waves.
+<!-- @end -->
+<!-- @opencode -->
+### Sequential (direct supervision)
+Steps have dependencies — drones execute in waves, you stay alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when you need to make decisions between steps.
+
+**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring your judgment between waves.
+<!-- @end -->
 
 **Avoid when:** chains are long (3+ steps) and each step's output can be summarized concisely — use sequence instead.
 
 ### Sequence (relay)
-Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The lead dispatches but does not stay alive for the happy path.
+<!-- @claude -->
+Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The queen dispatches but does not stay alive for the happy path.
+
+**Use when:** long sequential chains (3+ steps), orchestrations where queen compaction is a risk, chains where each step's context can be summarized concisely for the next.
+
+**Avoid when:** steps require dynamic re-planning based on results, the queen needs to make decisions between steps, chains are short (2 steps — just use sequential).
+<!-- @end -->
+<!-- @opencode -->
+Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. You dispatch but do not stay alive for the happy path.
 
 **Use when:** long sequential chains (3+ steps), orchestrations where context compaction is a risk, chains where each step's context can be summarized concisely for the next.
 
-**Avoid when:** steps require dynamic re-planning based on results, the lead needs to make decisions between steps, chains are short (2 steps — just use sequential).
+**Avoid when:** steps require dynamic re-planning based on results, you need to make decisions between steps, chains are short (2 steps — just use sequential).
+<!-- @end -->
 
 ### Swarm
 Steps are independent — drones execute in parallel with non-overlapping file partitions. Use when work can be divided by file group with no cross-group dependencies.
@@ -128,7 +150,12 @@ Agent:
 
 ### Step 2: Recon Phase (conditional)
 
-Only if the verdict was RECON_NEEDED.
+<!-- @claude -->
+Only if the Queen returned RECON_NEEDED.
+<!-- @end -->
+<!-- @opencode -->
+Only if your verdict was RECON_NEEDED.
+<!-- @end -->
 
 <!-- @claude -->
 #### Step 2a: Resume Queen for Recon Scoping
@@ -166,7 +193,12 @@ Agent:
 ```
 <!-- @end -->
 
-Recon brain tasks are created and a recon dispatch plan is produced.
+<!-- @claude -->
+The Queen creates recon brain tasks and returns a recon dispatch plan.
+<!-- @end -->
+<!-- @opencode -->
+Create the recon brain tasks and produce a recon dispatch plan.
+<!-- @end -->
 
 #### Step 2b: Dispatch Recon Agents
 
@@ -251,11 +283,23 @@ Agent:
 Produce the implementation plan. Proceed through your full planning phases (plan, materialize, dispatch plan).
 <!-- @end -->
 
-The result is a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
+<!-- @claude -->
+The Queen returns a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
+<!-- @end -->
+<!-- @opencode -->
+Produce a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
+<!-- @end -->
 
 ### Step 3b: Present the Plan
 
-After the implementation plan is ready, present the dispatch plan to the user for review. Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
+<!-- @claude -->
+After the Queen returns the implementation plan, present the dispatch plan to the user for review.
+<!-- @end -->
+<!-- @opencode -->
+After producing the implementation plan, present the dispatch plan to the user for review.
+<!-- @end -->
+
+Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
 
 ### Step 4: Create Team and Generate Designations
 
@@ -273,7 +317,12 @@ Coordination happens through Brain tasks and records. No team management needed.
 
 ### Step 5: Dispatch Drones
 
-For each wave in the dispatch plan, spawn Drones as team members.
+<!-- @claude -->
+For each wave in the Queen's dispatch plan, spawn Drones as team members.
+<!-- @end -->
+<!-- @opencode -->
+For each wave in your dispatch plan, spawn Drones as team members.
+<!-- @end -->
 
 **Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
@@ -381,7 +430,12 @@ Coordination happens through Brain tasks and records. No team management needed.
 
 ## Ad-Hoc Reconnaissance
 
-If the lead needs to search the codebase during orchestration (e.g. to gather context between waves or verify something before dispatching), always use `Probe` agents — never `Explore`.
+<!-- @claude -->
+If the queen needs to search the codebase during orchestration (e.g. to gather context between waves or verify something before dispatching), always use `Probe` agents — never `Explore`.
+<!-- @end -->
+<!-- @opencode -->
+If you need to search the codebase during orchestration (e.g. to gather context between waves or verify something before dispatching), always use `Probe` agents — never `Explore`.
+<!-- @end -->
 
 ## Post-Wave Git Discipline
 
