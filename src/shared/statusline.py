@@ -2,7 +2,6 @@
 """Unimatrix status line for Claude Code.
 
 Reads JSON from stdin and renders a Borg-themed status line.
-Active subagents are tracked via hooks (track-agents.py).
 """
 
 import json
@@ -30,9 +29,6 @@ AGENT_STYLES = {
     "Subroutine": (DIM, "SUBROUTINE"),
 }
 
-STALE_SECONDS = 15 * 60  # 15 minutes
-
-
 def get_compaction_count(session_id):
     """Read compaction count from the state file written by track-compactions.py."""
     if not session_id:
@@ -44,43 +40,6 @@ def get_compaction_count(session_id):
         return state.get("compaction_count", 0)
     except (IOError, OSError, json.JSONDecodeError):
         return 0
-
-
-def get_active_agents(session_id):
-    """Read active subagents from the state file written by track-agents.py."""
-    if not session_id:
-        return []
-
-    try:
-        path = f"/tmp/unimatrix-agents-{session_id}.json"
-        with open(path, "r") as f:
-            state = json.load(f)
-    except (IOError, OSError, json.JSONDecodeError):
-        return []
-
-    active = []
-    now = time.time()
-    for agent_id, info in state.get("active", {}).items():
-        started_at = info.get("started_at", 0)
-        elapsed = int(now - started_at) if started_at else 0
-
-        # Skip stale agents (>30min likely orphaned)
-        if elapsed > STALE_SECONDS:
-            continue
-
-        if elapsed >= 60:
-            duration = f"{elapsed // 60}m"
-        elif elapsed >= 10:
-            duration = f"{elapsed}s"
-        else:
-            duration = ""
-
-        active.append({
-            "name": info.get("type", "agent"),
-            "duration": duration,
-        })
-
-    return active
 
 
 def get_session_start(transcript_path):
@@ -157,14 +116,12 @@ def main():
 
     # Read subagent cost state
     subagent_cost = 0
-    type_counts = {}
     if session_id:
         try:
             state_path = f"/tmp/unimatrix-costs-{session_id}.json"
             with open(state_path, "r") as f:
                 cost_state = json.load(f)
             subagent_cost = cost_state.get("total_subagent_cost_usd", 0)
-            type_counts = cost_state.get("type_counts", {})
         except (IOError, OSError, json.JSONDecodeError, KeyError):
             pass
 
@@ -224,36 +181,7 @@ def main():
             cost_str += f" (+${subagent_cost:.2f})"
         parts.append(f"{DIM}{cost_str}{RESET}")
 
-    # Subagent type counts
-    if type_counts:
-        TYPE_ORDER = ["Drone", "Probe", "Vinculum", "Cortex", "Subroutine", "Queen"]
-        count_parts = []
-        seen = set()
-        for t in TYPE_ORDER:
-            n = type_counts.get(t, 0)
-            if n > 0:
-                label_t = t + ("s" if n != 1 else "")
-                count_parts.append(f"{GREEN}{n} {label_t}{RESET}")
-                seen.add(t)
-        for t in sorted(type_counts):
-            if t not in seen:
-                n = type_counts[t]
-                label_t = t + ("s" if n != 1 else "")
-                count_parts.append(f"{DIM}{n} {label_t}{RESET}")
-        if count_parts:
-            parts.append(f"{' \u00b7 '.join(count_parts)}")
-
     print("  ".join(parts))
-
-    # Active subagents from state file
-    active = get_active_agents(session_id)
-    if active:
-        for i, a in enumerate(active):
-            connector = "└─" if i == len(active) - 1 else "├─"
-            name = a["name"]
-            style_a, label_a = AGENT_STYLES.get(name, (DIM, name.upper()))
-            dur = f" {DIM}{a['duration']}{RESET}" if a["duration"] else ""
-            print(f" {DIM}{connector}{RESET} {style_a}[{label_a}]{RESET}{dur}")
 
 
 if __name__ == "__main__":
