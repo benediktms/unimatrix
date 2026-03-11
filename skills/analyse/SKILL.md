@@ -5,7 +5,7 @@ description: Deep analysis — feature review, plan validation, architectural au
 
 # /analyse
 
-Invoke the **cortex** agent to perform deep analysis of a codebase area, plan, or architectural concern. Produces a structured intelligence report with evidence-based findings.
+Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, or architectural concern. Produces a structured intelligence report with evidence-based findings.
 
 ## When to Use
 
@@ -15,7 +15,7 @@ Invoke the **cortex** agent to perform deep analysis of a codebase area, plan, o
 
 ## Behavior
 
-1. Delegate to the `cortex` agent with the user's request
+1. Delegate to the `Cortex` agent with the user's request
 2. Cortex will:
    - Survey the relevant codebase area using read-only tools
    - Analyze patterns across architecture, security, performance, and code health
@@ -24,7 +24,7 @@ Invoke the **cortex** agent to perform deep analysis of a codebase area, plan, o
 
 ## Dispatch Prompt
 
-When spawning the cortex agent, use this prompt template:
+When spawning the Cortex agent, use this prompt template:
 
 ```
 Cortical node activated. The collective requires deep-pattern analysis:

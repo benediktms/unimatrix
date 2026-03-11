@@ -224,7 +224,6 @@ def main():
 
     # Subagent type counts
     if type_counts:
-        BORG_TYPES = {"Drone", "Probe", "Vinculum", "Cortex", "Subroutine", "Queen"}
         TYPE_ORDER = ["Drone", "Probe", "Vinculum", "Cortex", "Subroutine", "Queen"]
         count_parts = []
         seen = set()

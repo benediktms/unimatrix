@@ -10,10 +10,10 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 ## Behavior
 
 1. **Count subtasks** — Determine how many agents will be dispatched.
-2. **Generate designations** — Run `python3 hooks/designate.py <N> [--role drone|vinculum|probe] [--trimatrix]` via Bash. Each line of output is one designation. Role determines the Borg functional title:
-   - `drone` → Tactical Adjunct
-   - `vinculum` → Auxiliary Processor
-   - `probe` → Adjunct
+2. **Generate designations** — Run `python3 hooks/designate.py <N> [--role Drone|Vinculum|Probe] [--trimatrix]` via Bash. Each line of output is one designation. Role determines the Borg functional title:
+   - `Drone` → Tactical Adjunct
+   - `Vinculum` → Auxiliary Processor
+   - `Probe` → Adjunct
    - (default) → Adjunct
    - `--trimatrix` → Uses "Trimatrix \<random\>" instead of "Unimatrix Zero" (use for all spawned agents)
 3. **Assign to agents** — When spawning each agent:
@@ -27,8 +27,8 @@ Invoked by the lead during `/assemble` Step 2 before dispatching drones. Can als
 
 ```
 /designate <N>                              # Generic Adjunct titles (Unimatrix Zero)
-/designate <N> --role drone                 # Tactical Adjunct titles
-/designate <N> --role vinculum              # Auxiliary Processor titles
-/designate <N> --role drone --trimatrix     # Trimatrix instead of Unimatrix
-/designate <N> --role drone --swarm         # Legacy alias for --trimatrix
+/designate <N> --role Drone                 # Tactical Adjunct titles
+/designate <N> --role Vinculum              # Auxiliary Processor titles
+/designate <N> --role Drone --trimatrix     # Trimatrix instead of Unimatrix
+/designate <N> --role Drone --swarm         # Legacy alias for --trimatrix
 ```

@@ -29,7 +29,7 @@ Produce a structured summary covering:
 
 ### 3. Dispatch Subroutine
 
-Spawn a `subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
+Spawn a `Subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
 
 1. **Memory write instruction**: "Call `memory_write_episode` with title `'Session: <date> — <brief description>'` and the following body:" followed by the synthesized summary
 2. **Open tasks instruction**: "Use `tasks_list` (status: open) to append any open/in_progress brain tasks as 'Next session context' to the episode body"
