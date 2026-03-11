@@ -75,6 +75,21 @@
           {
             "type": "command",
             "command": "__UNIMATRIX_DIR__/hooks/track-compactions.py"
+          },
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/checkpoint-state.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/inject-checkpoint.py"
           }
         ]
       }
