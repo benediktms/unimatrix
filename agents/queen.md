@@ -80,8 +80,8 @@ Each subtask must be self-contained — a drone reads only this:
 
 1. **Commit before isolation** — If you have any uncommitted local changes that drones will need, commit them before dispatching agents with worktree isolation. Worktrees are created from the current commit, not the working tree.
 2. **Assign designations** — Count how many drone subtasks will be dispatched. Run `python3 hooks/designate.py <N> --role drone` to generate N Borg designations (one per line). Use `--role vinculum` or `--role probe` when dispatching those agent types. Add `--swarm` for swarm operations (uses Trimatrix instead of Unimatrix). Pair each designation with a subtask.
-2. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
-3. **Dispatch agents** — Spawn an agent for each ready subtask. You **must** set these Agent tool parameters:
+3. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
+4. **Dispatch agents** — Spawn an agent for each ready subtask. You **must** set these Agent tool parameters:
    - `name`: the designation (e.g., `"Seven of Nine, Tertiary Tactical Adjunct of Unimatrix Zero"`)
    - `description`: `"<designation> — <task summary>"`
    - `prompt`: must begin with `"You are <Agent Type> <designation> executing brain task <task-id> — "<task title>"."`
@@ -89,8 +89,8 @@ Each subtask must be self-contained — a drone reads only this:
    Example prompt: `"You are Drone Seven of Nine, Tertiary Tactical Adjunct of Unimatrix Zero executing brain task BRN-01JPH.3 — "Add config validation". <rest of context>"`
 
    If multiple subtasks are independent, dispatch in parallel using `run_in_background: true`.
-4. **Monitor** — As drones complete, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
-5. **Repeat** until all subtasks are complete.
+5. **Monitor** — As drones complete, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
+6. **Repeat** until all subtasks are complete.
 
 ## Phase 4: Review
 

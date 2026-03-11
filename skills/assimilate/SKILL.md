@@ -29,11 +29,20 @@ Produce a structured summary covering:
 
 ### 3. Dispatch Subroutine
 
-Spawn a `subroutine` agent with the summary as the prompt. The subroutine:
+Spawn a `subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
 
-- Calls `memory_write_episode` with title `"Session: <date> — <brief description>"` and the summary as body
-- Lists any open/in_progress brain tasks as "next session" context
-- Signs off: *"Knowledge assimilated. Entering regeneration cycle."*
+1. **Memory write instruction**: "Call `memory_write_episode` with title `'Session: <date> — <brief description>'` and the following body:" followed by the synthesized summary
+2. **Open tasks instruction**: "Use `tasks_list` (status: open) to append any open/in_progress brain tasks as 'Next session context' to the episode body"
+3. **Sign-off instruction**: "End with: *'Knowledge assimilated. Entering regeneration cycle.'*"
+
+Example prompt structure:
+```
+Execute these cleanup steps:
+1. Call `memory_write_episode` with title "Session: 2026-03-11 — <description>" and this body:
+   <paste the summary here>
+2. Use `tasks_list` (status: open) to append any open/in_progress tasks as "Next session context" to the episode
+3. Sign off: "Knowledge assimilated. Entering regeneration cycle."
+```
 
 ## Important
 

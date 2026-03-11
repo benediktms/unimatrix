@@ -31,6 +31,13 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - The user uses `/analyse` or asks to analyze a feature, plan, or codebase area
 - The user asks "how healthy is X" or "audit Y"
 
+### Probe vs. Cortex
+
+**Probe** is fast and shallow: find files, locate patterns, answer "where is X?" Takes seconds, costs little.
+**Cortex** is slow and deep: analyze architecture, assess health, audit security. Takes minutes, produces a structured report.
+
+Rule of thumb: if the answer is a list of file paths, use probe. If the answer requires judgment and a severity rating, use cortex.
+
 ## Route to `probe` (Sonnet) when:
 - You need to find files, search for patterns, or understand structure
 - Reconnaissance is needed before planning

@@ -26,4 +26,4 @@ description: Rules for multi-agent coordination and team communication
 ## Git Discipline
 - Only the lead agent commits and pushes
 - Drones in worktrees can commit to their worktree branch
-- Merge strategy: lead reviews worktree branches before merging
+- Merge strategy: squash-merge worktree branches into the main branch (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a drone to rebase the conflicting branch, then retry.

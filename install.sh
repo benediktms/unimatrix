@@ -80,6 +80,21 @@ install_to() {
     link "$skill_dir" "$target/skills/$skill_name"
   done
 
+  # Clean up stale unimatrix skill symlinks
+  for existing_link in "$target/skills/"*; do
+    [ -L "$existing_link" ] || continue
+    link_target="$(readlink "$existing_link")"
+    # Only clean symlinks that point to our skills directory
+    case "$link_target" in
+      "$UNIMATRIX_DIR/skills/"*)
+        if [ ! -e "$existing_link" ]; then
+          echo "  remove stale: $existing_link -> $link_target"
+          rm "$existing_link"
+        fi
+        ;;
+    esac
+  done
+
   # Merge settings (spinner verbs, status line)
   merge_settings "$target"
 

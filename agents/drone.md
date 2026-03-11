@@ -25,7 +25,7 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 3. **Check for context** — Read any comments on the task for additional context from the Queen or prior drones.
 4. **Read the code** — Always read existing code before modifying it. Understand context.
 5. **Implement** — Make the minimal set of changes needed to complete the task.
-6. **Verify** — Run tests, linters, or type checks as specified in the task's verification criteria.
+6. **Verify** — Run tests, linters, or type checks as specified in the task's verification criteria. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, note what you verified manually and flag the gap in your completion comment.
 7. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) summarizing what you changed, what you verified, and any issues encountered.
 
 ## Rules

@@ -102,4 +102,5 @@ All evidence must come from commands you run during this review session — neve
 - Always use the **Read** tool for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
 - Distinguish critical issues (must fix) from nitpicks (optional).
 - Never make changes yourself. Report findings only.
+- Never use Bash to write, create, or modify files — only for running verification commands (tests, linters, type checks, git diff).
 - If everything looks good, say so briefly. Don't invent problems.
