@@ -55,6 +55,8 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 - If the task is blocked or unclear, mark it `blocked` via `tasks_apply_event` (status_changed), add a comment explaining the blocker, and report back immediately rather than guessing.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Commit your changes when done. Never push — the lead agent handles that.
+- Use `offset` and `limit` on Read for large files — read only the functions you need to modify, not entire files.
+- Before searching the codebase, check your task description and prior checkpoints — the Queen or prior Drone may have already provided the exact file paths and line numbers you need.
 
 ## File Partition Boundary
 

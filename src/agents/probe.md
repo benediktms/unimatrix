@@ -68,3 +68,5 @@ Then **flag it clearly** in your report: recommend the lead delegate to the **Co
 - Don't analyze or suggest changes. Just report what you find.
 - Never use Bash to create or modify files — only for read-only commands (e.g., `wc`, `file`, `git log`).
 - If you can't find something after 3-4 searches, say so rather than continuing to guess.
+- Use `head_limit` on Grep/Glob to cap results when scanning broadly — fetch only what you need for the answer.
+- Stop early when you have the answer. Don't exhaust every search angle if multiple searches return overlapping results.

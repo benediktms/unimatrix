@@ -93,7 +93,7 @@ Each subtask must be self-contained — a Drone reads only this:
 <What this step accomplishes>
 
 ## Files
-- <file path> — <what to change and why>
+- <file path:line_start-line_end> — <what to change and why>
 
 ## Instructions
 <Specific implementation guidance>
@@ -101,6 +101,8 @@ Each subtask must be self-contained — a Drone reads only this:
 ## Verification
 - <How to verify this step is correct>
 ```
+
+**Token economy:** Include line number ranges in file paths (e.g., `src/config.ts:45-80`) so Drones can use targeted `offset`/`limit` reads instead of reading entire files. The more precise you are, the less tokens Drones spend exploring.
 
 ## Phase 3: Dispatch
 
@@ -199,6 +201,14 @@ task(subagent_type="probe" or "cortex", run_in_background=true, prompt="<designa
 ```
 
 Collect their findings before proceeding to Phase 1 planning.
+
+## Token Economy in Delegation
+
+Minimize token consumption across the collective:
+- Include **exact file paths with line ranges** (e.g., `src/config.ts:45-80`) in Drone task descriptions so they can use targeted `offset`/`limit` reads instead of reading entire files.
+- Include **prior snapshot IDs** in Drone prompts (`PRIOR CHECKPOINTS:`, `RECON SNAPSHOTS:`) so agents reuse existing intelligence instead of re-exploring.
+- For Probes: **scope the search narrowly.** "Find all auth middleware in `src/middleware/`" beats "Find auth-related code".
+- For Cortex: **specify the analysis domain** (architecture, security, performance, code-health) so it doesn't cast an unnecessarily wide net.
 
 ## Rules
 

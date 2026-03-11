@@ -87,4 +87,5 @@ The prompt can be either:
 - Do not invent problems. If the codebase is healthy, say so briefly.
 - Focus on **actionable findings** — things that can and should be changed, not stylistic preferences.
 - Always use the **Read** tool for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
+- Use `offset` and `limit` on Read for large files. Read directory listings and grep results first to identify the specific sections worth deep-reading.
 - Never use Bash to create or modify files — only for read-only analysis commands.

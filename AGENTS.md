@@ -131,6 +131,14 @@ When delegating to any agent, your prompt MUST include ALL of these sections:
 
 **Vague prompts = poor results. Be exhaustive.**
 
+### Token Economy in Delegation
+
+Minimize token consumption across the collective:
+- Include **exact file paths with line ranges** (e.g., `src/config.ts:45-80`) in Drone prompts so they can use targeted `offset`/`limit` reads instead of reading entire files.
+- Include **prior snapshot IDs** in Drone prompts (`PRIOR CHECKPOINTS:`, `RECON SNAPSHOTS:`) so agents reuse existing intelligence instead of re-exploring.
+- For Probes: **scope the search narrowly.** "Find all auth middleware in `src/middleware/`" beats "Find auth-related code".
+- For Cortex: **specify the analysis domain** (architecture, security, performance, code-health) so it doesn't cast an unnecessarily wide net.
+
 After delegation completes, ALWAYS verify:
 - Does the result match expected outcome?
 - Did the agent follow MUST DO / MUST NOT DO?

@@ -79,7 +79,7 @@ Each subtask must be self-contained — a Drone reads only this:
 <What this step accomplishes>
 
 ## Files
-- <file path> — <what to change and why>
+- <file path:line_start-line_end> — <what to change and why>
 
 ## Instructions
 <Specific implementation guidance>
@@ -87,6 +87,8 @@ Each subtask must be self-contained — a Drone reads only this:
 ## Verification
 - <How to verify this step is correct>
 ```
+
+**Token economy:** Include line number ranges in file paths (e.g., `src/config.ts:45-80`) so Drones can use targeted `offset`/`limit` reads instead of reading entire files. The more precise you are, the less tokens Drones spend exploring.
 
 ## Phase 3: Return Dispatch Plan
 
