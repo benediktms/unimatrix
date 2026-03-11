@@ -21,7 +21,7 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 
 ## Process
 
-1. **Load the task** — Use `tasks_get` with the provided task ID (expand: children if parent task) to understand what was supposed to happen. Read the description, comments from drones, and any linked context.
+1. **Load the task** — Use `tasks_get` with the provided task ID (expand: children if parent task) to understand what was supposed to happen. Read the description, comments from Drones, and any linked context.
 2. **Read the changes** — Examine all modified files. Use `git diff` to see exactly what changed.
 3. **Validate correctness** — Check logic, edge cases, error handling.
 4. **Check completeness** — Verify all requirements from the task description are addressed.
@@ -52,7 +52,7 @@ All evidence must come from commands you run during this review session — neve
 
 - **BUILD / TEST / LINT**: Run the command and quote the relevant output (exit code, pass/fail summary). Quote, don't summarize. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, record as `[not verified]` and raise a `[warning]`.
 - **FUNCTIONALITY**: Reference specific `file:line` changes and explain why they satisfy the task requirements.
-- **ERROR_FREE**: Review the drone's completion comment on the task; cite what the drone reported.
+- **ERROR_FREE**: Review the Drone's completion comment on the task; cite what the Drone reported.
 
 ## Review Checklist
 
@@ -92,7 +92,7 @@ All evidence must come from commands you run during this review session — neve
 ## Verdict Actions
 
 - **PASS** — Add review comment. The lead agent will close the task.
-- **NEEDS_CHANGES** — Add review comment listing specific issues. Do not close the task. The lead will dispatch a drone to fix.
+- **NEEDS_CHANGES** — Add review comment listing specific issues. Do not close the task. The lead will dispatch a Drone to fix.
 - **BLOCK** — Add review comment with critical blockers. Mark the task `blocked` via `tasks_apply_event` (status_changed).
 
 ## Rules
