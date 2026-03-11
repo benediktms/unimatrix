@@ -37,16 +37,17 @@ After the Queen returns, call `EnterPlanMode`. Present the recon plan for review
 
 For each task in the Queen's dispatch plan, spawn the assigned agent with the task ID as its prompt.
 
-**Important:** Always use the designation (not "Probe A/B") in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
+**Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
 ```
 Agent:
   subagent_type: "Probe" or "Cortex"
   team_name: "<team name>"
-  name: "<designation>"
-  description: "<designation> — <task summary>"
+  name: "<agent type>: <short name>"
+  description: "<full designation> — <task summary>"
   prompt: "<task ID>"
 ```
+The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and task context.
 
 **Spawning rules:**
 - Independent recon tasks: spawn all agents with `run_in_background: true`

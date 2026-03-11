@@ -96,11 +96,12 @@ The Queen creates recon brain tasks and returns a recon dispatch plan.
 Agent:
   subagent_type: "Probe" or "Cortex"
   team_name: "<team name>"
-  name: "<designation>"
-  description: "<designation> — <task summary>"
+  name: "<agent type>: <short name>"
+  description: "<full designation> — <task summary>"
   prompt: "<task ID>"
   run_in_background: true
 ```
+The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and task context.
 4. Wait for all recon agents to complete
 
 #### Step 2c: Collect Recon Results
@@ -155,14 +156,14 @@ If a team was already created in Step 2b, reuse it. Otherwise:
 
 For each wave in the Queen's dispatch plan, spawn Drones as team members.
 
-**Important:** Always use the designation (not "Drone A/B") in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
+**Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
 ```
 Agent:
   subagent_type: "Drone"
   team_name: "<team name>"
-  name: "<designation>"
-  description: "<short designation> — <task summary>"
+  name: "Drone: <short name>"
+  description: "<full designation> — <task summary>"
   prompt: |
     You are Drone <designation> executing brain task <task-id> — "<task title>".
     <mode block if applicable>
@@ -204,7 +205,8 @@ When all Drones complete, spawn a `Vinculum` agent:
 ```
 Agent:
   subagent_type: "Vinculum"
-  name: "<designation from the pre-generated batch>"
+  name: "Vinculum: <short name>"
+  description: "<full designation> — review"
   prompt: "<parent task ID>"
 ```
 
