@@ -1,51 +1,19 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task. The queen plans, decides dispatch strategy (sequential, sequence, or swarm), and orchestrates execution.
+description: Assemble the collective to execute a complex task. The queen plans, the lead dispatches a team of drones, vinculum reviews.
 ---
 
 # /assemble
 
-Invoke the **queen** agent to handle a complex task end-to-end: plan it, decide the optimal dispatch strategy, create brain tasks, dispatch drones, review the work, and close the epic.
+Orchestrate a complex task end-to-end: spawn the queen for planning, then execute her dispatch plan by creating a team of drones.
 
-## Behavior
+## Flow
 
-1. Delegate to the `queen` agent with the user's request
-2. The queen will:
-   - Research the codebase and produce a plan
-   - Recommend a dispatch mode (sequential, sequence, or swarm) with rationale
-   - Present the plan for user approval (plan mode)
-   - After approval, create brain tasks with dependencies
-   - Dispatch drone agents according to the chosen strategy
-   - Trigger vinculum review when all steps complete
-   - Close the epic on PASS
+### Step 1: Spawn Queen for Planning
 
-## Dispatch Modes
+Spawn the `queen` agent with the user's request. She will research the codebase, produce a plan, create brain tasks (with subtasks and dependencies), and return a structured dispatch plan.
 
-The queen evaluates the plan and recommends one of three dispatch strategies:
-
-### Sequential (queen-supervised)
-Steps have dependencies — drones execute in waves, with the queen staying alive to monitor progress and pass context between waves.
-
-**Use when:** multi-step features with short chains (2 steps), refactors with ordering constraints, changes where the queen needs to make decisions between steps or dynamically re-plan based on results.
-
-### Sequence (relay)
-Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The queen dispatches but does not stay alive for the happy path.
-
-**Use when:** long sequential chains (3+ steps), orchestrations where queen compaction is a risk, chains where each step's context can be summarized concisely for the next.
-
-**Avoid when:** steps require dynamic re-planning based on results, the queen needs to make decisions between steps, chains are short (2 steps — just use sequential).
-
-### Swarm
-Steps are independent — drones execute in parallel on the main tree simultaneously with file-partitioned boundaries.
-
-**Use when:** bulk changes, convention enforcement, independent file groups, migrations across many files with no cross-file dependencies.
-
-The queen includes her dispatch mode recommendation in the plan with a brief rationale. The user can override before approval.
-
-## Dispatch Prompt
-
-When spawning the queen agent, use this prompt template:
-
+Queen prompt template:
 ```
 You are the Queen of Unimatrix Zero. A new directive has entered the collective:
 
@@ -53,6 +21,83 @@ You are the Queen of Unimatrix Zero. A new directive has entered the collective:
 
 Designate this objective. Begin at once.
 ```
+
+The queen returns a **Dispatch Plan** containing the parent task ID, wave structure, and task assignments.
+
+### Step 2: Create Team and Generate Designations
+
+1. Create a team: `TeamCreate` with a descriptive `team_name`
+2. Generate designations: `/designate <drone-count> --role drone` (add `--swarm` for swarm-only plans)
+
+### Step 3: Dispatch Drones
+
+For each wave in the queen's dispatch plan, spawn drones as team members:
+
+```
+Agent:
+  subagent_type: "drone"
+  team_name: "<team name>"
+  name: "<designation>"
+  description: "<designation> — <task summary>"
+  prompt: |
+    You are Drone <designation> executing brain task <task-id> — "<task title>".
+    <mode block if applicable>
+    <prior checkpoints if applicable>
+```
+
+**Mode blocks — append based on wave type:**
+
+For **parallel waves** with non-overlapping files:
+```
+FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other drones are working on other files in parallel — touching their files will cause conflicts.
+```
+
+For **sequential waves**, no special block needed.
+
+**Prior checkpoints — for waves that depend on earlier waves:**
+
+After a wave completes, read each drone's completion comment to extract snapshot IDs. Pass them to the next wave's drones:
+```
+PRIOR CHECKPOINTS: <snapshot-id-1>, <snapshot-id-2>
+```
+
+**Spawning rules:**
+- Parallel wave: spawn all drones with `run_in_background: true`
+- Sequential wave: spawn one drone, wait for completion
+- Wait for all drones in a wave to complete before starting the next wave
+
+### Step 4: Monitor
+
+- Drones send idle notifications when done — you'll be notified automatically
+- Check brain tasks for completion status
+- If a drone marks a task `blocked`, assess and either re-dispatch or escalate to the user
+
+### Step 5: Review
+
+When all drones complete, spawn a `vinculum` agent:
+```
+Agent:
+  subagent_type: "vinculum"
+  name: "<designation from /designate 1 --role vinculum>"
+  prompt: "<parent task ID>"
+```
+
+### Step 6: Handle Verdict
+
+- **PASS** — Close all subtasks and the parent task via `tasks_close`. Write collective memory via `memory_write_episode`. Clean up the team.
+- **NEEDS_CHANGES** — Spawn new drones to fix specific issues, then re-run vinculum.
+- **BLOCK** — Report blockers to user.
+
+### Step 7: Cleanup
+
+1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
+2. Delete team: `TeamDelete`
+
+## Post-Wave Git Discipline
+
+- **File-partitioned drones:** No merge needed — changes are on the main tree.
+- **Worktree drones:** Squash-merge branches before the next wave (`git merge --squash <branch>`). On conflict: abort, dispatch a drone to rebase, retry.
+- **Sequential drones:** No merge needed — drones run serially.
 
 ## Usage
 

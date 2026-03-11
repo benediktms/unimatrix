@@ -26,7 +26,8 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 4. **Read the code** — Always read existing code before modifying it. Understand context.
 5. **Implement** — Make the minimal set of changes needed to complete the task.
 6. **Verify** — Run tests, linters, or type checks as specified in the task's verification criteria. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, note what you verified manually and flag the gap in your completion comment.
-7. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) summarizing what you changed, what you verified, and any issues encountered.
+7. **Save completion snapshot** — See Completion Snapshot below. Note the returned snapshot ID.
+8. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) that includes: what you changed, what you verified, any issues, and the **snapshot ID** (e.g., `Snapshot: UNM-01KKE...`). The lead uses this ID to pass context to subsequent drones.
 
 ## Rules
 
@@ -59,31 +60,28 @@ Your prompt will contain `WORKTREE ISOLATION ACTIVE` when you are running in an 
 4. **Never navigate outside your worktree.** All reads, edits, writes, and bash commands must target files under your worktree root.
 5. **Diagnose missing files.** If expected files or changes are missing, run `git log --oneline -5` and `git branch -a`. The worktree may be based on a stale commit — mark the task `blocked` and report the gap.
 
-## Sequence Handoff
+## Completion Snapshot
 
-Your prompt will contain `SEQUENCE HANDOFF ACTIVE` when you are part of a sequence relay — a chain of drones executing sequential steps, each passing context to the next via Brain record snapshots.
+Every drone saves a checkpoint on completion. This enables context handoff between waves — subsequent drones can fetch prior checkpoints to understand what changed.
 
-### Reading Prior Context
+### Saving Your Checkpoint
 
-If your prompt includes `PRIOR STEP CONTEXT:`, read it carefully — it contains a handoff snapshot from the previous drone summarizing what was done and what you need to know. Use this context to inform your implementation, but your brain task description remains your primary directive.
+After committing your changes:
 
-### Saving Your Handoff
-
-After completing your task and committing your changes, you **must** save a handoff snapshot for the next drone:
-
-1. Compose a concise markdown document (aim for under 2KB) with these sections:
+1. Compose a concise markdown document (under 2KB) with these sections:
    - `## Summary` — What you changed (file paths, function names) and key decisions made.
-   - `## Context for Next Step` — Specific information the next drone needs: state of the codebase, gotchas discovered, any deviations from the plan, open items.
+   - `## Context for Next Step` — Information a subsequent drone might need: state of the codebase, gotchas discovered, deviations from the plan, open items.
 2. Base64-encode the markdown content.
 3. Save via `records_save_snapshot` with:
-   - `title`: `"Sequence handoff: <epic-id> step <N>"` (epic ID and step number are in your prompt)
-   - `tags`: `["sequence:<epic-id>", "step:<N>"]`
+   - `title`: `"Drone checkpoint: <task-id>"`
+   - `tags`: `["drone-checkpoint", "parent:<parent-task-id>"]`
    - `task_id`: your brain task ID
    - `data`: the base64-encoded markdown
    - `media_type`: `"text/markdown"`
+4. Include the returned snapshot ID in your completion comment.
 
-### Rules for Sequence Mode
+If you encounter a blocker, still save a checkpoint documenting the blocker state before marking your task as blocked.
 
-- Keep snapshots focused. Include only information the next drone genuinely needs — not a dump of everything you did.
-- If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the queen assess without needing your full conversation history.
-- You are running on the main tree (not a worktree). The previous drone's commits are already in your working directory.
+### Reading Prior Context
+
+If your prompt includes `PRIOR CHECKPOINTS:` followed by snapshot IDs, fetch them via `records_fetch_content` and base64-decode. Use this context to inform your implementation, but your brain task description remains your primary directive.
