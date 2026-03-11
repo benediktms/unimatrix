@@ -8,7 +8,7 @@ claude:
   maxTurns: 50
 opencode:
   description: Focused task executor that implements a single well-defined step. Use for code changes, file creation, refactoring, and other hands-on implementation work. Pass a brain task ID as the prompt.
-  mode: primary
+  mode: subagent
   steps: 50
   permission: {"*": allow}
   tools: {task: false}
