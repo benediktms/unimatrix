@@ -11,6 +11,7 @@ Orchestrate a reconnaissance mission: spawn the Queen to scope the investigation
 
 ### Step 1: Spawn Queen for Scoping
 
+<!-- @claude -->
 Spawn the `Queen` agent with the recon question. She will assess what needs to be investigated, decide which agent types are needed (Probe for structural questions, Cortex for deep analysis), create brain tasks for each recon piece, and return a dispatch plan.
 
 Queen prompt template:
@@ -23,6 +24,14 @@ Scope this investigation. For each question or area that needs exploration, crea
 ```
 
 The Queen returns a **Dispatch Plan** with task IDs and agent assignments.
+<!-- @end -->
+<!-- @opencode -->
+You ARE the planning agent. Scope the investigation directly.
+
+For each question or area that needs exploration, create a brain task (type: task, not epic) with a clear description of what to find or analyze. Assign each task to either `Probe` (structural — find files, trace paths, locate patterns) or `Cortex` (analytical — architecture audit, security review, health assessment). Group into a single epic if multiple tasks are needed.
+
+Produce a recon dispatch plan with task IDs and agent assignments.
+<!-- @end -->
 
 ### Step 1b: Enter Plan Mode
 
