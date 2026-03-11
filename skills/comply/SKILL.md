@@ -1,9 +1,9 @@
 ---
-name: review
-description: Review recent changes using the vinculum agent to validate correctness and quality.
+name: comply
+description: Review recent changes using the vinculum agent to validate correctness and quality. You will comply.
 ---
 
-# /review
+# /comply
 
 Invoke the **vinculum** agent to validate recent changes. The vinculum applies evidence-based verification — every claim in its review is backed by command output or explicit file:line citations.
 
@@ -44,7 +44,7 @@ Analyze the changes. Validate correctness. Collect evidence. Report.
 ## Usage
 
 ```
-/review                    # Review all uncommitted changes
-/review <task-id>          # Review changes for a brain task
-/review <file-or-path>     # Review changes in specific files
+/comply                    # Review all uncommitted changes
+/comply <task-id>          # Review changes for a brain task
+/comply <file-or-path>     # Review changes in specific files
 ```

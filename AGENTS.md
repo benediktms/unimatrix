@@ -5,7 +5,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 ## Structure
 
 - `agents/` — Agent definitions (markdown + YAML frontmatter)
-- `skills/` — Slash command skills (`/assemble`, `/start-work`, `/review`)
+- `skills/` — Slash command skills (`/assemble`, `/start-work`, `/comply`)
 - `rules/` — Routing and coordination rules
 - `hooks/` — Shell scripts for automation (future)
 - `install.sh` — Symlink installer (global or per-project)
@@ -38,7 +38,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 | `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy, execute, and review |
 | `/start-work` | Resume execution of a previously planned epic |
-| `/review` | Validate changes via adjunct agent |
+| `/comply` | Validate changes via vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel drones for bulk changes |
 | `/adapt` | Iterative refinement loop — drone implements, vinculum reviews, repeat until pass |
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
