@@ -11,6 +11,7 @@ opencode:
   mode: subagent
   steps: 15
   permission: {"*": allow}
+  reasoningEffort: low
   tools: {task: false}
 ---
 

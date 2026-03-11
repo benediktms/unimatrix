@@ -202,7 +202,7 @@ Create the recon brain tasks and produce a recon dispatch plan.
 
 #### Step 2b: Dispatch Recon Agents
 
-1. Generate designations: `/designate <count> --trimatrix` — use `--role Probe` for Probes, `--role Vinculum` for Cortex agents
+1. Generate designations: `/designate <count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents
 <!-- @claude -->
 2. Create a team: `TeamCreate`
 3. Dispatch agents with their brain task IDs as prompts:
@@ -315,13 +315,13 @@ Generate designations: `/designate <total-agent-count> --trimatrix` — use `--r
 Coordination happens through Brain tasks and records. No team management needed.
 <!-- @end -->
 
-### Step 5: Dispatch Drones
+### Step 5: Dispatch Adjuncts
 
 <!-- @claude -->
-For each wave in the Queen's dispatch plan, spawn Drones as team members.
+For each wave in the Queen's dispatch plan, spawn agents as team members. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
 <!-- @end -->
 <!-- @opencode -->
-For each wave in your dispatch plan, spawn Drones as team members.
+For each wave in your dispatch plan, spawn agents. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
 <!-- @end -->
 
 **Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
@@ -329,12 +329,12 @@ For each wave in your dispatch plan, spawn Drones as team members.
 <!-- @claude -->
 ```
 Agent:
-  subagent_type: "Drone"
+  subagent_type: "Drone" or "Subroutine"
   team_name: "<team name>"
-  name: "Drone: <short name>"
+  name: "<agent type>: <short name>"
   description: "<full designation> — <task summary>"
   prompt: |
-    You are Drone <designation> executing brain task <task-id> — "<task title>".
+    You are <agent type> <designation> executing brain task <task-id> — "<task title>".
     <mode block if applicable>
     <prior checkpoints if applicable>
     <recon snapshots if applicable>
@@ -343,11 +343,11 @@ Agent:
 <!-- @opencode -->
 ```
 task(
-  subagent_type="drone",
-  description="Drone: <short name>",
+  subagent_type="drone" or "subroutine",
+  description="<agent type>: <short name>",
   run_in_background=true,
   prompt="""
-You are Drone <designation> executing brain task <task-id> — \"<task title>\".
+You are <agent type> <designation> executing brain task <task-id> — \"<task title>\".
 <mode block if applicable>
 <prior checkpoints if applicable>
 <recon snapshots if applicable>

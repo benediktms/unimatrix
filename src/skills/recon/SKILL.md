@@ -46,10 +46,10 @@ After the Queen returns, present the recon plan for review. When approved, proce
 
 <!-- @claude -->
 1. Create a team: `TeamCreate` with a descriptive `team_name`
-2. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Vinculum` for Cortex agents (Auxiliary Processor fits the analytical role). Generate enough for all agents across all waves.
+2. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Cortex` for Cortex agents. Generate enough for all agents across all waves.
 <!-- @end -->
 <!-- @opencode -->
-1. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Vinculum` for Cortex agents (Auxiliary Processor fits the analytical role). Generate enough for all agents across all waves.
+1. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Cortex` for Cortex agents. Generate enough for all agents across all waves.
 2. Coordination happens through Brain tasks and records. No team management needed.
 <!-- @end -->
 
