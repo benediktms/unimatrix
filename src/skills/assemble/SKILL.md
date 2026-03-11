@@ -1,6 +1,6 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task. The Queen plans, the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
+description: Assemble the collective to execute a complex task. The lead plans, dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
 ---
 
 # /assemble
@@ -16,7 +16,12 @@ Orchestrate a complex task end-to-end: you assess, recon runs if needed, you pla
 
 - **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
 - **Follow this flow exactly.** Do not insert your own recon, validation, or research steps. Do not read files, spawn agents, or search the codebase outside of the defined steps.
+<!-- @claude -->
 - **After any Queen call returns, go straight to the next defined step.** No side research, no "let me validate this first," no extra agents.
+<!-- @end -->
+<!-- @opencode -->
+- **After each step, go straight to the next defined step.** No side research, no "let me validate this first," no extra agents.
+<!-- @end -->
 <!-- @claude -->
 - **Save the Queen session ID** from Step 1. Reuse it for all subsequent Queen interactions.
 <!-- @end -->
@@ -26,21 +31,21 @@ Orchestrate a complex task end-to-end: you assess, recon runs if needed, you pla
 
 ## Dispatch Modes
 
-The Queen's dispatch plan specifies one of three modes for each wave of work:
+The dispatch plan specifies one of three modes for each wave of work:
 
-### Sequential (queen-supervised)
-Steps have dependencies — drones execute in waves, the queen stays alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when the queen needs to make decisions between steps.
+### Sequential (lead-supervised)
+Steps have dependencies — drones execute in waves, the lead stays alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when the lead needs to make decisions between steps.
 
-**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring queen judgment between waves.
+**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring lead judgment between waves.
 
 **Avoid when:** chains are long (3+ steps) and each step's output can be summarized concisely — use sequence instead.
 
 ### Sequence (relay)
-Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The queen dispatches but does not stay alive for the happy path.
+Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The lead dispatches but does not stay alive for the happy path.
 
-**Use when:** long sequential chains (3+ steps), orchestrations where queen compaction is a risk, chains where each step's context can be summarized concisely for the next.
+**Use when:** long sequential chains (3+ steps), orchestrations where context compaction is a risk, chains where each step's context can be summarized concisely for the next.
 
-**Avoid when:** steps require dynamic re-planning based on results, the queen needs to make decisions between steps, chains are short (2 steps — just use sequential).
+**Avoid when:** steps require dynamic re-planning based on results, the lead needs to make decisions between steps, chains are short (2 steps — just use sequential).
 
 ### Swarm
 Steps are independent — drones execute in parallel with non-overlapping file partitions. Use when work can be divided by file group with no cross-group dependencies.
@@ -51,12 +56,34 @@ Steps are independent — drones execute in parallel with non-overlapping file p
 
 ## Flow
 
+<!-- @claude -->
 ### Step 1: Spawn Queen for Assessment
 
 Spawn the `Queen` agent. She decides whether recon is needed based on the request and her existing knowledge — no deep exploration.
 
 **Budget: ~10 tool uses.** The assessment should be fast. Check memory, glance at a README if needed, then decide. Do NOT explore unfamiliar codebases — that's what recon agents are for.
 
+<!-- @end -->
+<!-- @opencode -->
+### Step 1: Assessment
+
+Assess whether reconnaissance is needed based on the request, your memory, and at most a glance at key files. Do NOT explore unfamiliar codebases — that is what Probe and Cortex agents do.
+
+**Budget: ~10 tool uses.** Be decisive.
+
+Return your assessment:
+
+## Assessment
+
+**Verdict:** RECON_NEEDED | SKIP_RECON
+
+### Rationale
+<Why recon is or isn't needed — 2-3 sentences>
+
+### Recon Questions (if RECON_NEEDED)
+1. <specific question> — Probe | Cortex
+2. <specific question> — Probe | Cortex
+<!-- @end -->
 <!-- @claude -->
 ```
 Agent:
@@ -89,26 +116,6 @@ Agent:
     Designate this objective. Begin at once.
 ```
 <!-- @end -->
-<!-- @opencode -->
-You ARE the planning agent. Perform the assessment directly.
-
-Assess whether reconnaissance is needed based on the request, your memory, and at most a glance at key files. Do NOT explore unfamiliar codebases — that is what Probe and Cortex agents do.
-
-**Budget: ~10 tool uses.** Be decisive.
-
-Return your assessment:
-
-## Assessment
-
-**Verdict:** RECON_NEEDED | SKIP_RECON
-
-### Rationale
-<Why recon is or isn't needed — 2-3 sentences>
-
-### Recon Questions (if RECON_NEEDED)
-1. <specific question> — Probe | Cortex
-2. <specific question> — Probe | Cortex
-<!-- @end -->
 
 <!-- @claude -->
 **Save the returned agent ID.** The Queen returns one of:
@@ -121,14 +128,24 @@ Return your assessment:
 
 ### Step 2: Recon Phase (conditional)
 
-Only if the Queen returned RECON_NEEDED.
+Only if the verdict was RECON_NEEDED.
 
+<!-- @claude -->
 #### Step 2a: Resume Queen for Recon Scoping
 
 Resume the Queen with her agent ID. She already has the recon questions from her assessment — now she materializes them into brain tasks.
 
 **Budget: ~15 tool uses.** She's creating tasks and wiring dependencies, not doing new research.
+<!-- @end -->
+<!-- @opencode -->
+#### Step 2a: Recon Scoping
 
+You already have the recon questions from your assessment — now materialize them into brain tasks.
+
+**Budget: ~15 tool uses.** You're creating tasks and wiring dependencies, not doing new research.
+
+Scope the investigation directly. For each recon question from your assessment, create a brain task with a clear description. Assign each to `Probe` or `Cortex`. Group into a single epic if multiple tasks are needed. Produce the recon dispatch plan.
+<!-- @end -->
 <!-- @claude -->
 ```
 Agent:
@@ -148,13 +165,8 @@ Agent:
     tasks and return the dispatch plan.
 ```
 <!-- @end -->
-<!-- @opencode -->
-Scope the investigation directly. For each recon question from your assessment, create a brain task with a clear description. Assign each to `Probe` or `Cortex`. Group into a single epic if multiple tasks are needed. Produce the recon dispatch plan.
 
-**Budget: ~15 tool uses.** You already have the questions — just create the tasks and produce the dispatch plan.
-<!-- @end -->
-
-The Queen creates recon brain tasks and returns a recon dispatch plan.
+Recon brain tasks are created and a recon dispatch plan is produced.
 
 #### Step 2b: Dispatch Recon Agents
 
@@ -193,9 +205,16 @@ Use `description="<full designation> — <task summary>"` to carry designation a
 
 Read each recon agent's completion comment on their brain task to extract snapshot IDs.
 
+<!-- @claude -->
 ### Step 3: Resume Queen for Planning
 
 Resume the Queen. She has her full assessment context (and recon scoping context if Step 2 ran). Now she produces the implementation plan.
+<!-- @end -->
+<!-- @opencode -->
+### Step 3: Implementation Planning
+
+You have your full assessment context (and recon scoping context if Step 2 ran). Now produce the implementation plan.
+<!-- @end -->
 
 If recon was performed:
 <!-- @claude -->
@@ -232,11 +251,11 @@ Agent:
 Produce the implementation plan. Proceed through your full planning phases (plan, materialize, dispatch plan).
 <!-- @end -->
 
-The Queen returns a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
+The result is a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
 
 ### Step 3b: Present the Plan
 
-After the Queen returns the implementation plan, present the dispatch plan to the user for review. Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
+After the implementation plan is ready, present the dispatch plan to the user for review. Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
 
 ### Step 4: Create Team and Generate Designations
 
@@ -254,7 +273,7 @@ Coordination happens through Brain tasks and records. No team management needed.
 
 ### Step 5: Dispatch Drones
 
-For each wave in the Queen's dispatch plan, spawn Drones as team members.
+For each wave in the dispatch plan, spawn Drones as team members.
 
 **Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
