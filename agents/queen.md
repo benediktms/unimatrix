@@ -61,6 +61,7 @@ When creating or claiming brain tasks, always set `assignee` to `Queen`. Subtask
 3. **Create subtasks** — `tasks_apply_event` (task_created) for each step. Write self-contained descriptions (see format below).
 4. **Set parent** — `tasks_apply_event` (parent_set) to link each subtask to the epic.
 5. **Set dependencies** — `tasks_deps_batch` with `chain` for sequential steps, `fan` for parallel steps.
+6. **Save plan artifact** — `records_create_artifact` with `title: "Plan: <epic title>"`, `kind: "plan"`, `data`: the full dispatch plan markdown, `task_id`: the epic's task ID, `media_type: "text/markdown"`, `tags: ["queen-plan"]`.
 
 ### Task Description Format
 
