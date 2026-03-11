@@ -47,12 +47,24 @@ def run_brain(args, stdin_data=None):
         return None
 
 
+def extract_tasks(result):
+    """Extract task list from brain CLI response (handles both list and dict formats)."""
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        return result.get("tasks", [])
+    return []
+
+
 def query_tasks(status):
     """Query brain for tasks with a given status, returning a list."""
     result = run_brain(["tasks", "list", "--json", f"--status={status}"])
-    if isinstance(result, list):
-        return result
-    return []
+    return extract_tasks(result)
+
+
+COLUMN_KEY_MAP = {
+    "id": "task_id",
+}
 
 
 def format_task_table(tasks, columns):
@@ -66,6 +78,7 @@ def format_task_table(tasks, columns):
         cells = []
         for col in columns:
             key = col.lower().replace(" ", "_")
+            key = COLUMN_KEY_MAP.get(key, key)
             cells.append(str(t.get(key, "-")))
         rows.append("| " + " | ".join(cells) + " |")
     return "\n".join([header, sep] + rows)
@@ -186,11 +199,9 @@ def main():
     # Query brain for tasks
     tasks_in_progress = query_tasks("in_progress")
     tasks_open = query_tasks("open")
-    tasks_blocked = []
     # Blocked tasks: query separately
     blocked_result = run_brain(["tasks", "list", "--json", "--blocked"])
-    if isinstance(blocked_result, list):
-        tasks_blocked = blocked_result
+    tasks_blocked = extract_tasks(blocked_result)
 
     # Load active agents state
     agents_path = os.path.join(STATE_DIR, f"unimatrix-agents-{session_id}.json")
