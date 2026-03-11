@@ -22,12 +22,12 @@ MAGENTA = "\033[35m"
 RESET = "\033[0m"
 
 AGENT_STYLES = {
-    "queen": (MAGENTA + BOLD, "QUEEN"),
-    "drone": (GREEN + BOLD, "DRONE"),
-    "vinculum": (CYAN + BOLD, "VINCULUM"),
-    "probe": (YELLOW + BOLD, "PROBE"),
-    "cortex": (CYAN + BOLD, "CORTEX"),
-    "subroutine": (DIM, "SUBROUTINE"),
+    "Queen": (MAGENTA + BOLD, "QUEEN"),
+    "Drone": (GREEN + BOLD, "DRONE"),
+    "Vinculum": (CYAN + BOLD, "VINCULUM"),
+    "Probe": (YELLOW + BOLD, "PROBE"),
+    "Cortex": (CYAN + BOLD, "CORTEX"),
+    "Subroutine": (DIM, "SUBROUTINE"),
 }
 
 STALE_SECONDS = 15 * 60  # 15 minutes
@@ -224,15 +224,23 @@ def main():
 
     # Subagent type counts
     if type_counts:
-        TYPE_ORDER = ["drone", "probe", "vinculum", "cortex", "subroutine", "queen"]
+        BORG_TYPES = {"Drone", "Probe", "Vinculum", "Cortex", "Subroutine", "Queen"}
+        TYPE_ORDER = ["Drone", "Probe", "Vinculum", "Cortex", "Subroutine", "Queen"]
         count_parts = []
+        seen = set()
         for t in TYPE_ORDER:
             n = type_counts.get(t, 0)
             if n > 0:
                 label_t = t + ("s" if n != 1 else "")
-                count_parts.append(f"{n} {label_t}")
+                count_parts.append(f"{GREEN}{n} {label_t}{RESET}")
+                seen.add(t)
+        for t in sorted(type_counts):
+            if t not in seen:
+                n = type_counts[t]
+                label_t = t + ("s" if n != 1 else "")
+                count_parts.append(f"{DIM}{n} {label_t}{RESET}")
         if count_parts:
-            parts.append(f"{DIM}{' \u00b7 '.join(count_parts)}{RESET}")
+            parts.append(f"{' \u00b7 '.join(count_parts)}")
 
     print("  ".join(parts))
 

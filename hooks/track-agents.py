@@ -59,7 +59,7 @@ def main():
 
     if event == "SubagentStart":
         state["active"][agent_id] = {
-            "type": agent_type.lower(),
+            "type": agent_type,
             "started_at": time.time(),
         }
     elif event == "SubagentStop":

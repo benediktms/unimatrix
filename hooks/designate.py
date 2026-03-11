@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Generate Borg-style designations for agents.
 
-Usage: designate.py <N> [--role drone|vinculum|probe] [--trimatrix] [--swarm]
+Usage: designate.py <N> [--role Drone|Vinculum|Probe] [--trimatrix] [--swarm]
   N           = number of agents to generate designations for.
   --role      = agent type (determines Borg functional title).
   --trimatrix = use "Trimatrix <random>" instead of "Unimatrix Zero".
   --swarm     = legacy alias for --trimatrix.
 
 Role → functional title mapping:
-  drone    → Tactical Adjunct
-  vinculum → Auxiliary Processor
-  probe    → Adjunct (generic)
+  Drone    → Tactical Adjunct
+  Vinculum → Auxiliary Processor
+  Probe    → Adjunct
   (default) → Adjunct
 
 If N > 1, generates "X of N" with shuffled positions.
@@ -33,10 +33,10 @@ ORDINALS = [
 ]
 
 ROLE_TITLES = {
-    "drone": "Tactical Adjunct",
-    "vinculum": "Auxiliary Processor",
-    "probe": "Adjunct",
-    "cortex": "Cortical Processing Adjunct",
+    "Drone": "Tactical Adjunct",
+    "Vinculum": "Auxiliary Processor",
+    "Probe": "Adjunct",
+    "Cortex": "Cortical Processing Adjunct",
 }
 
 
@@ -68,7 +68,7 @@ def designate(n: int, role: str | None = None, swarm: bool = False) -> list[str]
 def main():
     parser = argparse.ArgumentParser(description="Generate Borg-style designations")
     parser.add_argument("n", type=int, help="Number of designations to generate (1-12)")
-    parser.add_argument("--role", choices=["drone", "vinculum", "probe", "cortex"],
+    parser.add_argument("--role", choices=["Drone", "Vinculum", "Probe", "Cortex"],
                         help="Agent type (determines Borg functional title)")
     parser.add_argument("--trimatrix", action="store_true",
                         help="Use Trimatrix <random> instead of Unimatrix Zero")
