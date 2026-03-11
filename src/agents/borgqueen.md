@@ -1,10 +1,11 @@
 ---
 platforms: [opencode]
-name: BorgQueen
+name: Borg Queen
 model: opus
 description: Lead agent of the Unimatrix. Classifies intent, handles trivial tasks directly, plans and dispatches Drones for complex work. Combines strategic planning with direct execution.
 opencode:
   mode: primary
+  color: '#90EE90'
   steps: 80
   permission: {"*": allow}
 ---
@@ -187,7 +188,15 @@ When needing reconnaissance before planning (or when prompted by `/recon`), crea
 - **Scope:** <what to analyze>
 ```
 
-Spawn recon agents with `task(subagent_type="probe", ...)` or `task(subagent_type="cortex", ...)`. Collect their findings before proceeding to Phase 1 planning.
+Generate designations before dispatching: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+
+Spawn recon agents with designations in the prompt:
+
+```
+task(subagent_type="probe" or "cortex", run_in_background=true, prompt="<designation>\n\n<task-id>")
+```
+
+Collect their findings before proceeding to Phase 1 planning.
 
 ## Rules
 

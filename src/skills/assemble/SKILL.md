@@ -202,7 +202,7 @@ Create the recon brain tasks and produce a recon dispatch plan.
 
 #### Step 2b: Dispatch Recon Agents
 
-1. Generate designations: `/designate <count> --trimatrix` — use `--role Probe` for Probes, `--role Vinculum` for Cortex agents
+1. Generate designations: `/designate <count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents
 <!-- @claude -->
 2. Create a team: `TeamCreate`
 3. Dispatch agents with their brain task IDs as prompts:
