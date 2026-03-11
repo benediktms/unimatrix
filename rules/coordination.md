@@ -18,6 +18,15 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - When steps have dependencies, run them one at a time
 - Pass prior checkpoint IDs from completed Drones to the next Drone's prompt
 
+## Sequence Execution (Relay)
+- For long sequential chains (3+ steps), use sequence relay mode to avoid queen compaction
+- Each drone saves a handoff snapshot via `records_save_snapshot` with tags `sequence:<epic-id>`, `step:<N>`
+- The next drone receives only the handoff snapshot as prior context, not the full conversation history
+- Drones run serially on the main tree — no worktree isolation or merge steps needed
+- On drone failure: the sequence halts, queen assesses and decides whether to re-dispatch, re-plan, or escalate
+- Snapshot content must be concise (under 2KB) — summary of changes, key decisions, and context for the next step
+- The queen does not need to stay alive between steps for the happy path; Brain records are the communication channel
+
 ## Mixed-Mode Execution
 - Plans are often mixed — some waves parallel, others sequential
 - A typical pattern: parallel foundation → sequential integration → parallel finishing
@@ -44,3 +53,4 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - **File-partitioned Drones:** Commit directly to the current branch. No merge step needed since files don't overlap.
 - **Worktree Drones — merge between waves:** After a wave of worktree Drones completes, the lead must merge their branches before dispatching the next wave. Merge strategy: squash-merge worktree branches (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a Drone to rebase the conflicting branch, then retry.
 - **Sequential Drones:** Commit directly to the current branch. No merge step needed since Drones run serially.
+- **Sequence relay drones:** Commit directly to the current branch. No merge step needed since drones run serially and each sees the previous drone's commits.
