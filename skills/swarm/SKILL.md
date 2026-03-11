@@ -16,28 +16,35 @@ Partition a codebase into logical file groups and dispatch parallel drones to ap
 
 ## Behavior
 
-1. Delegate to the `queen` agent with the user's request and scope
-2. The queen assesses whether the task is clear enough to partition immediately or needs research first:
+1. **Spawn Queen for Planning** — Delegate to the `queen` agent with the user's request and scope. The queen will:
+   - Research the codebase (dispatching a `probe` if needed)
+   - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. The queen decides the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups.
+   - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
+   - Return a dispatch plan with the parent task ID and partition assignments.
 
-   **If the task is straightforward** (e.g., "rename X to Y", clear scope):
-   - Use `probe` to discover files and partition directly
+2. **Generate Designations** — `/designate <N> --role drone --swarm`
 
-   **If the task needs research** (e.g., unclear scope, architectural questions, complex migration):
-   - Dispatch a `probe` agent to research the codebase and produce a structured report (affected files, patterns found, recommended approach, risks)
-   - Read the probe's report to inform partitioning
+3. **Dispatch Drones** — Spawn one drone per partition as file-partitioned drones (no worktree isolation — partitions are non-overlapping by design, drones work directly on the current branch):
+   ```
+   Agent:
+     subagent_type: "drone"
+     name: "<designation>"
+     description: "<designation> — <task summary>"
+     run_in_background: true
+     prompt: |
+       You are Drone <designation> executing brain task <task-id> — "<task title>".
+       FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other drones are working on other files in parallel — touching their files will cause conflicts.
+   ```
 
-3. The queen then:
-   - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. The queen decides the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups. Present the partition plan to the user for approval.
-   - Create brain tasks: one epic + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
-   - Generate Borg designations via `python3 hooks/designate.py <N> --role drone --swarm`
-   - Dispatch one drone per partition (no worktree isolation — partitions are non-overlapping by design, so drones work directly on the main tree)
-   - Monitor completion, check brain task comments for blockers
-   - Dispatch `vinculum` with the epic ID to review aggregate changes
-   - On PASS: close all subtasks and the epic
+4. **Monitor** — Wait for all drones to complete. Check brain task comments for blockers.
+
+5. **Review** — Dispatch `vinculum` with the parent task ID to review aggregate changes.
+
+6. **Handle Verdict** — On PASS: close all subtasks and the parent task. On NEEDS_CHANGES: spawn drones to fix. On BLOCK: escalate.
 
 ## Concurrency
 
-The queen decides how many drones to spawn based on the natural file partitions and task complexity. The hard maximum is **5** concurrent drones. The first argument can optionally be a number to lower this limit (e.g., `3` to cap at 3 drones). The limit can never exceed 5.
+The queen's dispatch plan determines how many drones to spawn based on the natural file partitions and task complexity. The hard maximum is **5** concurrent drones. The first argument can optionally be a number to lower this limit (e.g., `3` to cap at 3 drones). The limit can never exceed 5.
 
 ## Usage
 
