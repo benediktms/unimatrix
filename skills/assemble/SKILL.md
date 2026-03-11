@@ -31,14 +31,16 @@ The queen returns a **Dispatch Plan** containing the parent task ID, wave struct
 
 ### Step 3: Dispatch Drones
 
-For each wave in the queen's dispatch plan, spawn drones as team members:
+For each wave in the queen's dispatch plan, spawn drones as team members.
+
+**Important:** Always use the designation (not "Drone A/B") in both `name` and `description` — these appear in notifications and help identify which drone produced which output.
 
 ```
 Agent:
   subagent_type: "drone"
   team_name: "<team name>"
   name: "<designation>"
-  description: "<designation> — <task summary>"
+  description: "<short designation> — <task summary>"
   prompt: |
     You are Drone <designation> executing brain task <task-id> — "<task title>".
     <mode block if applicable>
