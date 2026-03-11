@@ -16,11 +16,19 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
 
 ## Behavior
 
+<!-- @claude -->
 1. **Spawn Queen for Planning** — Delegate to the `Queen` agent with the user's request and scope. The Queen will:
    - Research the codebase (dispatching a `Probe` if needed)
    - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. The Queen decides the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups.
    - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
    - Return a dispatch plan with the parent task ID and partition assignments.
+<!-- @end -->
+<!-- @opencode -->
+1. **Plan the partitions** — You ARE the planning agent. Research the codebase (dispatching a `Probe` if needed) and:
+   - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. Decide the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups.
+   - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
+   - Produce the dispatch plan with the parent task ID and partition assignments.
+<!-- @end -->
 
 2. **Generate Designations** — `/designate <N> --role Drone --trimatrix`
 
@@ -59,12 +67,12 @@ FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your t
 
 ## Concurrency
 
-The Queen's dispatch plan determines how many Drones to spawn based on the natural file partitions and task complexity. The hard maximum is **5** concurrent Drones. The first argument can optionally be a number to lower this limit (e.g., `3` to cap at 3 Drones). The limit can never exceed 5.
+The dispatch plan determines how many Drones to spawn based on the natural file partitions and task complexity. The hard maximum is **5** concurrent Drones. The first argument can optionally be a number to lower this limit (e.g., `3` to cap at 3 Drones). The limit can never exceed 5.
 
 ## Usage
 
 ```
-/swarm <description>                          # Queen decides Drone count (max 5)
+/swarm <description>                          # Planner decides Drone count (max 5)
 /swarm 3 <description>                        # Limit to 3 drones
 /swarm <description> --scope "src/**"         # Explicit glob scope
 ```
@@ -77,7 +85,7 @@ The Queen's dispatch plan determines how many Drones to spawn based on the natur
 
 This would:
 1. Find all .tsx files under src/components/
-2. Queen partitions by subdirectory (e.g., auth/, dashboard/, shared/) -- decides 3 Drones is optimal
+2. Planner partitions by subdirectory (e.g., auth/, dashboard/, shared/) -- decides 3 Drones is optimal
 3. Dispatch 3 Drones in parallel, each handling only its assigned files
 4. Review the aggregate diff
 5. Close on PASS
