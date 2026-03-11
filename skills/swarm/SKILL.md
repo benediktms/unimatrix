@@ -22,7 +22,7 @@ Partition a codebase into logical file groups and dispatch parallel drones to ap
    - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
    - Return a dispatch plan with the parent task ID and partition assignments.
 
-2. **Generate Designations** — `/designate <N> --role drone --swarm`
+2. **Generate Designations** — `/designate <N> --role drone --trimatrix`
 
 3. **Dispatch Drones** — Spawn one drone per partition as file-partitioned drones (no worktree isolation — partitions are non-overlapping by design, drones work directly on the current branch):
    ```

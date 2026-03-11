@@ -27,7 +27,7 @@ The queen returns a **Dispatch Plan** containing the parent task ID, wave struct
 ### Step 2: Create Team and Generate Designations
 
 1. Create a team: `TeamCreate` with a descriptive `team_name`
-2. Generate designations: `/designate <drone-count> --role drone` (add `--swarm` for swarm-only plans)
+2. Generate designations: `/designate <total-agent-count> --role drone --trimatrix` — always use `--trimatrix` so spawned agents get Trimatrix designations (Unimatrix Zero is the lead session). Generate enough for all agents across all waves, including the vinculum.
 
 ### Step 3: Dispatch Drones
 
@@ -80,7 +80,7 @@ When all drones complete, spawn a `vinculum` agent:
 ```
 Agent:
   subagent_type: "vinculum"
-  name: "<designation from /designate 1 --role vinculum>"
+  name: "<designation from the pre-generated batch>"
   prompt: "<parent task ID>"
 ```
 

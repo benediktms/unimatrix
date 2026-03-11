@@ -30,13 +30,13 @@ When invoked, you (the lead agent) orchestrate the following loop:
 for cycle in 1..max_cycles:
 
   2a. IMPLEMENT — Dispatch a `drone` agent with the task ID.
-      - Generate a designation: `/designate 1 --role drone`
+      - Generate a designation: `/designate 1 --role drone --trimatrix`
       - If cycle > 1, prepend the vinculum's feedback to the drone prompt:
         "Previous review found these issues — address them:\n<vinculum issues>"
       - Wait for the drone to complete.
 
   2b. REVIEW — Dispatch a `vinculum` agent with the task ID.
-      - Generate a designation: `/designate 1 --role vinculum`
+      - Generate a designation: `/designate 1 --role vinculum --trimatrix`
       - Wait for the vinculum to complete.
 
   2c. EVALUATE — Read the vinculum's verdict from the task comments.

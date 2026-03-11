@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate Borg-style designations for agents.
 
-Usage: designate.py <N> [--role drone|vinculum|probe] [--swarm]
-  N      = number of agents to generate designations for.
-  --role = agent type (determines Borg functional title).
-  --swarm = use "Trimatrix <random>" instead of "Unimatrix Zero".
+Usage: designate.py <N> [--role drone|vinculum|probe] [--trimatrix] [--swarm]
+  N           = number of agents to generate designations for.
+  --role      = agent type (determines Borg functional title).
+  --trimatrix = use "Trimatrix <random>" instead of "Unimatrix Zero".
+  --swarm     = legacy alias for --trimatrix.
 
 Role → functional title mapping:
   drone    → Tactical Adjunct
@@ -69,15 +70,18 @@ def main():
     parser.add_argument("n", type=int, help="Number of designations to generate (1-12)")
     parser.add_argument("--role", choices=["drone", "vinculum", "probe", "cortex"],
                         help="Agent type (determines Borg functional title)")
-    parser.add_argument("--swarm", action="store_true",
+    parser.add_argument("--trimatrix", action="store_true",
                         help="Use Trimatrix <random> instead of Unimatrix Zero")
+    parser.add_argument("--swarm", action="store_true",
+                        help="Legacy alias for --trimatrix")
     args = parser.parse_args()
 
     if args.n < 1 or args.n > 12:
         print(f"Error: N must be between 1 and 12, got {args.n}", file=sys.stderr)
         sys.exit(1)
 
-    for line in designate(args.n, role=args.role, swarm=args.swarm):
+    use_trimatrix = args.trimatrix or args.swarm
+    for line in designate(args.n, role=args.role, swarm=use_trimatrix):
         print(line)
 
 
