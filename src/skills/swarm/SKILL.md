@@ -25,6 +25,7 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
 2. **Generate Designations** — `/designate <N> --role Drone --trimatrix`
 
 3. **Dispatch Drones** — Spawn one Drone per partition as file-partitioned Drones (no worktree isolation — partitions are non-overlapping by design, Drones work directly on the current branch):
+<!-- @claude -->
    ```
    Agent:
      subagent_type: "Drone"
@@ -35,6 +36,20 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
        You are Drone <designation> executing brain task <task-id> — "<task title>".
        FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
    ```
+<!-- @end -->
+<!-- @opencode -->
+   ```
+   task(
+     subagent_type="drone",
+     description="<designation> — <task summary>",
+     run_in_background=true,
+     prompt="""
+You are Drone <designation> executing brain task <task-id> — \"<task title>\".
+FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
+"""
+   )
+   ```
+<!-- @end -->
 
 4. **Monitor** — Wait for all Drones to complete. Check brain task comments for blockers.
 

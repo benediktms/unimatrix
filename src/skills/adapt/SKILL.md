@@ -26,16 +26,23 @@ When invoked, you (the lead agent) orchestrate the following loop:
 
 ### 2. Adaptation Cycle
 
+<!-- @claude -->
+Dispatches use Claude Code `Agent(...)` with `subagent_type: "Drone"` and `subagent_type: "Vinculum"`.
+<!-- @end -->
+<!-- @opencode -->
+Dispatches use OpenCode `task(...)` with `subagent_type="drone"` and `subagent_type="vinculum"`.
+<!-- @end -->
+
 ```
 for cycle in 1..max_cycles:
 
-  2a. IMPLEMENT — Dispatch a `Drone` agent with the task ID.
+  2a. IMPLEMENT — Dispatch a `Drone`/`drone` agent with the task ID.
       - Generate a designation: `/designate 1 --role Drone --trimatrix`
       - If cycle > 1, prepend the Vinculum's feedback to the Drone prompt:
         "Previous review found these issues — address them:\n<Vinculum issues>"
       - Wait for the Drone to complete.
 
-  2b. REVIEW — Dispatch a `Vinculum` agent with the task ID.
+  2b. REVIEW — Dispatch a `Vinculum`/`vinculum` agent with the task ID.
       - Generate a designation: `/designate 1 --role Vinculum --trimatrix`
       - Wait for the Vinculum to complete.
 

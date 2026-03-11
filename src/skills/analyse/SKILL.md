@@ -15,6 +15,13 @@ Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, o
 
 ## Behavior
 
+<!-- @claude -->
+Dispatch Cortex with `Agent(subagent_type="Cortex", ...)`.
+<!-- @end -->
+<!-- @opencode -->
+Dispatch Cortex with `task(subagent_type="cortex", ...)`.
+<!-- @end -->
+
 1. Delegate to the `Cortex` agent with the user's request
 2. Cortex will:
    - Survey the relevant codebase area using read-only tools

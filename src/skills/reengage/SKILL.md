@@ -18,9 +18,16 @@ Re-engage the collective on a brain task that was planned by the Queen. Use this
 4. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Drone snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Drones via `PRIOR CHECKPOINTS:` in the prompt.
 5. Use `tasks_next` to find ready (unblocked) subtasks.
 6. Dispatch agents for each ready subtask based on the task's **assignee** field:
+<!-- @claude -->
    - `Drone` → spawn as `subagent_type: "Drone"` with full prompt (designation, task ID, mode blocks, prior checkpoints)
    - `Probe` → spawn as `subagent_type: "Probe"` with the task ID as prompt
    - `Cortex` → spawn as `subagent_type: "Cortex"` with the task ID as prompt
+<!-- @end -->
+<!-- @opencode -->
+   - `Drone` → spawn as `task(subagent_type="drone", description="<designation>", ...)` with full prompt (designation, task ID, mode blocks, prior checkpoints)
+   - `Probe` → spawn as `task(subagent_type="probe", description="probe dispatch", ...)` with the task ID as prompt
+   - `Cortex` → spawn as `task(subagent_type="cortex", description="cortex dispatch", ...)` with the task ID as prompt
+<!-- @end -->
    - **Parallel waves** (independent tasks): spawn all agents with `run_in_background: true`
    - **Sequential waves** (dependent tasks): spawn one at a time, passing prior checkpoint IDs via `PRIOR CHECKPOINTS:` and recon snapshot IDs via `RECON SNAPSHOTS:` in the prompt
    - Extract snapshot IDs from each agent's completion comment for subsequent waves.

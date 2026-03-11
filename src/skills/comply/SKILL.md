@@ -9,6 +9,13 @@ Invoke the **Vinculum** agent to validate recent changes. The Vinculum applies e
 
 ## Behavior
 
+<!-- @claude -->
+Dispatch the reviewer with `Agent(subagent_type="Vinculum", ...)`.
+<!-- @end -->
+<!-- @opencode -->
+Dispatch the reviewer with `task(subagent_type="vinculum", ...)`.
+<!-- @end -->
+
 1. Determine the review target from the arguments
 2. Delegate to the `Vinculum` agent with a structured prompt
 3. The Vinculum will:

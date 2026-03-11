@@ -26,12 +26,23 @@ The Queen returns a **Dispatch Plan** with task IDs and agent assignments.
 
 ### Step 1b: Enter Plan Mode
 
+<!-- @claude -->
 After the Queen returns, call `EnterPlanMode`. Present the recon plan for review. When approved and `ExitPlanMode` fires, the checkpoint hook captures the task state.
+<!-- @end -->
+<!-- @opencode -->
+After the Queen returns, present the recon plan for review. When approved, proceed with dispatch.
+<!-- @end -->
 
 ### Step 2: Create Team and Generate Designations
 
+<!-- @claude -->
 1. Create a team: `TeamCreate` with a descriptive `team_name`
 2. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Vinculum` for Cortex agents (Auxiliary Processor fits the analytical role). Generate enough for all agents across all waves.
+<!-- @end -->
+<!-- @opencode -->
+1. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Vinculum` for Cortex agents (Auxiliary Processor fits the analytical role). Generate enough for all agents across all waves.
+2. Coordination happens through Brain tasks and records. No team management needed.
+<!-- @end -->
 
 ### Step 3: Dispatch Agents
 
@@ -39,6 +50,7 @@ For each task in the Queen's dispatch plan, spawn the assigned agent with the ta
 
 **Important:** Prefix the agent type in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
+<!-- @claude -->
 ```
 Agent:
   subagent_type: "Probe" or "Cortex"
@@ -48,6 +60,17 @@ Agent:
   prompt: "<task ID>"
 ```
 The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and task context.
+<!-- @end -->
+<!-- @opencode -->
+```
+task(
+  subagent_type="probe" or "cortex",
+  description="<full designation> — <task summary>",
+  run_in_background=true,
+  prompt="<task ID>"
+)
+```
+<!-- @end -->
 
 **Spawning rules:**
 - Independent recon tasks: spawn all agents with `run_in_background: true`
@@ -66,8 +89,13 @@ If multiple agents were dispatched, summarize the combined findings for the user
 
 ### Step 6: Cleanup
 
+<!-- @claude -->
 1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
 2. Delete team: `TeamDelete`
+<!-- @end -->
+<!-- @opencode -->
+Coordination happens through Brain tasks and records. No team management needed.
+<!-- @end -->
 
 ## Usage
 

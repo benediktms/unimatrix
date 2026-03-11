@@ -31,6 +31,13 @@ Produce a structured summary covering:
 
 Spawn a `Subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
 
+<!-- @claude -->
+Use `Agent(subagent_type="Subroutine", ...)` for dispatch.
+<!-- @end -->
+<!-- @opencode -->
+Use `task(subagent_type="subroutine", ...)` for dispatch.
+<!-- @end -->
+
 1. **Memory write instruction**: "Call `memory_write_episode` with title `'Session: <date> — <brief description>'` and the following body:" followed by the synthesized summary
 2. **Open tasks instruction**: "Use `tasks_list` (status: open) to append any open/in_progress brain tasks as 'Next session context' to the episode body"
 3. **Sign-off instruction**: "End with: *'Knowledge assimilated. Entering regeneration cycle.'*"
