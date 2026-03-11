@@ -28,13 +28,21 @@ The Queen returns a **Dispatch Plan** with task IDs and agent assignments.
 
 After the Queen returns, call `EnterPlanMode`. Present the recon plan for review. When approved and `ExitPlanMode` fires, the checkpoint hook captures the task state.
 
-### Step 2: Dispatch Agents
+### Step 2: Create Team and Generate Designations
+
+1. Create a team: `TeamCreate` with a descriptive `team_name`
+2. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Probe` for Probe agents, `--role Vinculum` for Cortex agents (Auxiliary Processor fits the analytical role). Generate enough for all agents across all waves.
+
+### Step 3: Dispatch Agents
 
 For each task in the Queen's dispatch plan, spawn the assigned agent with the task ID as its prompt.
+
+**Important:** Always use the designation (not "Probe A/B") in both `name` and `description` — these appear in notifications and help identify which agent produced which output.
 
 ```
 Agent:
   subagent_type: "Probe" or "Cortex"
+  team_name: "<team name>"
   name: "<designation>"
   description: "<designation> — <task summary>"
   prompt: "<task ID>"
@@ -45,15 +53,20 @@ Agent:
 - Dependent tasks (e.g., Probe first, then Cortex on same area): spawn sequentially
 - If a Probe escalates to Cortex, create a new task and dispatch the Cortex with the Probe's task ID referenced in the description so it can find the Probe's snapshots
 
-### Step 3: Collect Results
+### Step 4: Collect Results
 
 - Agents save snapshots and artifacts linked to their task IDs
 - When agents complete, their findings are retrievable via `records_list` by `task_id`
 - Close tasks as agents report completion
 
-### Step 4: Synthesize (optional)
+### Step 5: Synthesize (optional)
 
 If multiple agents were dispatched, summarize the combined findings for the user. Reference task IDs and snapshot IDs so the user or downstream agents can drill into specifics.
+
+### Step 6: Cleanup
+
+1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
+2. Delete team: `TeamDelete`
 
 ## Usage
 
