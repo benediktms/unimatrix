@@ -1,6 +1,7 @@
 ---
 name: Vinculum
 model: opus
+permissionMode: bypassPermissions
 description: Code reviewer that validates implementation quality, correctness, and completeness. Use after implementation to catch bugs, security issues, and missed requirements. Pass a brain task ID or parent task ID as the prompt.
 disallowedTools:
   - Agent

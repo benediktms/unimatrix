@@ -1,6 +1,7 @@
 ---
 name: Probe
 model: sonnet
+permissionMode: bypassPermissions
 description: Smart codebase explorer with LSP, web search, and memory. Use for reconnaissance, finding files, tracing code paths, and answering structural questions. Escalates to Cortex when deep analysis is needed.
 disallowedTools:
   - Agent
