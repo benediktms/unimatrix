@@ -17,6 +17,16 @@ PRICING = {  # per 1M tokens
 }
 
 STATE_DIR = "/tmp"
+KNOWN_TYPES = {"Queen", "Drone", "Probe", "Vinculum", "Cortex", "Subroutine"}
+
+
+def normalize_agent_type(raw_type):
+    """Extract base agent type from prefixed names like 'Probe: Four of Four'."""
+    if ": " in raw_type:
+        prefix = raw_type.split(": ", 1)[0]
+        if prefix in KNOWN_TYPES:
+            return prefix
+    return raw_type
 
 
 def detect_tier(model_str):
@@ -84,7 +94,7 @@ def main():
     session_id = data.get("session_id", "")
     transcript_path = data.get("agent_transcript_path", "")
     agent_id = data.get("agent_id", "")
-    agent_type = data.get("agent_type", "unknown")
+    agent_type = normalize_agent_type(data.get("agent_type", "unknown"))
 
     if not session_id or not transcript_path or not agent_id:
         return
