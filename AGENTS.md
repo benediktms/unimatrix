@@ -7,7 +7,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 - `agents/` — Agent definitions (markdown + YAML frontmatter)
 - `skills/` — Slash command skills (`/assemble`, `/reengage`, `/comply`)
 - `rules/` — Routing and coordination rules
-- `hooks/` — Event hooks for Claude Code (token tracking, compaction warnings, subagent tracking)
+- `hooks/` — Event hooks for Claude Code (token tracking, compaction warnings, subagent tracking, auto-learner)
 - `install.sh` — Symlink installer (global or per-project)
 
 ## Installation

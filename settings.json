@@ -90,6 +90,10 @@
           {
             "type": "command",
             "command": "__UNIMATRIX_DIR__/hooks/inject-checkpoint.py"
+          },
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/learner-inject.py"
           }
         ]
       }
@@ -116,6 +120,10 @@
           {
             "type": "command",
             "command": "__UNIMATRIX_DIR__/hooks/warn-compaction.py"
+          },
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/learner-track.py"
           }
         ]
       }
