@@ -1,6 +1,6 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task. The Queen plans, the lead dispatches Probes, Cortex, and Drones, Vinculum reviews.
+description: Assemble the collective to execute a complex task. The Queen plans, the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
 ---
 
 # /assemble
@@ -13,6 +13,31 @@ Orchestrate a complex task end-to-end: the Queen assesses, recon runs if needed,
 - **Follow this flow exactly.** Do not insert your own recon, validation, or research steps. Do not read files, spawn agents, or search the codebase outside of the defined steps.
 - **After any Queen call returns, go straight to the next defined step.** No side research, no "let me validate this first," no extra agents.
 - **Save the Queen's agent ID** from Step 1. All subsequent Queen interactions use `resume` with this ID.
+
+## Dispatch Modes
+
+The Queen's dispatch plan specifies one of three modes for each wave of work:
+
+### Sequential (queen-supervised)
+Steps have dependencies — drones execute in waves, the queen stays alive to monitor progress and pass context between waves. Use when the plan requires dynamic re-planning based on intermediate results or when the queen needs to make decisions between steps.
+
+**Use when:** short chains (2-3 steps), steps where intermediate results may change subsequent steps, orchestrations requiring queen judgment between waves.
+
+**Avoid when:** chains are long (3+ steps) and each step's output can be summarized concisely — use sequence instead.
+
+### Sequence (relay)
+Steps have dependencies — drones execute one at a time, each passing a handoff snapshot to the next via Brain records. The queen dispatches but does not stay alive for the happy path.
+
+**Use when:** long sequential chains (3+ steps), orchestrations where queen compaction is a risk, chains where each step's context can be summarized concisely for the next.
+
+**Avoid when:** steps require dynamic re-planning based on results, the queen needs to make decisions between steps, chains are short (2 steps — just use sequential).
+
+### Swarm
+Steps are independent — drones execute in parallel with non-overlapping file partitions. Use when work can be divided by file group with no cross-group dependencies.
+
+**Use when:** bulk changes across many files, parallel implementation of independent features, migrations or convention enforcement across the codebase.
+
+**Avoid when:** steps share files or have dependencies between them.
 
 ## Flow
 
@@ -169,14 +194,14 @@ Agent:
     <recon snapshots if applicable>
 ```
 
-**Mode blocks — append based on wave type:**
+**Mode blocks — append based on wave type (sequential, sequence, or swarm):**
 
-For **parallel waves** with non-overlapping files:
+For **swarm waves** with non-overlapping files:
 ```
 FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
 ```
 
-For **sequential waves**, no special block needed.
+For **sequential waves** or **sequence relay**, no special block needed.
 
 **Prior checkpoints and recon snapshots:**
 
@@ -187,8 +212,9 @@ RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
 ```
 
 **Spawning rules:**
-- Parallel wave: spawn all Drones with `run_in_background: true`
+- Swarm wave: spawn all Drones with `run_in_background: true`
 - Sequential wave: spawn one Drone, wait for completion
+- Sequence relay: spawn one Drone, wait for completion, extract its snapshot ID and pass as `PRIOR CHECKPOINTS:` to the next Drone
 - Wait for all Drones in a wave to complete before starting the next wave
 
 ### Step 6: Monitor
@@ -225,9 +251,10 @@ If the lead needs to search the codebase during orchestration (e.g. to gather co
 
 ## Post-Wave Git Discipline
 
-- **File-partitioned Drones:** No merge needed — changes are on the main tree.
+- **Swarm Drones (file-partitioned):** No merge needed — changes are on the main tree.
 - **Worktree Drones:** Squash-merge branches before the next wave (`git merge --squash <branch>`). On conflict: abort, dispatch a Drone to rebase, retry.
 - **Sequential Drones:** No merge needed — Drones run serially.
+- **Sequence relay Drones:** No merge needed — Drones run serially. Context flows via Brain snapshots.
 
 ## Usage
 
