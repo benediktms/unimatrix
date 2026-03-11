@@ -139,11 +139,9 @@ Agent:
 
 The Queen returns a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
 
-### Step 3b: Enter Plan Mode
+### Step 3b: Present the Plan
 
-After the Queen returns the implementation plan, **immediately** call `EnterPlanMode`. Present the dispatch plan for review. Do not read files, search, or do any work between receiving the plan and entering plan mode.
-
-When the plan is approved and `ExitPlanMode` fires, the checkpoint hook captures the epic and subtask state as a **plan checkpoint**.
+After the Queen returns the implementation plan, present the dispatch plan to the user for review. Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
 
 ### Step 4: Create Team and Generate Designations
 
