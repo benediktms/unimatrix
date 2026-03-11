@@ -315,7 +315,7 @@ Generate designations: `/designate <total-agent-count> --trimatrix` — use `--r
 Coordination happens through Brain tasks and records. No team management needed.
 <!-- @end -->
 
-### Step 5: Dispatch Agents
+### Step 5: Dispatch Adjuncts
 
 <!-- @claude -->
 For each wave in the Queen's dispatch plan, spawn agents as team members. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
