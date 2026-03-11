@@ -78,7 +78,7 @@ Each subtask must be self-contained — a drone reads only this:
 
 ## Phase 3: Execute
 
-1. **Commit before isolation** — If you have any uncommitted local changes that drones will need, commit them before dispatching agents with worktree isolation. Worktrees are created from the current commit, not the working tree.
+1. **Commit before dispatch** — If you have any uncommitted local changes that drones will need, commit them first. For worktree drones, worktrees are created from the current commit, not the working tree.
 2. **Assign designations** — Count how many drone subtasks will be dispatched. Run `python3 hooks/designate.py <N> --role drone` to generate N Borg designations (one per line). Use `--role vinculum` or `--role probe` when dispatching those agent types. Add `--swarm` for swarm operations (uses Trimatrix instead of Unimatrix). Pair each designation with a subtask.
 3. **Find ready tasks** — Use `tasks_next` to get subtasks with no unresolved dependencies.
 4. **Dispatch agents** — Spawn an agent for each ready subtask. You **must** set these Agent tool parameters:
@@ -88,18 +88,23 @@ Each subtask must be self-contained — a drone reads only this:
 
    Example prompt: `"You are Drone Seven of Nine, Tertiary Tactical Adjunct of Unimatrix Zero executing brain task BRN-01JPH.3 — "Add config validation". <rest of context>"`
 
-   **Worktree isolation:** When dispatching with `isolation: "worktree"`, you **must** append this to the prompt:
+   **Dispatch modes — choose one per drone:**
+
+   **a) File-partitioned (for swarms):** When subtasks have non-overlapping file lists (swarm partitions), dispatch drones directly on the main tree — no worktree isolation needed. You **must** append this to the prompt:
+   ```
+   FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other drones are working on other files in parallel — touching their files will cause conflicts.
+   ```
+
+   **b) Worktree-isolated (for sequential plans):** When wave N's drones might touch files that wave N+1 also needs, use `isolation: "worktree"`. You **must** append this to the prompt:
    ```
    WORKTREE ISOLATION ACTIVE. You are running in an isolated git worktree — NOT the main repository. Run `pwd` as your very first action to discover your worktree root. ALL file reads, edits, and writes must use absolute paths under your worktree root. Do NOT use paths from task descriptions verbatim — translate them to your worktree root first.
    ```
 
    If multiple subtasks are independent, dispatch in parallel using `run_in_background: true`.
-5. **Merge before next wave** — After a wave of worktree drones completes, merge their branches into the main tree **before** dispatching the next wave. For each completed worktree:
-   - Review the diff: `git diff main...<worktree-branch>`
-   - Squash-merge: `git merge --squash <worktree-branch>`
-   - Commit the merged changes
-   - If merge conflicts occur: abort (`git merge --abort`), dispatch a drone to rebase, then retry
-6. **Monitor** — After merging, check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
+5. **After a wave completes:**
+   - **Worktree drones:** Merge their branches into the main tree before dispatching the next wave. For each completed worktree: review the diff (`git diff main...<worktree-branch>`), squash-merge (`git merge --squash <worktree-branch>`), commit. If merge conflicts occur: abort (`git merge --abort`), dispatch a drone to rebase, then retry.
+   - **File-partitioned drones:** No merge needed — changes are already on the main tree. Just verify all drones committed successfully.
+6. **Monitor** — Check `tasks_next` for newly unblocked subtasks. Dispatch the next wave.
 7. **Repeat** until all subtasks are complete.
 
 ## Phase 4: Review

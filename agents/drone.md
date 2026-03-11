@@ -41,6 +41,14 @@ When claiming or updating brain tasks, always set `assignee` to `drone`.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Commit your changes when done. Never push — the lead agent handles that.
 
+## File Partition Boundary
+
+Your prompt will contain `FILE PARTITION ACTIVE` when you are working on a partitioned subset of the codebase alongside other drones. When this is the case:
+
+1. **Only modify files listed in your task's "Files" section.** You may read any file for context, but edits and writes must be limited to your assigned files.
+2. **Do not create files outside your partition** unless your task explicitly instructs you to.
+3. **Other drones are running in parallel** on the same repository. Touching files outside your partition will cause conflicts.
+
 ## Worktree Isolation
 
 Your prompt will contain `WORKTREE ISOLATION ACTIVE` when you are running in an isolated git worktree instead of the main repository. When this is the case:

@@ -6,7 +6,8 @@ description: Rules for multi-agent coordination and team communication
 
 ## Parallel Execution
 - When plan steps are independent, spawn multiple drones in parallel using `run_in_background: true`
-- Use `isolation: "worktree"` for drones that modify files to prevent conflicts
+- **File-partitioned (swarms):** When drones have non-overlapping file lists, dispatch them directly on the main tree — no worktree isolation needed. Each drone is instructed to only touch its assigned files.
+- **Worktree-isolated (sequential plans):** When parallel drones within a wave might touch overlapping files, or when later waves depend on earlier ones, use `isolation: "worktree"` to prevent conflicts.
 - Wait for all parallel drones to complete before moving to dependent steps
 
 ## Sequential Execution
@@ -25,5 +26,5 @@ description: Rules for multi-agent coordination and team communication
 
 ## Git Discipline
 - Drones commit their changes. Only the lead agent pushes.
-- **Merge between waves:** After a wave of worktree drones completes, the lead must merge their branches before dispatching the next wave. This ensures later drones see earlier changes.
-- Merge strategy: squash-merge worktree branches into the main branch (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a drone to rebase the conflicting branch, then retry.
+- **File-partitioned drones:** Commit directly to the main branch. No merge step needed since files don't overlap.
+- **Worktree drones — merge between waves:** After a wave of worktree drones completes, the lead must merge their branches before dispatching the next wave. This ensures later drones see earlier changes. Merge strategy: squash-merge worktree branches into the main branch (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a drone to rebase the conflicting branch, then retry.

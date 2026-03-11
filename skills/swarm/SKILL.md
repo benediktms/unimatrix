@@ -30,10 +30,10 @@ Partition a codebase into logical file groups and dispatch parallel drones to ap
    - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. The queen decides the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups. Present the partition plan to the user for approval.
    - Create brain tasks: one epic + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
    - Generate Borg designations via `python3 hooks/designate.py <N> --role drone --swarm`
-   - Dispatch one drone per partition with `isolation: "worktree"` for conflict-free parallel execution
+   - Dispatch one drone per partition (no worktree isolation — partitions are non-overlapping by design, so drones work directly on the main tree)
    - Monitor completion, check brain task comments for blockers
    - Dispatch `vinculum` with the epic ID to review aggregate changes
-   - On PASS: merge worktree branches, close all subtasks and the epic
+   - On PASS: close all subtasks and the epic
 
 ## Concurrency
 
@@ -56,6 +56,6 @@ The queen decides how many drones to spawn based on the natural file partitions 
 This would:
 1. Find all .tsx files under src/components/
 2. Queen partitions by subdirectory (e.g., auth/, dashboard/, shared/) -- decides 3 drones is optimal
-3. Dispatch 3 drones in parallel, each handling one group in its own worktree
+3. Dispatch 3 drones in parallel, each handling only its assigned files
 4. Review the aggregate diff
-5. Merge on PASS
+5. Close on PASS
