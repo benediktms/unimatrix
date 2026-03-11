@@ -108,6 +108,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/hooks/warn-compaction.py"
+          }
+        ]
+      }
     ]
   }
 }
