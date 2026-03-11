@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@opencode-ai/plugin": "npm:@opencode-ai/plugin"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}

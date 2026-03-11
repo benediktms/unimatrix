@@ -1,0 +1,9 @@
+[tools]
+python = "3.12"
+deno = "latest"
+just = "latest"
+
+[env]
+VIRTUAL_ENV = "{{config_root}}/.venv"
+
+_.path = ["{{config_root}}/.venv/bin"]
