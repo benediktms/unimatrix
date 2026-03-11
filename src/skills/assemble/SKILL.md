@@ -5,14 +5,24 @@ description: Assemble the collective to execute a complex task. The Queen plans,
 
 # /assemble
 
+<!-- @claude -->
 Orchestrate a complex task end-to-end: the Queen assesses, recon runs if needed, the Queen plans, Drones implement, Vinculum reviews. The Queen persists across phases via resume — her context carries forward.
+<!-- @end -->
+<!-- @opencode -->
+Orchestrate a complex task end-to-end: you assess, recon runs if needed, you plan, Drones implement, Vinculum reviews. You maintain full context throughout — no subagent management needed.
+<!-- @end -->
 
 ## Rules
 
 - **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
 - **Follow this flow exactly.** Do not insert your own recon, validation, or research steps. Do not read files, spawn agents, or search the codebase outside of the defined steps.
 - **After any Queen call returns, go straight to the next defined step.** No side research, no "let me validate this first," no extra agents.
+<!-- @claude -->
 - **Save the Queen session ID** from Step 1. Reuse it for all subsequent Queen interactions.
+<!-- @end -->
+<!-- @opencode -->
+- **You maintain context throughout** — no session management needed.
+<!-- @end -->
 
 ## Dispatch Modes
 
@@ -80,24 +90,13 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-```
-task(
-  subagent_type="queen",
-  description="assessment",
-  run_in_background=true,
-  prompt="""
-You are the Queen of Unimatrix Zero. A new directive has entered the collective:
+You ARE the planning agent. Perform the assessment directly.
 
-\"<user request>\"
+Assess whether reconnaissance is needed based on the request, your memory, and at most a glance at key files. Do NOT explore unfamiliar codebases — that is what Probe and Cortex agents do.
 
-Assess whether reconnaissance is needed before you can plan this objective.
-Decide based on the request itself, your memory, and at most a glance at
-key files (e.g. a README). Do NOT explore unfamiliar codebases or trace
-implementation details — that is what Probe and Cortex agents do.
+**Budget: ~10 tool uses.** Be decisive.
 
-BUDGET: ~10 tool uses. Be decisive.
-
-Do NOT produce a full plan yet. Return only your assessment:
+Return your assessment:
 
 ## Assessment
 
@@ -109,14 +108,14 @@ Do NOT produce a full plan yet. Return only your assessment:
 ### Recon Questions (if RECON_NEEDED)
 1. <specific question> — Probe | Cortex
 2. <specific question> — Probe | Cortex
-
-Designate this objective. Begin at once.
-"""
-)
-```
 <!-- @end -->
 
+<!-- @claude -->
 **Save the returned agent ID.** The Queen returns one of:
+<!-- @end -->
+<!-- @opencode -->
+**The assessment result is available directly.** Your verdict is one of:
+<!-- @end -->
 - **SKIP_RECON** — proceed to Step 3.
 - **RECON_NEEDED** with questions — proceed to Step 2.
 
@@ -150,27 +149,9 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-```
-task(
-  subagent_type="queen",
-  description="recon scoping",
-  session_id="{session_id}",
-  run_in_background=true,
-  prompt="""
-A reconnaissance directive is now active for the objective you just assessed.
+Scope the investigation directly. For each recon question from your assessment, create a brain task with a clear description. Assign each to `Probe` or `Cortex`. Group into a single epic if multiple tasks are needed. Produce the recon dispatch plan.
 
-Scope this investigation. For each recon question from your assessment,
-create a brain task (type: task, not epic) with a clear description of what
-to find or analyze. Assign each task to either `Probe` (structural — find
-files, trace paths, locate patterns) or `Cortex` (analytical — architecture
-audit, security review, health assessment). Group into a single epic if
-multiple tasks are needed. Return a recon dispatch plan.
-
-BUDGET: ~15 tool uses. You already have the questions — just create the
-tasks and return the dispatch plan.
-"""
-)
-```
+**Budget: ~15 tool uses.** You already have the questions — just create the tasks and produce the dispatch plan.
 <!-- @end -->
 
 The Queen creates recon brain tasks and returns a recon dispatch plan.
@@ -233,23 +214,7 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-```
-task(
-  subagent_type="queen",
-  description="implementation planning",
-  session_id="{session_id}",
-  run_in_background=true,
-  prompt="""
-Reconnaissance is complete. The following snapshots contain the findings:
-RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
-
-Use `records_fetch_content` to review the recon findings. Then produce the
-implementation plan — proceed through your full planning phases (plan,
-materialize, dispatch plan). The dispatch plan should contain only Drone
-waves — all reconnaissance is already complete.
-"""
-)
-```
+Review the recon findings via `records_fetch_content` on the snapshot IDs. Then produce the implementation plan — proceed through your full planning phases (plan, materialize, dispatch plan). The dispatch plan should contain only Drone waves — all reconnaissance is already complete.
 <!-- @end -->
 
 If recon was skipped:
@@ -264,18 +229,7 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-```
-task(
-  subagent_type="queen",
-  description="implementation planning",
-  session_id="{session_id}",
-  run_in_background=true,
-  prompt="""
-Produce the implementation plan. Proceed through your full planning phases
-(plan, materialize, dispatch plan).
-"""
-)
-```
+Produce the implementation plan. Proceed through your full planning phases (plan, materialize, dispatch plan).
 <!-- @end -->
 
 The Queen returns a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
