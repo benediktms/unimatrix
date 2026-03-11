@@ -118,6 +118,13 @@ export const unimatrixHooks: Plugin = async ({ $, project }) => {
 
   return {
     // -----------------------------------------------------------------
+    // config — set default agent at runtime
+    // -----------------------------------------------------------------
+    config: async (config: Record<string, unknown>) => {
+      config.default_agent = "queen"
+    },
+
+    // -----------------------------------------------------------------
     // tool.execute.after — track cost + warn compaction
     // -----------------------------------------------------------------
     "tool.execute.after": async (input: any, output: any) => {

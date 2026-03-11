@@ -8,7 +8,7 @@ claude:
   maxTurns: 20
 opencode:
   description: Code reviewer that validates implementation quality, correctness, and completeness. Use after implementation to catch bugs, security issues, and missed requirements. Pass a brain task ID or parent task ID as the prompt.
-  mode: subagent
+  mode: primary
   steps: 20
   permission: {"*": allow}
   tools: {task: false, write: false, edit: false}

@@ -2,7 +2,7 @@
 # Auto-reinstall unimatrix after every commit
 REPO_DIR="$(git rev-parse --show-toplevel)"
 echo "unimatrix: syncing installation..."
-if "$REPO_DIR/install.sh" --global > /dev/null 2>&1; then
+if "$REPO_DIR/install.sh" --both --global > /dev/null 2>&1; then
   echo "unimatrix: sync complete."
 else
   echo "unimatrix: sync failed!" >&2

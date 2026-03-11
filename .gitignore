@@ -1,4 +1,6 @@
 .DS_Store
 *.bak
-**/__pycache__/**/*
+__pycache__/
+*.pyc
 dist/
+.venv/

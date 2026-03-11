@@ -3,6 +3,10 @@ set -euo pipefail
 
 UNIMATRIX_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Prefer venv python (has PyYAML); fall back to system python
+PYTHON="$UNIMATRIX_DIR/.venv/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="python3"
+
 usage() {
   echo "Usage: install.sh <platform> [--global | --project <path>]"
   echo ""
@@ -46,7 +50,7 @@ ensure_build() {
 
   if [ ! -d "$dist_dir" ] || [ "$UNIMATRIX_DIR/build.py" -nt "$dist_dir" ]; then
     echo "Building $target output..."
-    python3 "$UNIMATRIX_DIR/build.py" --target "$target"
+    "$PYTHON" "$UNIMATRIX_DIR/build.py" --target "$target"
     echo ""
   fi
 }
@@ -65,7 +69,7 @@ merge_settings() {
   if [ -f "$settings_file" ]; then
     echo "  merge: unimatrix settings into $settings_file"
     local merged
-    merged=$(python3 -c "
+    merged=$("$PYTHON" -c "
 import json, sys
 existing = json.load(open('$settings_file'))
 incoming = json.loads('''$resolved''')
@@ -76,7 +80,7 @@ print()
     echo "$merged" > "$settings_file"
   else
     echo "  create: $settings_file"
-    echo "$resolved" | python3 -c "
+    echo "$resolved" | "$PYTHON" -c "
 import json, sys
 d = json.load(sys.stdin)
 json.dump(d, sys.stdout, indent=2)
@@ -148,14 +152,26 @@ install_claude() {
 
 install_opencode() {
   local project_root="$1"
-  local target="$project_root/.opencode"
+  local is_global="${2:-false}"
   local dist_oc="$UNIMATRIX_DIR/dist/opencode/.opencode"
   local dist_claude_skills="$UNIMATRIX_DIR/dist/opencode/.claude/skills"
+
+  # Global installs go to ~/.config/opencode/ (OpenCode's global config home).
+  # Project installs go to <project>/.opencode/ (OpenCode's project discovery path).
+  local target
+  local skills_target
+  if [ "$is_global" = "true" ]; then
+    target="$HOME/.config/opencode"
+    skills_target="$HOME/.config/opencode/skills"
+  else
+    target="$project_root/.opencode"
+    skills_target="$project_root/.claude/skills"
+  fi
 
   ensure_build "opencode"
   mkdir -p "$target"
 
-  echo "Installing unimatrix (OpenCode) to $project_root"
+  echo "Installing unimatrix (OpenCode) to $target"
   echo ""
 
   # Agents: symlink built .opencode/agents/
@@ -166,14 +182,14 @@ install_opencode() {
     link "$dist_oc/rules" "$target/rules"
   fi
 
-  # Skills: OpenCode reads .claude/skills/ — symlink there
-  mkdir -p "$project_root/.claude/skills"
+  # Skills: global uses ~/.config/opencode/skills/, project uses .claude/skills/
+  mkdir -p "$skills_target"
   for skill_dir in "$dist_claude_skills/"*/; do
     [ -d "$skill_dir" ] || continue
     skill_name="$(basename "$skill_dir")"
-    link "$skill_dir" "$project_root/.claude/skills/$skill_name"
+    link "$skill_dir" "$skills_target/$skill_name"
   done
-  cleanup_stale_links "$project_root/.claude/skills" "$dist_claude_skills/"
+  cleanup_stale_links "$skills_target" "$dist_claude_skills/"
 
   # Plugins: symlink OpenCode hook plugins (if present)
   if [ -d "$UNIMATRIX_DIR/src/hooks/opencode" ] && [ "$(ls -A "$UNIMATRIX_DIR/src/hooks/opencode" 2>/dev/null)" ]; then
@@ -181,6 +197,20 @@ install_opencode() {
     for plugin in "$UNIMATRIX_DIR/src/hooks/opencode/"*; do
       [ -f "$plugin" ] || continue
       link "$plugin" "$target/plugins/$(basename "$plugin")"
+    done
+  fi
+
+  # Clean up stale global symlinks from old install path (~/.opencode/)
+  if [ "$is_global" = "true" ] && [ -d "$HOME/.opencode" ]; then
+    cleanup_stale_links "$HOME/.opencode/agents" "$dist_oc/"
+    cleanup_stale_links "$HOME/.opencode/rules" "$dist_oc/"
+    cleanup_stale_links "$HOME/.opencode/plugins" "$UNIMATRIX_DIR/src/hooks/opencode/"
+    # Remove stale top-level symlinks
+    for stale in "$HOME/.opencode/agents" "$HOME/.opencode/rules"; do
+      if [ -L "$stale" ]; then
+        echo "  remove stale: $stale"
+        rm "$stale"
+      fi
     done
   fi
 
@@ -225,7 +255,7 @@ case "$PLATFORM" in
     ;;
   opencode)
     if [ "$TARGET_MODE" = "global" ]; then
-      install_opencode "$HOME"
+      install_opencode "$HOME" "true"
     else
       install_opencode "$PROJECT_PATH"
     fi
@@ -234,7 +264,7 @@ case "$PLATFORM" in
     if [ "$TARGET_MODE" = "global" ]; then
       install_claude "$HOME/.claude"
       echo ""
-      install_opencode "$HOME"
+      install_opencode "$HOME" "true"
     else
       install_claude "$PROJECT_PATH/.claude"
       echo ""

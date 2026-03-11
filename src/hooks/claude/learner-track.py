@@ -140,23 +140,14 @@ def result_to_text(tool_result):
     return str(tool_result)
 
 
-def is_error(tool_name, tool_result_text):
+def is_error(tool_result_text):
     """Return True if the tool result indicates a failure."""
-    tool_upper = tool_name.upper()
-
-    # Check general error patterns first (apply to all tools)
     for pattern in GENERAL_ERROR_PATTERNS:
         if pattern in tool_result_text:
             return True
 
-    if tool_upper == "BASH":
-        for pattern in BASH_ERROR_PATTERNS:
-            if pattern in tool_result_text:
-                return True
-
-    elif tool_upper in ("EDIT", "WRITE"):
-        lower = tool_result_text.lower()
-        if "error" in lower or "failed" in lower:
+    for pattern in BASH_ERROR_PATTERNS:
+        if pattern in tool_result_text:
             return True
 
     return False
@@ -304,6 +295,11 @@ def main():
         return
 
     tool_name = data.get("tool_name", "")
+
+    # Skip read-only tools — their output is file content, not execution results
+    if tool_name.upper() in ("READ", "GLOB", "GREP", "EDIT", "WRITE"):
+        return
+
     tool_input = data.get("tool_input")
     tool_result = data.get("tool_result")
 
@@ -316,7 +312,7 @@ def main():
     now = time.time()
     pending_errors = state.get("pending_errors", [])
 
-    if is_error(tool_name, result_text):
+    if is_error(result_text):
         # Record this error in pending state
         error_entry = {
             "tool_name": tool_name,

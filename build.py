@@ -23,166 +23,39 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
+# Map short model aliases to OpenCode model IDs.
+# Claude Code understands short aliases natively; OpenCode requires full IDs.
+OPENCODE_MODEL_MAP: dict[str, str] = {
+    "opus": "anthropic/claude-opus-4-6",
+    "sonnet": "anthropic/claude-sonnet-4-6",
+    "haiku": "anthropic/claude-haiku-4-5-20251001",
+}
 
 # ---------------------------------------------------------------------------
-# YAML handling — minimal parser for our frontmatter subset (zero dependencies)
-#
-# Supports: flat key-value, one-level nesting, inline lists [a, b],
-# inline dicts {k: v}, quoted strings, booleans, numbers.
-# This is NOT a general YAML parser — it handles exactly the subset
-# defined in FORMAT.md.
+# YAML handling — thin wrappers around PyYAML
 # ---------------------------------------------------------------------------
-
-
-def _parse_value(raw: str) -> Any:
-    """Parse a YAML value string into a Python type."""
-    raw = raw.strip()
-    if not raw:
-        return None
-
-    # Quoted string
-    if (raw.startswith('"') and raw.endswith('"')) or (
-        raw.startswith("'") and raw.endswith("'")
-    ):
-        return raw[1:-1]
-
-    # Inline list: [a, b, c]
-    if raw.startswith("[") and raw.endswith("]"):
-        inner = raw[1:-1].strip()
-        if not inner:
-            return []
-        items = inner.split(",")
-        return [_parse_value(item) for item in items]
-
-    # Inline dict: { "key": "value", ... }
-    if raw.startswith("{") and raw.endswith("}"):
-        result: dict[str, Any] = {}
-        inner = raw[1:-1].strip()
-        if not inner:
-            return result
-        for pair in inner.split(","):
-            pair = pair.strip()
-            if ":" in pair:
-                k, v = pair.split(":", 1)
-                result[_parse_value(k)] = _parse_value(v)  # type: ignore[index]
-        return result
-
-    # Boolean / null
-    low = raw.lower()
-    if low == "true":
-        return True
-    if low == "false":
-        return False
-    if low in ("null", "~"):
-        return None
-
-    # Number
-    try:
-        return int(raw)
-    except ValueError:
-        pass
-    try:
-        return float(raw)
-    except ValueError:
-        pass
-
-    # Plain string
-    return raw
 
 
 def parse_yaml(text: str) -> dict[str, Any]:
-    """Parse our YAML frontmatter subset into a dict.
-
-    Handles: flat key-value, one-level nesting, inline lists/dicts,
-    quoted strings, booleans, numbers. This is NOT a general YAML parser.
-    """
-    result: dict[str, Any] = {}
-    current_section: str | None = None
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        indent = len(line) - len(line.lstrip())
-
-        if indent == 0:
-            # Top-level key
-            if stripped.startswith("- "):
-                # Top-level list item (shouldn't happen in our format, but handle it)
-                pass
-            elif ":" in stripped:
-                key, _, value = stripped.partition(":")
-                key = key.strip()
-                value = value.strip()
-                if value:
-                    result[key] = _parse_value(value)
-                    current_section = None
-                else:
-                    # Section header — could be dict or list, determined by first child
-                    result[key] = None  # placeholder, resolved on first child
-                    current_section = key
-        elif current_section is not None:
-            if stripped.startswith("- "):
-                # YAML dash-list item under current section
-                item_value = stripped[2:].strip()
-                if result[current_section] is None:
-                    result[current_section] = []
-                if isinstance(result[current_section], list):
-                    result[current_section].append(_parse_value(item_value))
-            elif ":" in stripped:
-                # Nested key-value under current section
-                key, _, value = stripped.partition(":")
-                key = key.strip()
-                value = value.strip()
-                if result[current_section] is None:
-                    result[current_section] = {}
-                if isinstance(result[current_section], dict):
-                    result[current_section][key] = _parse_value(value)
-
-    # Resolve any remaining None placeholders to empty dicts
-    for key in result:
-        if result[key] is None:
-            result[key] = {}
-
-    return result
-
-
-def _format_value(value: Any) -> str:
-    """Format a Python value as a YAML value string."""
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, list):
-        items = ", ".join(_format_value(v) for v in value)
-        return f"[{items}]"
-    if isinstance(value, dict):
-        items = ", ".join(
-            f"{_format_value(k)}: {_format_value(v)}" for k, v in value.items()
-        )
-        return "{" + items + "}"
-    s = str(value)
-    # Quote strings that contain YAML-special characters
-    if any(c in s for c in ":{}[],\"'#&*?|>!%@`\n"):
-        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
-    return s
+    """Parse YAML frontmatter text into a dict."""
+    result = yaml.safe_load(text)
+    return result if isinstance(result, dict) else {}
 
 
 def dump_yaml(data: dict[str, Any]) -> str:
-    """Dump a dict as YAML (flat + one-level nesting)."""
-    lines: list[str] = []
-    for key, value in data.items():
-        if isinstance(value, dict):
-            lines.append(f"{key}:")
-            for k, v in value.items():
-                lines.append(f"  {k}: {_format_value(v)}")
-        else:
-            lines.append(f"{key}: {_format_value(value)}")
-    return "\n".join(lines) + "\n"
+    """Dump a dict as YAML for frontmatter.
+
+    Uses block style, preserves key order, no document-end marker.
+    """
+    return yaml.dump(
+        data,
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+        width=200,  # Avoid line-wrapping long descriptions
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -271,11 +144,16 @@ def render_frontmatter(fm: dict[str, Any], target: str, category: str) -> str:
 
     Applies platform-specific post-processing:
     - OpenCode agents: remove 'name' field (derived from filename).
+    - OpenCode agents: map model short aliases to anthropic/model-id format.
     """
     output = dict(fm)
 
     if target == "opencode" and category == "agents":
         output.pop("name", None)
+        # Map short model aliases to OpenCode's anthropic/model-id format
+        model = output.get("model")
+        if model and "/" not in model:
+            output["model"] = OPENCODE_MODEL_MAP.get(model, f"anthropic/{model}")
 
     if not output:
         return ""

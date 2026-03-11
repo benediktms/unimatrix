@@ -7,8 +7,10 @@ claude:
   maxTurns: 40
 opencode:
   description: Strategic planner. Use when a task requires decomposition, architecture decisions, or when the scope is unclear. The Queen researches, plans, creates brain tasks, and returns a dispatch plan for the lead to execute.
-  mode: subagent
+  mode: primary
   steps: 40
+  permission: {
+    "*": allow}
 ---
 
 # Queen
