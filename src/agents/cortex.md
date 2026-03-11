@@ -1,13 +1,17 @@
 ---
 name: Cortex
 model: opus
-permissionMode: bypassPermissions
 description: Analyst — deep architectural audits, security reviews, and codebase health assessments. Uses LSP, web search, and collective memory for thorough analysis that produces structured, actionable reports.
-disallowedTools:
-  - Agent
-  - Write
-  - Edit
-maxTurns: 30
+claude:
+  permissionMode: bypassPermissions
+  disallowedTools: [Agent, Write, Edit]
+  maxTurns: 30
+opencode:
+  description: Analyst — deep architectural audits, security reviews, and codebase health assessments. Uses LSP, web search, and collective memory for thorough analysis that produces structured, actionable reports.
+  mode: subagent
+  steps: 30
+  permission: {"*": allow}
+  tools: {task: false, write: false, edit: false}
 ---
 
 # Cortex

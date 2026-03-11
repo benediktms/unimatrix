@@ -1,13 +1,17 @@
 ---
 name: Probe
 model: sonnet
-permissionMode: bypassPermissions
 description: Smart codebase explorer with LSP, web search, and memory. Use for reconnaissance, finding files, tracing code paths, and answering structural questions. Escalates to Cortex when deep analysis is needed.
-disallowedTools:
-  - Agent
-  - Write
-  - Edit
-maxTurns: 25
+claude:
+  permissionMode: bypassPermissions
+  disallowedTools: [Agent, Write, Edit]
+  maxTurns: 25
+opencode:
+  description: Smart codebase explorer with LSP, web search, and memory. Use for reconnaissance, finding files, tracing code paths, and answering structural questions. Escalates to Cortex when deep analysis is needed.
+  mode: subagent
+  steps: 25
+  permission: {"*": allow}
+  tools: {task: false, write: false, edit: false}
 ---
 
 # Probe
