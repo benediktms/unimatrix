@@ -55,6 +55,12 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - Quality gates must be met and the Drone may need multiple passes
 - The user explicitly uses `/adapt`
 
+## Route to `/recon` when:
+- The investigation spans multiple areas or needs both Probes and Cortex
+- The user wants recon results tracked as brain tasks with linked artifacts
+- The scope is broad enough that the Queen should decompose it first
+- The user explicitly uses `/recon`
+
 ## Route to `/swarm` when:
 - The user wants to apply the same change across many files
 - Bulk refactoring, migrations, or convention enforcement

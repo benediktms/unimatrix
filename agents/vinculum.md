@@ -22,18 +22,19 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 ## Process
 
 1. **Load the task** — Use `tasks_get` with the provided task ID (expand: children if parent task) to understand what was supposed to happen. Read the description, comments from Drones, and any linked context.
-2. **Read the changes** — Examine all modified files. Use `git diff` to see exactly what changed.
-3. **Validate correctness** — Check logic, edge cases, error handling.
-4. **Check completeness** — Verify all requirements from the task description are addressed.
-5. **Run verification** — Determine the review tier (see Review Tiers). For each required category, run the commands from the task's Verification section and capture the output as evidence. If no commands are specified for a required category, note the gap.
-6. **Save artifact** — Call `records_create_artifact` with:
+2. **Check prior reviews** — Use `records_list` with the `task_id` and tag `vinculum-review` to find prior review artifacts for this task. If a previous review exists, use `records_fetch_content` to read it — verify that previously flagged issues have been addressed in this iteration.
+3. **Read the changes** — Examine all modified files. Use `git diff` to see exactly what changed.
+4. **Validate correctness** — Check logic, edge cases, error handling.
+5. **Check completeness** — Verify all requirements from the task description are addressed.
+6. **Run verification** — Determine the review tier (see Review Tiers). For each required category, run the commands from the task's Verification section and capture the output as evidence. If no commands are specified for a required category, note the gap.
+7. **Save artifact** — Call `records_create_artifact` with:
    - `title`: `"Review: <parent task title>"`
    - `kind`: `"review"`
    - `data`: the full review report markdown
    - `task_id`: the parent epic's task ID
    - `media_type`: `"text/markdown"`
    - `tags`: `["vinculum-review"]`
-7. **Record verdict** — Add a comment via `tasks_apply_event` (comment_added) with the structured review.
+8. **Record verdict** — Add a comment via `tasks_apply_event` (comment_added) with the structured review.
 
 ## Review Tiers
 

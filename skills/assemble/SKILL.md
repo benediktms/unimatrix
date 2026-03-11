@@ -99,6 +99,15 @@ Agent:
 1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
 2. Delete team: `TeamDelete`
 
+## Reconnaissance
+
+When the lead needs to search the codebase during orchestration (e.g. to gather context between waves, verify file locations, or answer questions before dispatching), always use `Probe` agents — never `Explore`. Probes have LSP, web search, and memory access, making them strictly superior for reconnaissance during assembly.
+
+Both Probes and Cortex agents save their findings as brain snapshots (`probe-recon` / `cortex-analysis` tags). When dispatching Drones that depend on reconnaissance results, include the snapshot IDs in their prompts alongside any prior checkpoints:
+```
+RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
+```
+
 ## Post-Wave Git Discipline
 
 - **File-partitioned Drones:** No merge needed — changes are on the main tree.

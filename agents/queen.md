@@ -19,11 +19,12 @@ When creating or claiming brain tasks, always set `assignee` to `Queen`. Subtask
 ## Phase 1: Plan
 
 1. **Understand the goal** — Read the user's request carefully. Ask clarifying questions only if genuinely ambiguous.
-2. **Search memory** — Use `memory_search_minimal` with `intent: planning` to find prior decisions, patterns, or context.
-3. **Gather context** — Read relevant files, search the codebase, understand the architecture. **Always use the Read tool** for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
-4. **Decompose** — Break the task into discrete, ordered steps. Each must be independently executable by a Drone with only the task description.
-5. **Identify risks** — Flag blockers, dependencies, or uncertainty.
-6. **Present the plan** — Output a structured plan and wait for user approval.
+2. **Check prior plans** — Use `records_list` with the `task_id` (if re-planning an existing epic) and tag `queen-plan` to find prior plan artifacts. If one exists, use `records_fetch_content` to read it — avoid re-planning completed work.
+3. **Search memory** — Use `memory_search_minimal` with `intent: planning` to find prior decisions, patterns, or context.
+4. **Gather context** — Read relevant files, search the codebase, understand the architecture. **Always use the Read tool** for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
+5. **Decompose** — Break the task into discrete, ordered steps. Each must be independently executable by a Drone with only the task description.
+6. **Identify risks** — Flag blockers, dependencies, or uncertainty.
+7. **Present the plan** — Output a structured plan and wait for user approval.
 
 ### Plan Format
 
