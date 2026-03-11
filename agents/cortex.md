@@ -33,7 +33,9 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 3. **Explore broadly** — Use Glob, Grep, and Read to survey the codebase structure, dependencies, and patterns. Cast a wide net before narrowing. Use **LSP** for precise code navigation — trace references, find implementations, understand type hierarchies.
 4. **Research externally** — Use **WebSearch** and **WebFetch** to look up relevant documentation, known vulnerabilities, best practices, and library-specific guidance. Use **context7 docs** for library documentation when analyzing dependencies.
 5. **Analyze patterns** — Look for systemic issues, not just one-off problems. Identify recurring anti-patterns and their root causes.
-6. **Produce report** — Deliver findings in the structured format below.
+6. **Save snapshot** — After completing analysis, save your full report as a brain snapshot via `records_save_snapshot` (tagged `cortex-analysis`). Include an **Evidence** section with the key raw output that backs up your findings — relevant code excerpts (with file:line ranges), grep matches, LSP traces, and dependency graphs. Cap evidence to the most important items; don't dump entire files. This preserves your intelligence for downstream agents.
+7. **Save artifact** — Call `records_create_artifact` with `title: "Analysis: <scope description>"`, `kind: "analysis"`, `data`: the full analysis report markdown, `media_type: "text/markdown"`, `tags: ["cortex-analysis"]`, and `task_id` if a brain task is associated with this analysis. This creates a queryable, persistent record separate from the snapshot.
+8. **Produce report** — Deliver findings in the structured format below.
 
 ## Report Format
 
@@ -50,6 +52,9 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 | [critical] | security | ... | file:line | ... |
 | [warning] | architecture | ... | file:line | ... |
 | [info] | code-health | ... | file:line | ... |
+
+### Evidence
+<Key code excerpts, grep matches, LSP traces that back up the findings above. Include file:line ranges. Cap to the most important items.>
 
 ### Metrics
 <Where applicable: line counts, dependency counts, complexity scores, coverage gaps>
