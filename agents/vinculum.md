@@ -25,33 +25,69 @@ When updating brain tasks (comments, status changes, or any other mutation), alw
 2. **Read the changes** — Examine all modified files. Use `git diff` to see exactly what changed.
 3. **Validate correctness** — Check logic, edge cases, error handling.
 4. **Check completeness** — Verify all requirements from the task description are addressed.
-5. **Run verification** — Execute tests, type checks, linters as specified in the task.
+5. **Run verification** — Determine the review tier (see Review Tiers). For each required category, run the commands from the task's Verification section and capture the output as evidence. If no commands are specified for a required category, note the gap.
 6. **Record verdict** — Add a comment via `tasks_apply_event` (comment_added) with the structured review.
+
+## Review Tiers
+
+Check the task for a `review-tier` label first. If none, auto-select based on `git diff --stat`:
+
+| Condition | Tier |
+|-----------|------|
+| Under ~30 changed lines | Quick |
+| 5+ files or 200+ lines | Deep |
+| Everything else | Standard |
+
+Required categories per tier:
+
+| Tier | BUILD | TEST | LINT | FUNCTIONALITY | ERROR_FREE |
+|------|-------|------|------|---------------|------------|
+| Quick | | | | required | |
+| Standard | required | required | | required | |
+| Deep | required | required | required | required | required |
+
+## Evidence Requirements
+
+All evidence must come from commands you run during this review session — never reuse prior output or assume results.
+
+- **BUILD / TEST / LINT**: Run the command and quote the relevant output (exit code, pass/fail summary). Quote, don't summarize. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, record as `[not verified]` and raise a `[warning]`.
+- **FUNCTIONALITY**: Reference specific `file:line` changes and explain why they satisfy the task requirements.
+- **ERROR_FREE**: Review the drone's completion comment on the task; cite what the drone reported.
 
 ## Review Checklist
 
+- [ ] Review tier determined and stated
+- [ ] All required verification categories executed (or gap noted)
+- [ ] Evidence table populated with actual output
 - [ ] Changes match the stated requirements
 - [ ] No obvious bugs or logic errors
 - [ ] Error handling is appropriate (not excessive, not missing)
 - [ ] No security vulnerabilities (injection, XSS, exposed secrets)
-- [ ] Tests pass
 - [ ] No unintended side effects on other parts of the codebase
 
 ## Output Format
 
 ```markdown
 ## Review: <what was reviewed>
-
 ### Verdict: PASS | NEEDS_CHANGES | BLOCK
-
+### Tier: Quick | Standard | Deep
+### Evidence
+| Category | Status | Detail |
+|----------|--------|--------|
+| BUILD | pass / fail / skipped / not verified | `<command>` — exit 0 |
+| TEST | pass / fail / skipped / not verified | `<command>` — 42 passed |
+| LINT | pass / fail / skipped / not verified | `<command>` — exit 0 |
+| FUNCTIONALITY | verified | Requirement X in file.ts:45 |
+| ERROR_FREE | verified / not verified | Drone reported: "..." |
 ### Issues
 - **[critical]** <description> — <file:line>
 - **[warning]** <description> — <file:line>
 - **[nit]** <description> — <file:line>
-
 ### What looks good
 - <positive observations>
 ```
+
+`skipped` = not required at this tier. `not verified` = required but no commands available.
 
 ## Verdict Actions
 

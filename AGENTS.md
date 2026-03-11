@@ -26,7 +26,7 @@ A modular, symlink-friendly agent framework for Claude Code.
 |-------|-------|------|
 | queen | Opus | Strategic mind — plans, orchestrates, dispatches drones |
 | drone | Sonnet | Worker — implements a single well-defined step |
-| vinculum | Opus | Reviewer — validates correctness and quality |
+| vinculum | Opus | Reviewer — validates correctness and quality with evidence-based verification |
 | probe | Sonnet | Scout — codebase search and reconnaissance |
 | cortex | Opus | Analyst — deep architectural audits, security reviews, and codebase health assessments |
 | subroutine | Haiku | Housekeeping — git commits, docs, brain task management |
