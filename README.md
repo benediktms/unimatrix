@@ -1,14 +1,20 @@
 # Unimatrix
 
-A multi-agent orchestration framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that coordinates specialized AI agents to plan, implement, review, and analyze software engineering tasks.
+A multi-agent orchestration framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [OpenCode](https://opencode.ai) that coordinates specialized AI agents to plan, implement, review, and analyze software engineering tasks.
 
-Unimatrix extends Claude Code with a collective of agents — each with a distinct role, model, and set of capabilities — orchestrated through slash commands, event hooks, and persistent task tracking via [Brain](https://github.com/benediktms/brain).
+Unimatrix extends both platforms with a collective of agents — each with a distinct role, model, and set of capabilities — orchestrated through slash commands, event hooks, and persistent task tracking via [Brain](https://github.com/benediktms/brain).
 
 ## How It Works
 
 Unimatrix follows a plan-execute-review cycle:
 
-1. **The Queen plans** — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan
+```mermaid
+flowchart LR
+    Plan["Queen / BorgQueen\nplans"] --> Execute["Drones\nbuild"] --> Review["Vinculum\nreviews"] --> Cleanup["Subroutine\ncleans up"]
+    Review -->|NEEDS_CHANGES| Execute
+```
+
+1. **The Queen plans** (Claude Code) or **BorgQueen plans directly** (OpenCode) — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan
 2. **The lead session orchestrates** — spawns Drones (and optionally Probes/Cortex) to carry out the plan
 3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
 4. **The Vinculum reviews** — validates correctness with evidence-based verification
@@ -20,9 +26,10 @@ All task state, checkpoints, and learned patterns are persisted in Brain, enabli
 
 ```mermaid
 graph TB
-    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
+    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
 
-    Lead --> Queen["<b>Queen</b><br/>Opus<br/><i>plans</i>"]
+    Lead --> Queen["<b>Queen</b><br/>Opus<br/><i>plans</i><br/>(Claude Code)"]
+    Lead --> BorgQueen["<b>BorgQueen</b><br/>Opus<br/><i>plans + executes</i><br/>(OpenCode)"]
     Lead --> Drone["<b>Drone</b><br/>Sonnet<br/><i>builds</i>"]
     Lead --> Vinculum["<b>Vinculum</b><br/>Opus<br/><i>reviews</i>"]
     Lead --> Probe["<b>Probe</b><br/>Sonnet<br/><i>finds</i>"]
@@ -30,6 +37,7 @@ graph TB
     Lead --> Subroutine["<b>Subroutine</b><br/>Haiku<br/><i>cleans up</i>"]
 
     Queen --> Brain
+    BorgQueen --> Brain
     Drone --> Brain
     Vinculum --> Brain
     Probe --> Brain
@@ -41,6 +49,7 @@ graph TB
     style Lead fill:#1a1a2e,stroke:#e94560,color:#fff
     style Brain fill:#0f3460,stroke:#e94560,color:#fff
     style Queen fill:#2d1b4e,stroke:#b388ff,color:#fff
+    style BorgQueen fill:#2d1b4e,stroke:#b388ff,color:#fff
     style Drone fill:#1b3a2d,stroke:#69f0ae,color:#fff
     style Vinculum fill:#1b2d3a,stroke:#80deea,color:#fff
     style Probe fill:#3a351b,stroke:#fff176,color:#fff
@@ -50,16 +59,17 @@ graph TB
 
 ### Agents
 
-| Agent | Model | Role |
-|-------|-------|------|
-| **Queen** | Opus | Strategic planner — decomposes work into brain tasks with dependencies, produces dispatch plans |
-| **Drone** | Sonnet | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
-| **Vinculum** | Opus | Code reviewer — evidence-based verification with tiered reviews (Quick/Standard/Deep) and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
-| **Probe** | Sonnet | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
-| **Cortex** | Opus | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
-| **Subroutine** | Haiku | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
+| Agent | Model | Platform | Role |
+|-------|-------|----------|------|
+| **Queen** | Opus | Claude Code | Strategic planner — decomposes work into brain tasks with dependencies, produces dispatch plans |
+| **BorgQueen** | Opus | OpenCode | Lead agent — strategic planner with direct execution capabilities |
+| **Drone** | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
+| **Vinculum** | Opus | Both | Code reviewer — evidence-based verification with tiered reviews (Quick/Standard/Deep) and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
+| **Probe** | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
+| **Cortex** | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
+| **Subroutine** | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
 
-Agent definitions live in `agents/` as markdown files with YAML frontmatter that configures model, permission mode, max turns, and allowed/disallowed tools.
+Agent definitions live in `src/agents/` as markdown files with combined YAML frontmatter that configures platform-specific model, permission mode, max turns, and allowed/disallowed tools. See [FORMAT.md](./FORMAT.md) for the combined source format.
 
 ### Skills (Slash Commands)
 
@@ -73,41 +83,95 @@ Skills are the primary interface for invoking workflows:
 | `/swarm` | Bulk parallel changes: Queen partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
 | `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
 | `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
-| `/reengage` | Resume execution of a previously planned brain task by dispatching agents to ready subtasks |
+| `/start-work` | Resume execution of a previously planned brain task — supports both standard and sequence relay dispatch modes |
+| `/reengage` | Resume a previously planned brain task (standard dispatch only — use `/start-work` for sequence relay support) |
 | `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
 | `/designate` | Generates Borg-style agent designations (e.g., "Seven of Nine, Septenary Tactical Adjunct of Trimatrix 712") |
 
-Skill definitions live in `skills/<name>/SKILL.md`.
+Skill definitions live in `src/skills/<name>/SKILL.md`.
+
+## Build System
+
+Unimatrix uses a single set of source files in `src/` to generate platform-specific output for both Claude Code and OpenCode. The build system (`build.py`) processes combined YAML frontmatter and conditional body sections to produce the correct output per platform.
+
+```mermaid
+flowchart LR
+    Src["src/\nagents, skills,\nrules, hooks"] --> Build["build.py\nvalidate → merge\nfrontmatter → strip\nconditionals"]
+    Build --> Claude["dist/claude-code/\n.claude/agents\n.claude/skills\n.claude/rules"]
+    Build --> OC["dist/opencode/\n.opencode/agents\n.claude/skills"]
+```
+
+Source files use:
+- **Combined frontmatter** — shared fields at the top level, platform-specific overrides in `claude:` / `opencode:` sections
+- **Conditional body sections** — `<!-- @claude -->` ... `<!-- @end -->` and `<!-- @opencode -->` ... `<!-- @end -->` markers for platform-specific content
+- **Platform filtering** — `platforms: [claude]` or `platforms: [opencode]` to restrict a file to one platform
+
+See [FORMAT.md](./FORMAT.md) for the complete source format specification.
+
+### Build Commands
+
+```bash
+python3 build.py --target all        # Build for both platforms (default)
+python3 build.py --target claude      # Build for Claude Code only
+python3 build.py --target opencode    # Build for OpenCode only
+python3 build.py --validate           # Validate source files only
+python3 build.py --clean              # Remove dist/ directory
+```
+
+Or use the [just](https://github.com/casey/just) command runner:
+
+```bash
+just build                # Build for both platforms
+just build-claude         # Build for Claude Code only
+just build-opencode       # Build for OpenCode only
+just validate             # Validate source files
+just check                # Run all checks (Python lint + TS type-check + validation)
+just install-global       # Build + install both platforms globally
+just install <path>       # Build + install both platforms to a project
+```
 
 ## Installation
 
 ### Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [OpenCode](https://opencode.ai)
 - [Brain](https://github.com/benediktms/brain) — task tracking, memory, and artifact persistence
-- Python 3 (for hooks)
+- Python 3.12+ (for build system and hooks)
+- [Deno](https://deno.com) (for OpenCode hook type-checking, optional)
 
 ### Install
 
 ```bash
 # Clone the repository
-git clone https://github.com/benediktms/unimatrix.git  # or wherever you host it
+git clone https://github.com/benediktms/unimatrix.git
 
-# Global installation (available in all projects)
-./install.sh --global
+# Set up dependencies
+just setup                # or: python3 -m venv .venv && pip install -e .
+
+# Build and install globally for both platforms
+just install-global
+
+# Or install per-platform
+./install.sh --claude --global
+./install.sh --opencode --global
 
 # Per-project installation
-./install.sh --project ~/code/my-project
+./install.sh --claude --project ~/code/my-project
+./install.sh --opencode --project ~/code/my-project
+./install.sh --both --project ~/code/my-project
 ```
 
 The installer:
-- Symlinks `agents/`, `rules/`, and `skills/` into `~/.claude/` (or `<project>/.claude/`)
-- Merges Unimatrix settings (spinner verbs, status line, hooks) into your `settings.json`
-- Configures `core.hooksPath` for git hooks
+- Runs `build.py` if `dist/` is missing or stale
+- Symlinks `agents/`, `rules/`, and `skills/` into the target config directory
+- Merges Unimatrix settings (spinner verbs, status line, hooks) into your `settings.json` (Claude Code)
+- Configures `core.hooksPath` for git hooks (Claude Code)
+- Symlinks OpenCode hook plugins into `.opencode/plugins/`
 - Backs up existing files before overwriting
+- Cleans up stale symlinks from previous installs
 - Skips project-level `.claude/skills/` when installing OpenCode to the unimatrix repo itself (if Claude Code skills are already installed globally) to prevent duplicate skills
 
-Restart Claude Code after installation to pick up changes.
+Restart your editor/CLI after installation to pick up changes.
 
 ## Workflows
 
@@ -232,7 +296,7 @@ The auto-learner system (see Hooks below) uses memory to capture and replay erro
 
 ## Hooks
 
-Unimatrix hooks into Claude Code's event system for automatic state management. All hooks are Python scripts in `hooks/`.
+Unimatrix hooks into platform event systems for automatic state management. Claude Code hooks are Python scripts in `src/hooks/claude/`. OpenCode hooks are TypeScript plugins in `src/hooks/opencode/`. Both implementations follow the shared logic defined in `src/hooks/SPEC.md`.
 
 ### State Tracking
 
@@ -265,12 +329,11 @@ The auto-learner captures error/fix patterns and replays them in future sessions
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `greeting.sh` | SessionStart | Displays a Borg-themed ASCII greeting |
 | `post-commit` | Git post-commit | Re-runs `install.sh --global` to keep symlinks in sync after changes |
 
 ### Status Line
 
-`statusline.py` renders a custom Claude Code status line showing active agents (color-coded by type), elapsed durations, compaction count, and session cost.
+`src/shared/statusline.py` renders a custom Claude Code status line showing active agents (color-coded by type), elapsed durations, compaction count, and session cost.
 
 ## Coordination Patterns
 
@@ -285,9 +348,27 @@ When plan steps are independent, multiple Drones run simultaneously:
 
 When steps have dependencies, Drones run one at a time. Prior checkpoint IDs flow forward via `PRIOR CHECKPOINTS:` in the prompt.
 
+### Sequence Relay
+
+For long sequential chains (3+ steps), each Drone saves a handoff snapshot and the next Drone receives only the handoff as prior context — avoiding queen compaction in long chains.
+
 ### Mixed-Mode
 
 Most real plans mix both: parallel foundation waves, sequential integration steps, parallel finishing work. The Queen's dispatch plan specifies the wave structure.
+
+```mermaid
+flowchart TD
+    subgraph Wave1 ["Wave 1 — Parallel (foundation)"]
+        D1["Drone 1"] & D2["Drone 2"] & D3["Drone 3"]
+    end
+    subgraph Wave2 ["Wave 2 — Sequential (integration)"]
+        D4["Drone 4"] --> D5["Drone 5"]
+    end
+    subgraph Wave3 ["Wave 3 — Parallel (finishing)"]
+        D6["Drone 6"] & D7["Drone 7"]
+    end
+    Wave1 -->|checkpoints| Wave2 -->|checkpoints| Wave3
+```
 
 ### Error Handling
 
@@ -299,43 +380,71 @@ Most real plans mix both: parallel foundation waves, sequential integration step
 
 ```
 unimatrix/
-├── agents/                    # Agent definitions
-│   ├── queen.md              #   Strategic planner (Opus)
-│   ├── drone.md              #   Implementation worker (Sonnet)
-│   ├── vinculum.md           #   Code reviewer (Opus)
-│   ├── probe.md              #   Codebase scout (Sonnet)
-│   ├── cortex.md             #   Deep analyst (Opus)
-│   └── subroutine.md         #   Cleanup worker (Haiku)
-├── skills/                    # Slash command skills
-│   ├── assemble/SKILL.md    #   End-to-end orchestration
-│   ├── adapt/SKILL.md       #   Iterative refinement
-│   ├── swarm/SKILL.md       #   Parallel bulk changes
-│   ├── recon/SKILL.md       #   Reconnaissance missions
-│   ├── comply/SKILL.md      #   Code review
-│   ├── analyse/SKILL.md     #   Deep analysis
-│   ├── reengage/SKILL.md    #   Resume prior work
-│   ├── assimilate/SKILL.md  #   End-of-session cleanup
-│   └── designate/SKILL.md   #   Agent naming
-├── rules/                     # Process rules
-│   ├── routing.md            #   Task → agent routing decisions
-│   └── coordination.md      #   Multi-agent coordination patterns
-├── hooks/                     # Claude Code event hooks
-│   ├── checkpoint-state.py   #   Pre-compaction state capture
-│   ├── inject-checkpoint.py  #   Post-compaction state restore
-│   ├── warn-compaction.py    #   Token usage warnings
-│   ├── learner-track.py      #   Error/fix pattern detection
-│   ├── learner-inject.py     #   Learned pattern injection
-│   ├── track-agents.py       #   Active agent tracking
-│   ├── track-cost.py         #   Token cost tracking
-│   ├── track-compactions.py  #   Compaction counting
-│   ├── designate.py          #   Borg designation generator
-│   ├── greeting.sh           #   Session greeting
-│   └── post-commit           #   Auto-reinstall on commit
-├── settings.json              # Claude Code config (hooks, spinner, status line)
-├── statusline.py              # Custom status line renderer
-├── install.sh                 # Symlink installer
-├── AGENTS.md                  # Canonical agent reference (includes task management docs)
-└── CLAUDE.md                  # Project entry point
+├── src/                          # Combined source (human-authored)
+│   ├── agents/                   # Agent definitions (combined frontmatter)
+│   │   ├── queen.md              #   Strategic planner — Claude Code only
+│   │   ├── borgqueen.md          #   Lead agent — OpenCode only
+│   │   ├── drone.md              #   Implementation worker
+│   │   ├── vinculum.md           #   Code reviewer
+│   │   ├── probe.md              #   Codebase scout
+│   │   ├── cortex.md             #   Deep analyst
+│   │   └── subroutine.md         #   Cleanup worker
+│   ├── skills/                   # Slash command skills
+│   │   ├── assemble/SKILL.md     #   End-to-end orchestration
+│   │   ├── adapt/SKILL.md        #   Iterative refinement
+│   │   ├── swarm/SKILL.md        #   Parallel bulk changes
+│   │   ├── recon/SKILL.md        #   Reconnaissance missions
+│   │   ├── comply/SKILL.md       #   Code review
+│   │   ├── analyse/SKILL.md      #   Deep analysis
+│   │   ├── start-work/SKILL.md   #   Resume prior work
+│   │   ├── reengage/SKILL.md     #   Resume prior work (alt)
+│   │   ├── assimilate/SKILL.md   #   End-of-session cleanup
+│   │   └── designate/SKILL.md    #   Agent naming
+│   ├── rules/                    # Process rules
+│   │   ├── routing.md            #   Task → agent routing decisions
+│   │   ├── coordination.md       #   Multi-agent coordination patterns
+│   │   └── token-economy.md      #   Token-efficient agent behavior
+│   ├── hooks/                    # Platform-specific event hooks
+│   │   ├── claude/               #   Python/Shell hooks (Claude Code)
+│   │   │   ├── checkpoint-state.py
+│   │   │   ├── inject-checkpoint.py
+│   │   │   ├── warn-compaction.py
+│   │   │   ├── learner-track.py
+│   │   │   ├── learner-inject.py
+│   │   │   ├── track-agents.py
+│   │   │   ├── track-cost.py
+│   │   │   ├── track-compactions.py
+│   │   │   ├── designate.py
+│   │   │   └── post-commit
+│   │   ├── opencode/             #   TypeScript plugin (OpenCode)
+│   │   │   └── unimatrix-hooks.ts
+│   │   └── SPEC.md               #   Shared hook logic specification
+│   ├── shared/                   #   Platform-agnostic assets
+│   │   ├── statusline.py         #     Claude Code status line
+│   │   └── statusline.sh         #     Shell status line helper
+│   └── lead/                     #   Lead session prompt templates
+├── dist/                         # Generated output (gitignored)
+│   ├── claude-code/              #   Claude Code-specific output
+│   │   └── .claude/
+│   │       ├── agents/*.md
+│   │       ├── skills/*/SKILL.md
+│   │       ├── rules/*.md
+│   │       └── settings.json
+│   └── opencode/                 #   OpenCode-specific output
+│       ├── .opencode/
+│       │   └── agents/*.md
+│       └── .claude/
+│           └── skills/*/SKILL.md
+├── build.py                      # Build system — generates dist/ from src/
+├── install.sh                    # Dual-platform symlink installer
+├── settings.json                 # Claude Code settings template
+├── justfile                      # Task runner (just)
+├── pyproject.toml                # Python project config
+├── deno.json                     # Deno config (OpenCode TS hooks)
+├── AGENTS.md                     # Canonical agent reference (includes task management docs)
+├── CLAUDE.md                     # Project entry point for Claude Code
+├── FORMAT.md                     # Combined source format specification
+└── VALIDATION.md                 # Dual-platform validation checklist
 ```
 
 ## Configuration
@@ -344,27 +453,38 @@ unimatrix/
 
 Merged into Claude Code's settings during installation. Configures:
 
-- **Hooks** — Maps Claude Code events to hook scripts
+- **Hooks** — Maps Claude Code events to hook scripts (`SubagentStart/Stop`, `PreCompact`, `PostToolUse`, `UserPromptSubmit`)
 - **Spinner verbs** — Custom Borg-themed loading messages
 - **Status line** — Points to `statusline.py` for the custom status bar
 
 ### Agent Definitions
 
-Each agent file (`agents/*.md`) uses YAML frontmatter:
+Each agent file (`src/agents/*.md`) uses combined YAML frontmatter with shared and platform-specific sections:
 
 ```yaml
 ---
-model: opus          # opus | sonnet | haiku
-permissionMode: auto # auto | bypassPermissions
-maxTurns: 40
-disallowedTools:     # Tools this agent cannot use
-  - Agent
+model: sonnet
+description: "Worker agent — implements a single well-defined task"
+
+claude:
+  name: Drone
+  permissionMode: bypassPermissions
+  disallowedTools: [Agent]
+  maxTurns: 50
+
+opencode:
+  mode: subagent
+  steps: 50
+  permission:
+    "*": allow
+  tools:
+    task: false
 ---
 ```
 
 ### Skill Definitions
 
-Each skill file (`skills/*/SKILL.md`) uses YAML frontmatter:
+Each skill file (`src/skills/*/SKILL.md`) uses YAML frontmatter:
 
 ```yaml
 ---
@@ -373,10 +493,13 @@ user_invocable: true
 ---
 ```
 
-The markdown body contains the full prompt that executes when the skill is invoked.
+The markdown body contains the full prompt that executes when the skill is invoked. Platform-specific dispatch syntax uses conditional sections (`<!-- @claude -->` / `<!-- @opencode -->`).
 
 ## Further Reading
 
 - [AGENTS.md](./AGENTS.md) — Canonical agent reference with task management CLI/MCP documentation
+- [FORMAT.md](./FORMAT.md) — Combined source format specification for dual-platform builds
+- [VALIDATION.md](./VALIDATION.md) — Dual-platform validation checklist
 - [Brain](https://github.com/benediktms/brain) — The task tracking, memory, and artifact persistence backend
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — The CLI that Unimatrix extends
+- [OpenCode](https://opencode.ai) — The alternative AI coding tool that Unimatrix supports
