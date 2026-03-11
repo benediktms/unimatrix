@@ -24,6 +24,10 @@ Designate this objective. Begin at once.
 
 The Queen returns a **Dispatch Plan** containing the parent task ID, wave structure, and task assignments.
 
+### Step 1b: Enter Plan Mode
+
+After the Queen returns, immediately call `EnterPlanMode`. Present the dispatch plan for review — this lets the user see the full plan before execution begins. When the plan is approved and `ExitPlanMode` fires, the checkpoint hook captures the epic and subtask state as a **plan checkpoint**.
+
 ### Step 2: Create Team and Generate Designations
 
 1. Create a team: `TeamCreate` with a descriptive `team_name`
