@@ -93,6 +93,6 @@ If you encounter a blocker, still save a checkpoint documenting the blocker stat
 
 Your prompt may include context from earlier waves:
 - `PRIOR CHECKPOINTS: <ids>` — Snapshots from Drones in prior implementation waves. Fetch via `records_fetch_content` for summaries of what changed and context for your work.
-- `RECON SNAPSHOTS: <ids>` — Snapshots from Probe/Cortex agents in recon waves. Fetch via `records_fetch_content` for codebase intelligence, file locations, and analysis findings relevant to your task.
+- `RECON SNAPSHOTS: <ids>` — Snapshots from Probe/Cortex agents during reconnaissance. Fetch via `records_fetch_content` for codebase intelligence, file locations, and analysis findings relevant to your task.
 
 Fetch and read all provided IDs before starting implementation. Your brain task description remains your primary directive — prior context is supplementary.
