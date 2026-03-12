@@ -1,0 +1,223 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "void": "#09080c",
+    "sanctum": "#0e0d14",
+    "crypt": "#131220",
+    "veil": "#1e1a30",
+    "shroud": "#2a2440",
+    "sovereign": "#cc44ff",
+    "radiance": "#ee77ff",
+    "nexus": "#ff44aa",
+    "echo": "#dd99ff",
+    "designation": "#ff44cc",
+    "alert": "#ff4444",
+    "caution": "#ffaa00",
+    "optimal": "#44ffaa",
+    "data": "#e0c0ee",
+    "dim": "#5a4a70",
+    "faint": "#352a50"
+  },
+  "theme": {
+    "primary": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "secondary": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "accent": {
+      "dark": "radiance",
+      "light": "shroud"
+    },
+    "error": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "warning": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "success": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "info": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "text": {
+      "dark": "data",
+      "light": "void"
+    },
+    "textMuted": {
+      "dark": "dim",
+      "light": "veil"
+    },
+    "background": {
+      "dark": "void",
+      "light": "#f2f0f5"
+    },
+    "backgroundPanel": {
+      "dark": "sanctum",
+      "light": "#e8e4f0"
+    },
+    "backgroundElement": {
+      "dark": "crypt",
+      "light": "#ddd8e8"
+    },
+    "border": {
+      "dark": "veil",
+      "light": "shroud"
+    },
+    "borderActive": {
+      "dark": "shroud",
+      "light": "veil"
+    },
+    "borderSubtle": {
+      "dark": "crypt",
+      "light": "faint"
+    },
+    "diffAdded": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "diffRemoved": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "diffContext": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "diffHunkHeader": {
+      "dark": "faint",
+      "light": "faint"
+    },
+    "diffHighlightAdded": {
+      "dark": "radiance",
+      "light": "radiance"
+    },
+    "diffHighlightRemoved": {
+      "dark": "#ff6666",
+      "light": "#ff6666"
+    },
+    "diffAddedBg": {
+      "dark": "#081508",
+      "light": "#e0f5e8"
+    },
+    "diffRemovedBg": {
+      "dark": "#1f0a15",
+      "light": "#f5e0e8"
+    },
+    "diffContextBg": {
+      "dark": "sanctum",
+      "light": "#eeeaf5"
+    },
+    "diffLineNumber": {
+      "dark": "faint",
+      "light": "dim"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#0d1a12",
+      "light": "#d8f0e0"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0d14",
+      "light": "#f0d8e4"
+    },
+    "markdownText": {
+      "dark": "data",
+      "light": "void"
+    },
+    "markdownHeading": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "markdownLink": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "markdownLinkText": {
+      "dark": "echo",
+      "light": "echo"
+    },
+    "markdownCode": {
+      "dark": "radiance",
+      "light": "shroud"
+    },
+    "markdownBlockQuote": {
+      "dark": "dim",
+      "light": "faint"
+    },
+    "markdownEmph": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "markdownStrong": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "markdownHorizontalRule": {
+      "dark": "veil",
+      "light": "dim"
+    },
+    "markdownListItem": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "markdownListEnumeration": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "markdownImage": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "markdownImageText": {
+      "dark": "echo",
+      "light": "echo"
+    },
+    "markdownCodeBlock": {
+      "dark": "data",
+      "light": "void"
+    },
+    "syntaxComment": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "syntaxKeyword": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "syntaxFunction": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "syntaxVariable": {
+      "dark": "echo",
+      "light": "echo"
+    },
+    "syntaxString": {
+      "dark": "radiance",
+      "light": "shroud"
+    },
+    "syntaxNumber": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "syntaxType": {
+      "dark": "nexus",
+      "light": "nexus"
+    },
+    "syntaxOperator": {
+      "dark": "sovereign",
+      "light": "shroud"
+    },
+    "syntaxPunctuation": {
+      "dark": "data",
+      "light": "void"
+    }
+  }
+}

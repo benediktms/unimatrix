@@ -1,0 +1,223 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "void": "#0c0808",
+    "hull": "#140d0d",
+    "forge": "#1a1010",
+    "breach": "#2e1a1a",
+    "bulkhead": "#3a2020",
+    "plasma": "#ff2222",
+    "flare": "#ff5533",
+    "conduit": "#cc6600",
+    "scanner": "#ff8866",
+    "designation": "#ff44aa",
+    "alert": "#ff4444",
+    "caution": "#ffaa00",
+    "optimal": "#66ff44",
+    "data": "#e8c0c0",
+    "dim": "#6e4a4a",
+    "faint": "#4a2a2a"
+  },
+  "theme": {
+    "primary": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "secondary": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "accent": {
+      "dark": "flare",
+      "light": "bulkhead"
+    },
+    "error": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "warning": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "success": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "info": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "text": {
+      "dark": "data",
+      "light": "void"
+    },
+    "textMuted": {
+      "dark": "dim",
+      "light": "breach"
+    },
+    "background": {
+      "dark": "void",
+      "light": "#f5f0f0"
+    },
+    "backgroundPanel": {
+      "dark": "hull",
+      "light": "#ede4e4"
+    },
+    "backgroundElement": {
+      "dark": "forge",
+      "light": "#e5d8d8"
+    },
+    "border": {
+      "dark": "breach",
+      "light": "bulkhead"
+    },
+    "borderActive": {
+      "dark": "bulkhead",
+      "light": "breach"
+    },
+    "borderSubtle": {
+      "dark": "forge",
+      "light": "faint"
+    },
+    "diffAdded": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "diffRemoved": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "diffContext": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "diffHunkHeader": {
+      "dark": "faint",
+      "light": "faint"
+    },
+    "diffHighlightAdded": {
+      "dark": "flare",
+      "light": "flare"
+    },
+    "diffHighlightRemoved": {
+      "dark": "#ff6666",
+      "light": "#ff6666"
+    },
+    "diffAddedBg": {
+      "dark": "#0a1205",
+      "light": "#e0f5e0"
+    },
+    "diffRemovedBg": {
+      "dark": "#200a0a",
+      "light": "#f5e0e0"
+    },
+    "diffContextBg": {
+      "dark": "hull",
+      "light": "#f0eaea"
+    },
+    "diffLineNumber": {
+      "dark": "faint",
+      "light": "dim"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#0d1a0a",
+      "light": "#d8f0d8"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0d0d",
+      "light": "#f0d8d8"
+    },
+    "markdownText": {
+      "dark": "data",
+      "light": "void"
+    },
+    "markdownHeading": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "markdownLink": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "markdownLinkText": {
+      "dark": "scanner",
+      "light": "scanner"
+    },
+    "markdownCode": {
+      "dark": "flare",
+      "light": "bulkhead"
+    },
+    "markdownBlockQuote": {
+      "dark": "dim",
+      "light": "faint"
+    },
+    "markdownEmph": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "markdownStrong": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "markdownHorizontalRule": {
+      "dark": "breach",
+      "light": "dim"
+    },
+    "markdownListItem": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "markdownListEnumeration": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "markdownImage": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "markdownImageText": {
+      "dark": "scanner",
+      "light": "scanner"
+    },
+    "markdownCodeBlock": {
+      "dark": "data",
+      "light": "void"
+    },
+    "syntaxComment": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "syntaxKeyword": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "syntaxFunction": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "syntaxVariable": {
+      "dark": "scanner",
+      "light": "scanner"
+    },
+    "syntaxString": {
+      "dark": "flare",
+      "light": "bulkhead"
+    },
+    "syntaxNumber": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "syntaxType": {
+      "dark": "conduit",
+      "light": "conduit"
+    },
+    "syntaxOperator": {
+      "dark": "plasma",
+      "light": "bulkhead"
+    },
+    "syntaxPunctuation": {
+      "dark": "data",
+      "light": "void"
+    }
+  }
+}
