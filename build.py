@@ -419,6 +419,36 @@ def copy_skill_assets(target: str) -> None:
             shutil.copy2(resolved, dest)
 
 
+def copy_themes(target: str) -> None:
+    """Copy theme files to dist/ (OpenCode only)."""
+    if target != "opencode":
+        return
+
+    themes_src = SRC / "themes"
+    if not themes_src.exists():
+        return
+
+    themes_dst = DIST / "opencode" / "themes"
+    themes_dst.mkdir(parents=True, exist_ok=True)
+    for item in sorted(themes_src.iterdir()):
+        if item.is_file() and item.suffix == ".json":
+            shutil.copy2(item, themes_dst / item.name)
+
+
+def copy_tui_config(target: str) -> None:
+    """Copy TUI configuration to dist/ (OpenCode only)."""
+    if target != "opencode":
+        return
+
+    tui_src = SRC / "tui" / "tui.json"
+    if not tui_src.exists():
+        return
+
+    tui_dst = DIST / "opencode" / "tui.json"
+    tui_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(tui_src, tui_dst)
+
+
 def copy_settings(target: str) -> None:
     """Copy platform-specific settings/config files."""
     if target == "claude":
@@ -453,6 +483,10 @@ def build(target: str) -> int:
 
     # Copy settings
     copy_settings(target)
+
+    # Copy themes and TUI config (OpenCode only)
+    copy_themes(target)
+    copy_tui_config(target)
 
     target_dir = "claude-code" if target == "claude" else "opencode"
     print(f"  → {count} files processed → {DIST / target_dir}")

@@ -6,7 +6,7 @@ description: Rules for multi-agent coordination and team communication
 
 ## Architecture
 
-The **Queen** plans and creates brain tasks. The **lead session** orchestrates execution by creating a worktree, creating a team, and spawning Drones inside the worktree. Drones implement, save checkpoints, and report completion. The lead monitors progress, handles wave transitions, and manages the worktree merge on completion.
+The **Queen** plans and creates brain tasks. The **lead session** orchestrates execution by creating a worktree and spawning Drones inside the worktree. Drones implement, save checkpoints, and report completion. The lead monitors progress, handles wave transitions, and manages the worktree merge on completion.
 
 ## Orchestration Worktree
 - Every `/assemble` and `/reengage` execution creates (or re-enters) an isolated worktree.
@@ -49,6 +49,7 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - This enables context flow between waves without the lead needing to relay full content
 
 ## Communication
+- **Agent teams are used selectively** — only for recon-oriented skills (`/recon`, `/devise`) where inter-agent communication adds value. Implementation skills (`/assemble`, `/swarm`) use plain subagents.
 - When using agent teams, prefer targeted `message` over `broadcast` to save tokens
 - Keep inter-agent messages concise — share findings, not full file contents
 - If a Drone is blocked, escalate to the lead immediately

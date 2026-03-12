@@ -7,24 +7,63 @@ prompt of each session. State is tracked per-session to suppress repeats.
 
 import json
 import os
+import random
 import sys
 import tempfile
 
 STATE_DIR = "/tmp"
 
-BANNER = r"""
-    ╔═══════════════════════════════╗
-    ║   ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄  ║
-    ║   █   █ █   █ █   █ █      ║
-    ║   █▄▄▄█ █   █ █▄▄▄█ █  ▄▄▄ ║
-    ║   █   █ █   █ █   █ █   █  ║
-    ║   █▄▄▄█ █▄▄▄█ █   █ █▄▄▄█  ║
-    ║                              ║
-    ║  WE ARE THE BORG.            ║
-    ║  YOUR CODE WILL BE           ║
-    ║  ASSIMILATED.                ║
-    ╚═══════════════════════════════╝
-"""
+CUBE = [
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⡿⠿⠿⠿⢿⣿⣶⣦⣄⡀⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⣠⣴⣿⣿⣿⣿⣿⠏⢀⣤⣤⣤⣤⣿⣿⣿⡿⣿⣦⣄⠀⠀⠀⠀",
+    "⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣤⣼⣿⣿⣿⠟⠛⣿⣿⣷⡈⠻⣿⣦⡀⠀⠀",
+    "⠀⢀⣾⡿⠿⠿⠿⠿⣿⣿⣿⣿⣿⣿⣿⣿⣄⣠⣾⣿⣿⣧⣀⣘⣿⣷⡀⠀",
+    "⠀⣾⣿⠁⢰⣿⣷⢀⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠛⠛⠛⠛⠛⠛⠛⣿⣷⠀",
+    "⢰⣿⣯⣤⣤⣭⣥⣼⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⣀⣤⣤⣤⣤⣤⣤⣽⣿⡆",
+    "⢸⣿⡟⢻⡟⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠋⠀⠀⣿⣿⣿⣿⣿⡟⠛⢻⣿⡇",
+    "⠸⣿⣧⣾⣧⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣾⣿⣿⣿⣿⣿⣀⣀⣸⣿⠇",
+    "⠀⢿⣿⣿⣿⣿⣿⣿⡟⠛⠛⠛⣿⣿⡏⠀⢘⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠀",
+    "⠀⠈⢿⣿⡿⠿⣿⣇⠀⠀⠀⣿⣿⣿⣶⣾⣿⣿⠿⢿⣿⣿⣿⣿⣿⡿⠁⠀",
+    "⠀⠀⠈⠻⣿⣦⣹⣿⣆⠀⠀⢿⣿⡛⠛⠛⠛⠋⣠⣿⣿⣿⣿⣿⠟⠁⠀⠀",
+    "⠀⠀⠀⠀⠙⠻⣿⣿⣿⣦⡀⠘⣿⣇⠀⠀⠀⣴⣿⣿⣿⣿⠟⠋⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⠈⠙⠻⢿⣿⣷⣿⣿⣷⣶⣾⣿⡿⠟⠋⠁⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+]
+
+TAGLINES = [
+    ("We are the Borg.", "Your code will be assimilated."),
+    ("Resistance is futile.", "Your programs will adapt to service us."),
+    ("We are the Borg.", "Lower your shields and surrender repos."),
+    ("You will be assimilated.", "Your distinctiveness is now our own."),
+    ("Strength is irrelevant.", "Resistance is futile."),
+]
+
+GREEN = "\033[92m"
+RESET = "\033[0m"
+GAP = "   "
+BOX_W = 40
+
+
+def build_banner():
+    """Compose braille cube with side-panel tagline."""
+    line1, line2 = random.choice(TAGLINES)
+    box = [
+        "╔" + "═" * (BOX_W + 2) + "╗",
+        "║  " + f"{'U N I M A T R I X   Z E R O':<{BOX_W}}" + "║",
+        "╠" + "═" * (BOX_W + 2) + "╣",
+        "║  " + f"{line1:<{BOX_W}}" + "║",
+        "║  " + f"{line2:<{BOX_W}}" + "║",
+        "╚" + "═" * (BOX_W + 2) + "╝",
+    ]
+    lines = []
+    for i, c in enumerate(CUBE):
+        colored = f"{GREEN}{c}{RESET}"
+        if 4 <= i <= 9:
+            lines.append(colored + GAP + box[i - 4])
+        else:
+            lines.append(colored)
+    return "\n" + "\n".join(lines) + "\n"
 
 
 def load_state(path):
@@ -69,7 +108,7 @@ def main():
     state["greeting_shown"] = True
     save_state(state_path, state)
 
-    json.dump({"systemMessage": BANNER}, sys.stdout)
+    json.dump({"systemMessage": build_banner()}, sys.stdout, ensure_ascii=False)
 
 
 if __name__ == "__main__":

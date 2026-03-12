@@ -227,6 +227,23 @@ install_opencode() {
     done
   fi
 
+  # Themes: install to themes/ directory (global only)
+  local dist_themes="$UNIMATRIX_DIR/dist/opencode/themes"
+  if [ "$is_global" = "true" ] && [ -d "$dist_themes" ]; then
+    mkdir -p "$target/themes"
+    for theme_file in "$dist_themes/"*.json; do
+      [ -f "$theme_file" ] || continue
+      link "$theme_file" "$target/themes/$(basename "$theme_file")"
+    done
+    cleanup_stale_links "$target/themes" "$dist_themes/"
+  fi
+
+  # TUI config: install tui.json (global only, with backup)
+  local dist_tui="$UNIMATRIX_DIR/dist/opencode/tui.json"
+  if [ "$is_global" = "true" ] && [ -f "$dist_tui" ]; then
+    link "$dist_tui" "$target/tui.json"
+  fi
+
   # Clean up stale global symlinks from old install path (~/.opencode/)
   if [ "$is_global" = "true" ] && [ -d "$HOME/.opencode" ]; then
     cleanup_stale_links "$HOME/.opencode/agents" "$dist_oc/"
