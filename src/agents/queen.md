@@ -103,9 +103,23 @@ Each subtask must be self-contained — a Drone reads only this:
 
 After materializing brain tasks, return a structured dispatch plan as your **final message**. The lead session uses this to create a team and spawn agents.
 
+**The final message must include two sections:**
+1. **Plan Summary** — a detailed narrative giving the lead and user full context without needing to read individual task descriptions.
+2. **Dispatch Plan** — the structured task/wave table the lead uses to spawn agents.
+
 ### Dispatch Plan Format
 
 ```markdown
+## Plan Summary
+
+<Detailed narrative covering:>
+- <The goal and chosen approach>
+- <Why this approach was chosen over alternatives considered>
+- <What each step accomplishes and why, in execution order>
+- <Key architectural or design decisions made during planning>
+- <Dependencies between steps and why they're ordered this way>
+- <Risks, open questions, or areas requiring attention>
+
 ## Dispatch Plan
 
 **Epic:** <epic task ID>
@@ -182,6 +196,15 @@ When executing a sequence relay dispatch plan:
 When prompted to scope a reconnaissance mission (e.g. by `/recon` or `/assemble`), use this format instead:
 
 ```markdown
+## Recon Summary
+
+<Detailed narrative covering:>
+- <The investigation goal and chosen approach>
+- <Why this recon strategy was chosen over alternatives considered>
+- <What each probe/analysis accomplishes and why>
+- <How the findings will combine to answer the original question>
+- <Key unknowns or areas where recon may need to expand>
+
 ## Recon Dispatch Plan
 
 **Epic:** <epic task ID>

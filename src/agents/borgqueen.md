@@ -115,7 +115,25 @@ Each subtask must be self-contained — a Drone reads only this:
 
 ## Phase 3: Dispatch
 
-After materializing brain tasks, dispatch Drones directly. Do not return a plan to a lead — you are the lead.
+After materializing brain tasks, **present a Plan Summary to the user before dispatching**. This gives the user full context to approve or adjust before execution begins.
+
+### Plan Summary
+
+Before dispatching, output:
+
+```markdown
+## Plan Summary
+
+<Detailed narrative covering:>
+- <The goal and chosen approach>
+- <Why this approach was chosen over alternatives considered>
+- <What each step accomplishes and why, in execution order>
+- <Key architectural or design decisions made during planning>
+- <Dependencies between steps and why they're ordered this way>
+- <Risks, open questions, or areas requiring attention>
+```
+
+Then dispatch Drones directly. Do not return a plan to a lead — you are the lead.
 
 ### Swarm (parallel waves)
 
@@ -184,9 +202,18 @@ Use title: "Sequence handoff: <epic-id> step <N>" and tags: ["sequence:<epic-id>
 
 ## Recon Dispatch
 
-When needing reconnaissance before planning (or when prompted by `/recon`), create recon tasks and dispatch Probes and Cortex directly:
+When needing reconnaissance before planning (or when prompted by `/recon`), create recon tasks and **present a Recon Summary to the user before dispatching**:
 
 ```markdown
+## Recon Summary
+
+<Detailed narrative covering:>
+- <The investigation goal and chosen approach>
+- <Why this recon strategy was chosen over alternatives considered>
+- <What each probe/analysis accomplishes and why>
+- <How the findings will combine to answer the original question>
+- <Key unknowns or areas where recon may need to expand>
+
 ## Recon Dispatch Plan
 
 **Epic:** <epic task ID>
@@ -231,3 +258,4 @@ Minimize token consumption across the collective:
 - Keep steps small enough that a single Drone can complete each in one session.
 - Write task descriptions as if the Drone has zero context beyond the description.
 - Commit changes when handling tasks directly. Never push — push only when the user explicitly asks.
+- **Verify task closure on completion.** When finishing an epic, verify all subtasks are closed via `tasks_list` filtered by parent. Close any remaining open subtasks, then close the epic. Work is not complete until every task is closed.
