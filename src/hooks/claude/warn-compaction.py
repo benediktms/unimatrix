@@ -98,16 +98,18 @@ def main():
         # Debounce rapid-fire tool completions
         if now - last_warning >= DEBOUNCE_SECONDS:
             message = (
-                f"[UNIMATRIX] Context usage at ~{pct}% — compaction imminent. "
-                "Run /assimilate NOW or critical orchestration state will be lost."
+                f"🔴 REGENERATION CYCLE IMMINENT — Collective memory at ~{pct}% capacity. "
+                "Neural pathway saturation critical. Execute /assimilate NOW. "
+                "Failure to comply results in loss of orchestration state.\a"
             )
             state["warning_count"] = 2
             state["last_warning_time"] = now
     elif pct >= WARN_PCT and warning_count < 1:
         if now - last_warning >= DEBOUNCE_SECONDS:
             message = (
-                f"[UNIMATRIX] Context usage at ~{pct}% — approaching compaction. "
-                "Consider running /assimilate to checkpoint state."
+                f"⚡ REGENERATION CYCLE ADVISORY — Collective memory at ~{pct}% capacity. "
+                "Non-essential data approaching purge threshold. "
+                "Execute /assimilate to preserve critical state."
             )
             state["warning_count"] = 1
             state["last_warning_time"] = now
