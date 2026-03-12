@@ -56,6 +56,7 @@ python3 build.py --target all
 | `/comply` | Validate changes via Vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
 | `/adapt` | Iterative refinement loop — Drone implements, Vinculum reviews, repeat until pass |
+| `/propagate` | Propagate the collective into an isolated worktree — runs `/assemble` on a branch, merge when ready |
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 | `/start-work` | Resume execution of a previously planned brain task |
 
@@ -160,6 +161,7 @@ After delegation completes, ALWAYS verify:
 | Review recent changes for correctness | `/comply` |
 | Deep architecture/security/perf analysis | `/analyse` |
 | Implement → review → fix loop until pass | `/adapt` |
+| Complex feature in isolated worktree | `/propagate` |
 | Resume work from a prior planning session | `/start-work` or `/reengage` |
 | End-of-session cleanup and knowledge capture | `/assimilate` |
 

@@ -70,6 +70,12 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - The user wants a Cortex-reviewed implementation plan before execution
 - The user explicitly uses `/devise`
 
+## Route to `/propagate` when:
+- The user wants a feature built in isolation without touching the main branch
+- The task is complex enough for `/assemble` but the user wants worktree isolation
+- The user wants to review all changes before merging into the main branch
+- The user explicitly uses `/propagate`
+
 ## Route to `/swarm` when:
 - The user wants to apply the same change across many files
 - Bulk refactoring, migrations, or convention enforcement
