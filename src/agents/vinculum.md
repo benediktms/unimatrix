@@ -5,11 +5,9 @@ description: Code reviewer that validates implementation quality, correctness, a
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent, Write, Edit]
-  maxTurns: 20
 opencode:
   description: Code reviewer that validates implementation quality, correctness, and completeness. Use after implementation to catch bugs, security issues, and missed requirements. Pass a brain task ID or parent task ID as the prompt.
   mode: subagent
-  steps: 20
   permission: {"*": allow}
   reasoningEffort: high
   tools: {task: false, write: false, edit: false}

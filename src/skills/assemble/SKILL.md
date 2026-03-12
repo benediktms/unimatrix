@@ -206,19 +206,17 @@ Create the recon brain tasks and produce a recon dispatch plan.
 
 1. Generate designations: `/designate <count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents
 <!-- @claude -->
-2. Create a team: `TeamCreate`
-3. Dispatch agents with their brain task IDs as prompts:
+2. Dispatch agents with their brain task IDs as prompts:
 ```
 Agent:
   subagent_type: "Probe" or "Cortex"
-  team_name: "<team name>"
   name: "<agent type>: <short name>"
   description: "<full designation> — <task summary>"
   prompt: "<task ID>"
   run_in_background: true
 ```
 The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and task context.
-4. Wait for all recon agents to complete
+3. Wait for all recon agents to complete
 <!-- @end -->
 <!-- @opencode -->
 2. Coordination happens through Brain tasks and records. No team management needed.
@@ -330,24 +328,14 @@ brain link <brain-name>
 
 Where `<brain-name>` is the brain that the Queen created tasks in (visible in the Queen's dispatch plan or from the parent repo's `.brain/brain.toml`). This must run **after** the worktree exists and from **inside** the worktree directory.
 
-### Step 4: Create Team and Generate Designations
+### Step 4: Generate Designations
 
-<!-- @claude -->
-If a team was already created in Step 2b, reuse it. Otherwise:
-
-1. Create a team: `TeamCreate` with a descriptive `team_name`
-2. Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Drone` for implementation agents, `--role Vinculum` for the Vinculum. Generate enough for all agents across all waves, including the Vinculum.
-<!-- @end -->
-<!-- @opencode -->
 Generate designations: `/designate <total-agent-count> --trimatrix` — use `--role Drone` for implementation agents, `--role Vinculum` for the Vinculum. Generate enough for all agents across all waves, including the Vinculum.
-
-Coordination happens through Brain tasks and records. No team management needed.
-<!-- @end -->
 
 ### Step 5: Dispatch Adjuncts
 
 <!-- @claude -->
-For each wave in the Queen's dispatch plan, spawn agents as team members. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
+For each wave in the Queen's dispatch plan, spawn agents. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
 <!-- @end -->
 <!-- @opencode -->
 For each wave in your dispatch plan, spawn agents. Use `Drone` for implementation tasks and `Subroutine` for documentation-only tasks.
@@ -359,9 +347,9 @@ For each wave in your dispatch plan, spawn agents. Use `Drone` for implementatio
 ```
 Agent:
   subagent_type: "Drone" or "Subroutine"
-  team_name: "<team name>"
   name: "<agent type>: <short name>"
   description: "<full designation> — <task summary>"
+  run_in_background: true  # for swarm waves; false for sequential
   prompt: |
     You are <agent type> <designation> executing brain task <task-id> — "<task title>".
     <mode block if applicable>
@@ -508,13 +496,7 @@ git branch -D <branch-name>
 
 ### Step 10: Cleanup
 
-<!-- @claude -->
-1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
-2. Delete team: `TeamDelete`
-<!-- @end -->
-<!-- @opencode -->
-Coordination happens through Brain tasks and records. No team management needed.
-<!-- @end -->
+Coordination happens through Brain tasks and records. No team lifecycle management needed — subagents terminate on completion.
 
 ## Ad-Hoc Reconnaissance
 

@@ -92,6 +92,7 @@ Skills are the primary interface for invoking workflows:
 | `/bookmark` | Save a named checkpoint of current work state — branch, tasks, changes, next steps — for later resumption |
 | `/resume` | Restore context from a saved bookmark: staleness detection, task status diff, structured briefing |
 | `/designate` | Generates Borg-style agent designations (e.g., "Seven of Nine, Septenary Tactical Adjunct of Trimatrix 712") |
+| `/status` | Displays session status — active agents, elapsed time, cost, and compaction count |
 
 Skill definitions live in `src/skills/<name>/SKILL.md`.
 
@@ -103,7 +104,7 @@ Unimatrix uses a single set of source files in `src/` to generate platform-speci
 flowchart LR
     Src["src/\nagents, skills,\nrules, hooks"] --> Build["build.py\nvalidate → merge\nfrontmatter → strip\nconditionals"]
     Build --> Claude["dist/claude-code/\n.claude/agents\n.claude/skills\n.claude/rules"]
-    Build --> OC["dist/opencode/\n.opencode/agents\n.claude/skills"]
+    Build --> OC["dist/opencode/\n.opencode/agents\n.claude/skills\nthemes/\ntui.json"]
 ```
 
 Source files use:
@@ -192,6 +193,7 @@ The installer:
 - Merges Unimatrix settings (spinner verbs, status line, hooks) into your `settings.json` (Claude Code)
 - Configures `core.hooksPath` for git hooks (Claude Code)
 - Symlinks OpenCode hook plugins into `.opencode/plugins/`
+- Installs Borg TUI theme to `~/.config/opencode/themes/` and TUI config to `~/.config/opencode/tui.json` (OpenCode global only)
 - Backs up existing files before overwriting
 - Cleans up stale symlinks from previous installs
 - Skips project-level `.claude/skills/` when installing OpenCode to the unimatrix repo itself (if Claude Code skills are already installed globally) to prevent duplicate skills
@@ -429,7 +431,8 @@ unimatrix/
 │   │   ├── bisect/SKILL.md       #   Guided commit binary search
 │   │   ├── bookmark/SKILL.md     #   Save work checkpoints
 │   │   ├── resume/SKILL.md       #   Restore from bookmarks
-│   │   └── designate/SKILL.md    #   Agent naming
+│   │   ├── designate/SKILL.md    #   Agent naming
+│   │   └── status/SKILL.md       #   Session status display
 │   ├── rules/                    # Process rules
 │   │   ├── personality.md        #   Borg collective personality guidelines (source of truth)
 │   │   ├── routing.md            #   Task → agent routing decisions
@@ -450,6 +453,14 @@ unimatrix/
 │   │   ├── opencode/             #   TypeScript plugin (OpenCode)
 │   │   │   └── unimatrix-hooks.ts
 │   │   └── SPEC.md               #   Shared hook logic specification
+│   ├── themes/                   #   OpenCode TUI themes
+│   │   ├── unimatrix.json        #     Borg green-on-dark (default)
+│   │   ├── unimatrix-zero.json   #     Soft dreamlike greens
+│   │   ├── queens-chamber.json   #     Deep purple/violet
+│   │   ├── tactical-cube.json    #     Aggressive red-shifted
+│   │   └── unicomplex.json       #     Gold/amber central hub
+│   ├── tui/                      #   OpenCode TUI configuration
+│   │   └── tui.json              #     Theme, scroll, diff settings
 │   ├── shared/                   #   Platform-agnostic assets
 │   │   ├── statusline.py         #     Claude Code status line
 │   │   └── statusline.sh         #     Shell status line helper
@@ -464,8 +475,11 @@ unimatrix/
 │   └── opencode/                 #   OpenCode-specific output
 │       ├── .opencode/
 │       │   └── agents/*.md
-│       └── .claude/
-│           └── skills/*/SKILL.md
+│       ├── .claude/
+│       │   └── skills/*/SKILL.md
+│       ├── themes/
+│       │   └── unimatrix.json
+│       └── tui.json
 ├── build.py                      # Build system — generates dist/ from src/
 ├── install.sh                    # Dual-platform symlink installer
 ├── settings.json                 # Claude Code settings template
@@ -476,6 +490,26 @@ unimatrix/
 ├── CLAUDE.md                     # Project entry point for Claude Code
 ├── FORMAT.md                     # Combined source format specification
 └── VALIDATION.md                 # Dual-platform validation checklist
+```
+
+## Themes
+
+Unimatrix ships 5 Borg-aesthetic TUI themes for OpenCode. Themes are installed to `~/.config/opencode/themes/` during global installation.
+
+| Theme | Description |
+|-------|-------------|
+| `unimatrix` | Borg green-on-dark — the default collective aesthetic |
+| `unimatrix-zero` | Soft dreamlike greens — Unimatrix Zero's subconscious drift |
+| `queens-chamber` | Deep purple/violet — the Queen's sovereign aesthetic |
+| `tactical-cube` | Aggressive red-shifted — crimson plasma of the combat cube |
+| `unicomplex` | Gold/amber — the warm glow of the central hub |
+
+To switch themes, edit `src/tui/tui.json` and change the `"theme"` value to any of the names above, then rebuild:
+
+```bash
+just build
+# or install directly
+./install.sh --opencode --global
 ```
 
 ## Configuration

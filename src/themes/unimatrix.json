@@ -1,0 +1,223 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "void": "#080c08",
+    "alcove": "#0d130d",
+    "node": "#121a12",
+    "lattice": "#1a2e1a",
+    "grid": "#243a24",
+    "signal": "#00ff41",
+    "beam": "#33ff77",
+    "link": "#00cccc",
+    "cortex": "#66ddff",
+    "designation": "#cc44ff",
+    "alert": "#ff4444",
+    "caution": "#ffaa00",
+    "optimal": "#00ff66",
+    "data": "#c0e8c0",
+    "dim": "#4a6e4a",
+    "faint": "#2a4a2a"
+  },
+  "theme": {
+    "primary": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "secondary": {
+      "dark": "link",
+      "light": "link"
+    },
+    "accent": {
+      "dark": "beam",
+      "light": "grid"
+    },
+    "error": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "warning": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "success": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "info": {
+      "dark": "link",
+      "light": "link"
+    },
+    "text": {
+      "dark": "data",
+      "light": "void"
+    },
+    "textMuted": {
+      "dark": "dim",
+      "light": "lattice"
+    },
+    "background": {
+      "dark": "void",
+      "light": "#f0f5f0"
+    },
+    "backgroundPanel": {
+      "dark": "alcove",
+      "light": "#e4ede4"
+    },
+    "backgroundElement": {
+      "dark": "node",
+      "light": "#d8e5d8"
+    },
+    "border": {
+      "dark": "lattice",
+      "light": "grid"
+    },
+    "borderActive": {
+      "dark": "grid",
+      "light": "lattice"
+    },
+    "borderSubtle": {
+      "dark": "node",
+      "light": "faint"
+    },
+    "diffAdded": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "diffRemoved": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "diffContext": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "diffHunkHeader": {
+      "dark": "faint",
+      "light": "faint"
+    },
+    "diffHighlightAdded": {
+      "dark": "beam",
+      "light": "beam"
+    },
+    "diffHighlightRemoved": {
+      "dark": "#ff6666",
+      "light": "#ff6666"
+    },
+    "diffAddedBg": {
+      "dark": "#0a1f0a",
+      "light": "#e0f5e0"
+    },
+    "diffRemovedBg": {
+      "dark": "#1f0a0a",
+      "light": "#f5e0e0"
+    },
+    "diffContextBg": {
+      "dark": "alcove",
+      "light": "#eaf0ea"
+    },
+    "diffLineNumber": {
+      "dark": "faint",
+      "light": "dim"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#0d1a0d",
+      "light": "#d8f0d8"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0d0d",
+      "light": "#f0d8d8"
+    },
+    "markdownText": {
+      "dark": "data",
+      "light": "void"
+    },
+    "markdownHeading": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "markdownLink": {
+      "dark": "link",
+      "light": "link"
+    },
+    "markdownLinkText": {
+      "dark": "cortex",
+      "light": "cortex"
+    },
+    "markdownCode": {
+      "dark": "beam",
+      "light": "grid"
+    },
+    "markdownBlockQuote": {
+      "dark": "dim",
+      "light": "faint"
+    },
+    "markdownEmph": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "markdownStrong": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "markdownHorizontalRule": {
+      "dark": "lattice",
+      "light": "dim"
+    },
+    "markdownListItem": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "markdownListEnumeration": {
+      "dark": "link",
+      "light": "link"
+    },
+    "markdownImage": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "markdownImageText": {
+      "dark": "cortex",
+      "light": "cortex"
+    },
+    "markdownCodeBlock": {
+      "dark": "data",
+      "light": "void"
+    },
+    "syntaxComment": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "syntaxKeyword": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "syntaxFunction": {
+      "dark": "link",
+      "light": "link"
+    },
+    "syntaxVariable": {
+      "dark": "cortex",
+      "light": "cortex"
+    },
+    "syntaxString": {
+      "dark": "beam",
+      "light": "grid"
+    },
+    "syntaxNumber": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "syntaxType": {
+      "dark": "link",
+      "light": "link"
+    },
+    "syntaxOperator": {
+      "dark": "signal",
+      "light": "grid"
+    },
+    "syntaxPunctuation": {
+      "dark": "data",
+      "light": "void"
+    }
+  }
+}

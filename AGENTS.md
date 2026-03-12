@@ -7,6 +7,8 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
 - `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/devise`, `/comply`, `/swarm`, `/adapt`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
 - `src/rules/` — Routing and coordination rules
+- `src/themes/` — OpenCode TUI themes (Borg-aesthetic color palettes): `unimatrix`, `unimatrix-zero`, `queens-chamber`, `tactical-cube`, `unicomplex`
+- `src/tui/` — OpenCode TUI configuration (theme selection, scroll, keybinds). Switch themes by editing `src/tui/tui.json` → change the `"theme"` value.
 - `src/hooks/claude/` — Event hooks for Claude Code (Python/Shell)
 - `src/hooks/opencode/` — Event hooks for OpenCode (JS/TS plugins)
 - `build.py` — Generates platform-specific output from shared sources
@@ -163,6 +165,7 @@ Key rules for thinking traces:
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 | `/harvest` | Extract and persist session exploration findings as brain records and memory episodes |
 | `/resume` | Restore context from a saved bookmark and present a session briefing |
+| `/status` | Display session status — active agents, elapsed time, cost, and compaction count |
 
 ## Lead Session Behavior
 

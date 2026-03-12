@@ -138,5 +138,45 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 | learner-track | PostToolUse | tool.execute.after (TBD) |
 | learner-inject | UserPromptSubmit | message.before (TBD) |
 | track-agents | SubagentStart/Stop | task.start/complete (TBD) |
+| session-greeting | UserPromptSubmit | tool.execute.after (first call) |
 
 > **Note**: OpenCode event names are approximate — verify against actual plugin API before implementing.
+
+## Tier 3 — Aesthetic Hooks
+
+### 7. session-greeting
+
+**Trigger**: First user prompt only (UserPromptSubmit / tool.execute.after)
+
+**Logic**:
+1. Check session state for `greeting_shown` flag
+2. If already shown: return immediately (no-op)
+3. Set `greeting_shown = true` in state, persist
+4. Inject system message with ASCII art Borg cube and collective greeting
+
+**ASCII Art**:
+```
+    ╔═══════════════════════════════╗
+    ║   ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄  ║
+    ║   █   █ █   █ █   █ █      ║
+    ║   █▄▄▄█ █   █ █▄▄▄█ █  ▄▄▄ ║
+    ║   █   █ █   █ █   █ █   █  ║
+    ║   █▄▄▄█ █▄▄▄█ █   █ █▄▄▄█  ║
+    ║                              ║
+    ║  WE ARE THE BORG.            ║
+    ║  YOUR CODE WILL BE           ║
+    ║  ASSIMILATED.                ║
+    ╚═══════════════════════════════╝
+```
+
+**Platform differences**:
+- Claude Code: `UserPromptSubmit` hook injects `systemMessage`
+- OpenCode: First `tool.execute.after` call triggers greeting (no session-start event exists)
+
+**State file**: `/tmp/unimatrix-greeting-{session_id}.json`
+```json
+{
+  "greeting_shown": true,
+  "shown_at": 1709234567.89
+}
+```

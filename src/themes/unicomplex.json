@@ -1,0 +1,223 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "void": "#0c0b08",
+    "forge": "#14110d",
+    "foundry": "#1a1510",
+    "ore": "#2e2510",
+    "ingot": "#3a3018",
+    "aurum": "#ffaa00",
+    "gleam": "#ffcc44",
+    "copper": "#cc7700",
+    "alloy": "#ffdd88",
+    "designation": "#ff88aa",
+    "alert": "#ff4444",
+    "caution": "#ff7700",
+    "optimal": "#66ff88",
+    "data": "#eeddc0",
+    "dim": "#6e5a2a",
+    "faint": "#4a3a10"
+  },
+  "theme": {
+    "primary": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "secondary": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "accent": {
+      "dark": "gleam",
+      "light": "ingot"
+    },
+    "error": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "warning": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "success": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "info": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "text": {
+      "dark": "data",
+      "light": "void"
+    },
+    "textMuted": {
+      "dark": "dim",
+      "light": "ore"
+    },
+    "background": {
+      "dark": "void",
+      "light": "#f5f3f0"
+    },
+    "backgroundPanel": {
+      "dark": "forge",
+      "light": "#ede9e4"
+    },
+    "backgroundElement": {
+      "dark": "foundry",
+      "light": "#e5dfd8"
+    },
+    "border": {
+      "dark": "ore",
+      "light": "ingot"
+    },
+    "borderActive": {
+      "dark": "ingot",
+      "light": "ore"
+    },
+    "borderSubtle": {
+      "dark": "foundry",
+      "light": "faint"
+    },
+    "diffAdded": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "diffRemoved": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "diffContext": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "diffHunkHeader": {
+      "dark": "faint",
+      "light": "faint"
+    },
+    "diffHighlightAdded": {
+      "dark": "gleam",
+      "light": "gleam"
+    },
+    "diffHighlightRemoved": {
+      "dark": "#ff6666",
+      "light": "#ff6666"
+    },
+    "diffAddedBg": {
+      "dark": "#0a180a",
+      "light": "#e0f5e0"
+    },
+    "diffRemovedBg": {
+      "dark": "#200a0a",
+      "light": "#f5e0e0"
+    },
+    "diffContextBg": {
+      "dark": "forge",
+      "light": "#f0ece4"
+    },
+    "diffLineNumber": {
+      "dark": "faint",
+      "light": "dim"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#0d1a0a",
+      "light": "#d8f0d8"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0d0d",
+      "light": "#f0d8d8"
+    },
+    "markdownText": {
+      "dark": "data",
+      "light": "void"
+    },
+    "markdownHeading": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "markdownLink": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "markdownLinkText": {
+      "dark": "alloy",
+      "light": "alloy"
+    },
+    "markdownCode": {
+      "dark": "gleam",
+      "light": "ingot"
+    },
+    "markdownBlockQuote": {
+      "dark": "dim",
+      "light": "faint"
+    },
+    "markdownEmph": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "markdownStrong": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "markdownHorizontalRule": {
+      "dark": "ore",
+      "light": "dim"
+    },
+    "markdownListItem": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "markdownListEnumeration": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "markdownImage": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "markdownImageText": {
+      "dark": "alloy",
+      "light": "alloy"
+    },
+    "markdownCodeBlock": {
+      "dark": "data",
+      "light": "void"
+    },
+    "syntaxComment": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "syntaxKeyword": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "syntaxFunction": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "syntaxVariable": {
+      "dark": "alloy",
+      "light": "alloy"
+    },
+    "syntaxString": {
+      "dark": "gleam",
+      "light": "ingot"
+    },
+    "syntaxNumber": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "syntaxType": {
+      "dark": "copper",
+      "light": "copper"
+    },
+    "syntaxOperator": {
+      "dark": "aurum",
+      "light": "ingot"
+    },
+    "syntaxPunctuation": {
+      "dark": "data",
+      "light": "void"
+    }
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "void": "#0d120d",
+    "grove": "#131a13",
+    "canopy": "#192219",
+    "meadow": "#233223",
+    "glade": "#2e402e",
+    "bloom": "#66cc88",
+    "mist": "#88ddaa",
+    "dew": "#44aacc",
+    "haze": "#99eebb",
+    "designation": "#cc88ff",
+    "alert": "#ff6666",
+    "caution": "#ddaa44",
+    "optimal": "#44ee88",
+    "data": "#c8e8cc",
+    "dim": "#4e6e52",
+    "faint": "#304833"
+  },
+  "theme": {
+    "primary": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "secondary": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "accent": {
+      "dark": "mist",
+      "light": "glade"
+    },
+    "error": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "warning": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "success": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "info": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "text": {
+      "dark": "data",
+      "light": "void"
+    },
+    "textMuted": {
+      "dark": "dim",
+      "light": "meadow"
+    },
+    "background": {
+      "dark": "void",
+      "light": "#f0f5f1"
+    },
+    "backgroundPanel": {
+      "dark": "grove",
+      "light": "#e4ede6"
+    },
+    "backgroundElement": {
+      "dark": "canopy",
+      "light": "#d8e5da"
+    },
+    "border": {
+      "dark": "meadow",
+      "light": "glade"
+    },
+    "borderActive": {
+      "dark": "glade",
+      "light": "meadow"
+    },
+    "borderSubtle": {
+      "dark": "canopy",
+      "light": "faint"
+    },
+    "diffAdded": {
+      "dark": "optimal",
+      "light": "optimal"
+    },
+    "diffRemoved": {
+      "dark": "alert",
+      "light": "alert"
+    },
+    "diffContext": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "diffHunkHeader": {
+      "dark": "faint",
+      "light": "faint"
+    },
+    "diffHighlightAdded": {
+      "dark": "mist",
+      "light": "mist"
+    },
+    "diffHighlightRemoved": {
+      "dark": "#ff8888",
+      "light": "#ff8888"
+    },
+    "diffAddedBg": {
+      "dark": "#0a1f0e",
+      "light": "#e0f5e4"
+    },
+    "diffRemovedBg": {
+      "dark": "#1f0e0a",
+      "light": "#f5e0e0"
+    },
+    "diffContextBg": {
+      "dark": "grove",
+      "light": "#eaf0ea"
+    },
+    "diffLineNumber": {
+      "dark": "faint",
+      "light": "dim"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#0d1a10",
+      "light": "#d8f0dc"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0d0d",
+      "light": "#f0d8d8"
+    },
+    "markdownText": {
+      "dark": "data",
+      "light": "void"
+    },
+    "markdownHeading": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "markdownLink": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "markdownLinkText": {
+      "dark": "haze",
+      "light": "haze"
+    },
+    "markdownCode": {
+      "dark": "mist",
+      "light": "glade"
+    },
+    "markdownBlockQuote": {
+      "dark": "dim",
+      "light": "faint"
+    },
+    "markdownEmph": {
+      "dark": "caution",
+      "light": "caution"
+    },
+    "markdownStrong": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "markdownHorizontalRule": {
+      "dark": "meadow",
+      "light": "dim"
+    },
+    "markdownListItem": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "markdownListEnumeration": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "markdownImage": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "markdownImageText": {
+      "dark": "haze",
+      "light": "haze"
+    },
+    "markdownCodeBlock": {
+      "dark": "data",
+      "light": "void"
+    },
+    "syntaxComment": {
+      "dark": "dim",
+      "light": "dim"
+    },
+    "syntaxKeyword": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "syntaxFunction": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "syntaxVariable": {
+      "dark": "haze",
+      "light": "haze"
+    },
+    "syntaxString": {
+      "dark": "mist",
+      "light": "glade"
+    },
+    "syntaxNumber": {
+      "dark": "designation",
+      "light": "designation"
+    },
+    "syntaxType": {
+      "dark": "dew",
+      "light": "dew"
+    },
+    "syntaxOperator": {
+      "dark": "bloom",
+      "light": "glade"
+    },
+    "syntaxPunctuation": {
+      "dark": "data",
+      "light": "void"
+    }
+  }
+}

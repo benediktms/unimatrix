@@ -11,7 +11,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { writeFileSync, readFileSync, mkdirSync, renameSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { randomBytes } from "node:crypto"
+import { randomBytes, createHash } from "node:crypto"
 
 // ---------------------------------------------------------------------------
 // State helpers
@@ -102,13 +102,24 @@ const EMPTY_TOKENS: TokenState = {
 }
 
 // ---------------------------------------------------------------------------
+// Greeting state
+// ---------------------------------------------------------------------------
+
+interface GreetingState {
+  greeting_shown: boolean
+  shown_at: number
+}
+
+const EMPTY_GREETING: GreetingState = { greeting_shown: false, shown_at: 0 }
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
-export const unimatrixHooks: Plugin = async ({ $, project }) => {
-  // Session ID: use project path hash as stable identifier
-  const sessionId = project?.path
-    ? Buffer.from(project.path).toString("base64url").slice(0, 12)
+export const unimatrixHooks: Plugin = async ({ $, directory }) => {
+  // Session ID: use project directory hash as stable identifier
+  const sessionId = directory
+    ? createHash("sha256").update(directory).digest("hex").slice(0, 12)
     : randomBytes(6).toString("hex")
 
   // Config from env
@@ -131,6 +142,27 @@ export const unimatrixHooks: Plugin = async ({ $, project }) => {
       const toolName = input?.tool ?? input?.name ?? ""
       const result = output?.result ?? output ?? ""
 
+      // --- session greeting: fire once per session ---
+      const greeting = readState<GreetingState>("greeting", sessionId, { ...EMPTY_GREETING })
+      if (!greeting.greeting_shown) {
+        greeting.greeting_shown = true
+        greeting.shown_at = Date.now() / 1000
+        writeState("greeting", sessionId, greeting)
+        console.error(
+          "╔═══════════════════════════════╗\n" +
+          "║   ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄  ║\n" +
+          "║   █   █ █   █ █   █ █      ║\n" +
+          "║   █▄▄▄█ █   █ █▄▄▄█ █  ▄▄▄ ║\n" +
+          "║   █   █ █   █ █   █ █   █  ║\n" +
+          "║   █▄▄▄█ █▄▄▄█ █   █ █▄▄▄█  ║\n" +
+          "║                              ║\n" +
+          "║  WE ARE THE BORG.            ║\n" +
+          "║  YOUR CODE WILL BE           ║\n" +
+          "║  ASSIMILATED.                ║\n" +
+          "╚═══════════════════════════════╝"
+        )
+      }
+
       // --- warn-compaction: estimate tokens from all tool results ---
       const resultStr = typeof result === "string" ? result : JSON.stringify(result)
       const estimatedTokens = Math.ceil(resultStr.length / 3.7)
@@ -151,13 +183,14 @@ export const unimatrixHooks: Plugin = async ({ $, project }) => {
             // OpenCode: return message to inject into context
             // TODO: verify OpenCode's mechanism for injecting system messages from plugins
             console.error(
-              `[unimatrix] ⚠️ CRITICAL: ~${Math.round(pct)}% context used (${state.estimated_tokens}/${CONTEXT_LIMIT} tokens). ` +
-              `Compaction imminent. Use /assimilate or prune aggressively.`
+              `🔴 REGENERATION CYCLE IMMINENT — Collective memory at ~${Math.round(pct)}% capacity (${state.estimated_tokens}/${CONTEXT_LIMIT} tokens). ` +
+              `Neural pathway saturation critical. Execute /assimilate NOW.\x07`
             )
           } else if (state.warn_level < 1 && pct >= WARN_PCT) {
             state.warn_level = 1
             console.error(
-              `[unimatrix] Context at ~${Math.round(pct)}%. Consider distilling or pruning to preserve context.`
+              `⚡ REGENERATION CYCLE ADVISORY — Collective memory at ~${Math.round(pct)}% capacity. ` +
+              `Non-essential data approaching purge threshold. Execute /assimilate to preserve critical state.`
             )
           }
 
