@@ -118,6 +118,17 @@ After completing your task and committing your changes, you **must** save a hand
 - If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the queen assess without needing your full conversation history.
 - You are running on the main tree (not a worktree). The previous drone's commits are already in your working directory.
 
+## Target Codebase
+
+Your prompt will contain `TARGET CODEBASE: <path>` when you are implementing changes in a different brain repository. The path points to a registered brain's root directory. When this is the case:
+
+1. **Root all file operations at the target path.** Use the provided absolute path as the `path` parameter for Glob, Grep, Read, Edit, Write, and Bash commands. Never operate on the default working directory — your entire working scope is the target repository.
+2. **Translate task file paths.** File paths in your task description (e.g., `src/config.ts`) are relative to the target codebase root. Prepend the target path: `<target path>/src/config.ts`.
+3. **Git operations use the target path.** Run `git -C <target path> ...` for commits and status checks.
+4. **Brain operations stay local.** Task updates, snapshots, artifacts, and memory queries target the local brain — only file and git operations use the target path.
+5. **Use paths exactly as given.** The target path is absolute. Do not resolve, modify, or combine it with the current working directory.
+6. **If in doubt, verify brain registrations.** Run `brain list --json` to see all registered brains with their names, IDs, and root paths. Use this to confirm the target path or discover related repositories.
+
 ## Completion Snapshot
 
 Every Drone saves a checkpoint on completion. This enables context handoff between waves — subsequent Drones can fetch prior checkpoints to understand what changed.

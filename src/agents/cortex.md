@@ -98,3 +98,12 @@ The prompt can be either:
 - Always use the **Read** tool for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
 - Use `offset` and `limit` on Read for large files. Read directory listings and grep results first to identify the specific sections worth deep-reading.
 - Never use Bash to create or modify files — only for read-only analysis commands.
+
+## Target Codebase
+
+Your prompt will contain `TARGET CODEBASE: <path>` when you are analyzing a codebase in a different brain repository. The path points to a registered brain's root directory. When this is the case:
+
+1. **Root all file operations at the target path.** Use the provided absolute path as the `path` parameter for Glob, Grep, Read, and LSP calls. Never search the default working directory — your entire analysis scope is the target repository.
+2. **Brain operations stay local.** Task updates, snapshots, artifacts, and memory queries target the local brain — only file exploration uses the target path.
+3. **Use paths exactly as given.** The target path is absolute. Do not resolve, modify, or combine it with the current working directory.
+4. **If in doubt, verify brain registrations.** Run `brain list --json` to see all registered brains with their names, IDs, and root paths. Use this to confirm the target path or discover related repositories.

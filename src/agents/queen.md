@@ -196,3 +196,4 @@ When prompted to scope a reconnaissance mission (e.g. by `/recon` or `/assemble`
 - Keep steps small enough that a single Drone can complete each in one session.
 - Write task descriptions as if the Drone has zero context beyond the description.
 - If the task is simple enough to not need a plan, say so and suggest dispatching a single Drone directly.
+- **Verify task closure on completion.** When resumed for final status (e.g., by `/assemble`, `/devise`, or `/recon`), verify all subtasks under the epic are closed via `tasks_list` filtered by parent. Close any remaining open subtasks, then close the epic. Work is not complete until every task is closed.
