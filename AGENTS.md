@@ -5,7 +5,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 ## Structure
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
-- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/devise`, `/comply`, `/swarm`, `/adapt`)
+- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/devise`, `/comply`, `/swarm`, `/adapt`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
 - `src/rules/` — Routing and coordination rules
 - `src/hooks/claude/` — Event hooks for Claude Code (Python/Shell)
 - `src/hooks/opencode/` — Event hooks for OpenCode (JS/TS plugins)
@@ -50,6 +50,8 @@ python3 build.py --target all
 |-------|-------------|
 | `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
+| `/bisect` | Guided binary search through commits — automated (`--test`) or AI-guided with Probe analysis |
+| `/bookmark` | Save a named checkpoint of current work state for later resumption |
 | `/recon` | Orchestrate reconnaissance — Queen scopes, lead dispatches Probes and Cortex with task IDs. Supports `--include` for cross-brain targeting |
 | `/devise` | Feature planning with interactive scoping — Queen asks questions, dispatches recon, iterates until scope is defined, produces cross-brain implementation plan. Supports `--dry-run`, `--resume`, `--skip-review` |
 | `/reengage` | Re-engage the collective on a previously planned task |
@@ -58,6 +60,8 @@ python3 build.py --target all
 | `/adapt` | Iterative refinement loop — Drone implements, Vinculum reviews, repeat until pass |
 | `/propagate` | Propagate the collective into an isolated worktree — runs `/assemble` on a branch, merge when ready |
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
+| `/harvest` | Extract and persist session exploration findings as brain records and memory episodes |
+| `/resume` | Restore context from a saved bookmark and present a session briefing |
 | `/start-work` | Resume execution of a previously planned brain task |
 
 ## Lead Session Behavior
@@ -162,6 +166,10 @@ After delegation completes, ALWAYS verify:
 | Deep architecture/security/perf analysis | `/analyse` |
 | Implement → review → fix loop until pass | `/adapt` |
 | Complex feature in isolated worktree | `/propagate` |
+| Find which commit introduced a bug | `/bisect` |
+| Save current work state for later | `/bookmark` |
+| Preserve exploration findings before session ends | `/harvest` |
+| Restore context from a prior session | `/resume` |
 | Resume work from a prior planning session | `/start-work` or `/reengage` |
 | End-of-session cleanup and knowledge capture | `/assimilate` |
 
