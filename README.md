@@ -86,6 +86,10 @@ Skills are the primary interface for invoking workflows:
 | `/start-work` | Resume execution of a previously planned brain task — supports both standard and sequence relay dispatch modes |
 | `/reengage` | Resume a previously planned brain task (standard dispatch only — use `/start-work` for sequence relay support) |
 | `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
+| `/harvest` | Session knowledge extraction: Probe-style scan of exploration findings, Cortex deduplicates and persists as brain records/memory |
+| `/bisect` | Guided binary search through commits: automated (`--test`) or AI-guided with Probe analysis, runs in worktree |
+| `/bookmark` | Save a named checkpoint of current work state — branch, tasks, changes, next steps — for later resumption |
+| `/resume` | Restore context from a saved bookmark: staleness detection, task status diff, structured briefing |
 | `/designate` | Generates Borg-style agent designations (e.g., "Seven of Nine, Septenary Tactical Adjunct of Trimatrix 712") |
 
 Skill definitions live in `src/skills/<name>/SKILL.md`.
