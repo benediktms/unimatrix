@@ -27,6 +27,7 @@ Re-engage the collective on a brain task that was planned by the Queen. Use this
    - **If it does not exist:** create it via `git worktree add ../<branch-name> -b <branch-name>` and `cd` into it. This handles cases where the worktree was cleaned up or the session is resuming on a different machine.
 <!-- @end -->
    - All subsequent dispatch, verification, and review happens inside this worktree.
+   - **If the worktree was newly created**, link it to the brain: `brain link <brain-name>` (where `<brain-name>` is from the parent repo's `.brain/brain.toml` or the epic's brain). Must run from **inside** the worktree directory. Skip this if re-entering an existing worktree — it is already linked.
 4. Check for stale `in_progress` subtasks from a prior crashed session. If found, present them to the user — they may need to be reset to `open` (if incomplete) or closed (if actually done). Do not auto-reset.
 5. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Drone snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Drones via `PRIOR CHECKPOINTS:` in the prompt.
 6. Use `tasks_next` to find ready (unblocked) subtasks.

@@ -12,6 +12,7 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - Every `/assemble` and `/reengage` execution creates (or re-enters) an isolated worktree.
 - The Queen's dispatch plan specifies the worktree branch name in its `Worktree` section.
 - The worktree is created **after** the Queen's plan is approved, **before** any Drones are dispatched.
+- After worktree creation, the lead runs `brain link <brain-name>` from inside the worktree to register it as an additional root of the brain. This enables agents spawned in the worktree to access brain tasks and records.
 - All Drone commits land on the worktree branch. The main branch remains clean until merge.
 - On completion (Vinculum PASS + task closure), the lead offers merge/keep/discard to the user.
 - On merge: squash-merge the worktree branch, remove worktree and branch.
