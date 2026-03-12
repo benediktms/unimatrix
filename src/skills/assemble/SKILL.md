@@ -388,9 +388,22 @@ RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
 - Check brain tasks for completion status
 - If a Drone marks a task `blocked`, assess and either re-dispatch or escalate to the user
 
-### Step 7: Review
+### Step 7: Verification Gate
 
-When all Drones complete, spawn a `Vinculum` agent:
+When all Drones complete, the lead runs tests, lint, and formatting globally for the affected codebase. Drones only verify their own changed files — this step catches cross-cutting failures.
+
+1. **Run tests** — Execute the project's test suite covering all areas affected by Drone changes.
+2. **Run lint and formatting** — Execute the project's linter and formatter across all changed files.
+3. **If all pass** — Proceed to Step 8.
+4. **If failures exist** — Dispatch a single fix Drone:
+   - Create a brain task under the parent epic containing the raw test/lint/formatting error output and the specific files that need fixing.
+   - Save the failure output as an artifact (`records_create_artifact`, kind `"verification-failures"`) linked to the fix task.
+   - Dispatch one Drone to fix all test, lint, and formatting failures in a single pass.
+   - After the fix Drone completes, re-run the failing commands. If still failing, repeat (max 2 fix cycles total). If still failing after 2 cycles, escalate to the user.
+
+### Step 8: Review
+
+When verification passes, spawn a `Vinculum` agent:
 <!-- @claude -->
 ```
 Agent:
@@ -411,7 +424,7 @@ task(
 ```
 <!-- @end -->
 
-### Step 8: Handle Verdict
+### Step 9: Handle Verdict
 
 - **PASS** — Close all subtasks and the parent task via `tasks_close`. Write collective memory via `memory_write_episode`.
 <!-- @claude -->
@@ -420,7 +433,7 @@ task(
 - **NEEDS_CHANGES** — Spawn new Drones to fix specific issues, then re-run Vinculum.
 - **BLOCK** — Report blockers to user.
 
-### Step 9: Cleanup
+### Step 10: Cleanup
 
 <!-- @claude -->
 1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`

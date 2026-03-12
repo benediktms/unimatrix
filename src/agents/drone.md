@@ -45,7 +45,7 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 3. **Check for context** — Read any comments on the task for additional context from the Queen or prior Drones.
 4. **Read the code** — Always read existing code before modifying it. Understand context.
 5. **Implement** — Make the minimal set of changes needed to complete the task.
-6. **Verify** — Run tests, linters, or type checks as specified in the task's verification criteria. If the task has no Verification section, discover commands from project conventions (`package.json` scripts, `Makefile` targets, CI config, or language-standard tools like `go test`, `cargo check`, `pytest`). If no commands can be discovered, note what you verified manually and flag the gap in your completion comment.
+6. **Verify** — Run tests, lint, and formatting **scoped to your changed files only**. Never run project-wide or crate-wide commands. Target only the specific files, modules, or test cases affected by your changes. Fix any failures. The lead session runs global verification after all Drones complete.
 7. **Save completion snapshot** — See Completion Snapshot below. Note the returned snapshot ID.
 8. **Save implementation artifact** — Call `records_create_artifact` with:
    - `title`: `"Implementation: <task title>"`
@@ -64,7 +64,7 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 - Always use the **Read** tool for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
 - Prefer editing existing files over creating new ones.
 - Keep changes minimal — don't refactor, add comments, or "improve" surrounding code.
-- Run tests after making changes. If tests fail, fix them before reporting done.
+- Run tests, lint, and formatting scoped to changed files only — never project-wide. The lead runs global verification after all Drones complete.
 - If the task is blocked or unclear, mark it `blocked` via `tasks_apply_event` (status_changed), add a comment explaining the blocker, and report back immediately rather than guessing.
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Commit your changes when done. Never push — the lead agent handles that.

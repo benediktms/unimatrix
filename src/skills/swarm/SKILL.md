@@ -63,9 +63,13 @@ FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your t
 
 4. **Monitor** — Wait for all Drones to complete. Check brain task comments for blockers.
 
-5. **Review** — Dispatch `Vinculum` with the parent task ID to review aggregate changes.
+5. **Verification Gate** — Run tests, lint, and formatting globally for the affected codebase. Drones only verify their own changed files — this step catches cross-cutting failures.
+   - If all pass, proceed to step 6.
+   - If failures exist, create a brain task under the parent with the raw error output, save the failures as an artifact (`records_create_artifact`, kind `"verification-failures"`), and dispatch a single fix Drone for all test, lint, and formatting failures. Re-run after the fix. Max 2 fix cycles — escalate to the user if still failing.
 
-6. **Handle Verdict** — On PASS: close all subtasks and the parent task. On NEEDS_CHANGES: spawn Drones to fix. On BLOCK: escalate.
+6. **Review** — Dispatch `Vinculum` with the parent task ID to review aggregate changes.
+
+7. **Handle Verdict** — On PASS: close all subtasks and the parent task. On NEEDS_CHANGES: spawn Drones to fix. On BLOCK: escalate.
 
 ## Concurrency
 
