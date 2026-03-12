@@ -5,7 +5,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 ## Structure
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
-- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/comply`, `/swarm`, `/adapt`)
+- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/devise`, `/comply`, `/swarm`, `/adapt`)
 - `src/rules/` — Routing and coordination rules
 - `src/hooks/claude/` — Event hooks for Claude Code (Python/Shell)
 - `src/hooks/opencode/` — Event hooks for OpenCode (JS/TS plugins)
@@ -50,7 +50,8 @@ python3 build.py --target all
 |-------|-------------|
 | `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
-| `/recon` | Orchestrate reconnaissance — Queen scopes, lead dispatches Probes and Cortex with task IDs |
+| `/recon` | Orchestrate reconnaissance — Queen scopes, lead dispatches Probes and Cortex with task IDs. Supports `--include` for cross-brain targeting |
+| `/devise` | Feature planning with interactive scoping — Queen asks questions, dispatches recon, iterates until scope is defined, produces cross-brain implementation plan. Supports `--dry-run`, `--resume`, `--skip-review` |
 | `/reengage` | Re-engage the collective on a previously planned task |
 | `/comply` | Validate changes via Vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
@@ -151,6 +152,11 @@ After delegation completes, ALWAYS verify:
 | New feature spanning multiple files | `/assemble` |
 | Bulk refactoring (rename, migrate, style) | `/swarm` |
 | Multi-area codebase investigation | `/recon` |
+| Feature planning with requirements gathering | `/devise` |
+| Preview a feature plan without creating tasks | `/devise --dry-run` |
+| Resume a cached feature plan for materialization | `/devise --resume` |
+| Cross-codebase investigation | `/recon --include <brains>` |
+| Cross-codebase feature planning | `/devise --include <brains>` |
 | Review recent changes for correctness | `/comply` |
 | Deep architecture/security/perf analysis | `/analyse` |
 | Implement → review → fix loop until pass | `/adapt` |
