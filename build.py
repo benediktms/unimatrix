@@ -17,8 +17,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -89,6 +91,10 @@ OUTPUT_MAP: dict[str, dict[str, Path]] = {
         "opencode": DIST / "opencode",
     },
 }
+
+# Marker comments for tone injection in project AGENTS.md files
+TONE_START = "<!-- unimatrix:tone:start -->"
+TONE_END = "<!-- unimatrix:tone:end -->"
 
 # Regex: YAML frontmatter block
 FM_RE = re.compile(r"\A---[ \t]*\n(.*?\n)---[ \t]*\n", re.DOTALL)
@@ -454,6 +460,81 @@ def build(target: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Tone injection
+# ---------------------------------------------------------------------------
+
+
+def get_brain_roots(brain_name: str | None = None) -> list[dict]:
+    """Return list of {name, root} dicts for registered brains, excluding unimatrix."""
+    result = subprocess.run(
+        ["brain", "list", "--json"], capture_output=True, text=True, check=True
+    )
+    data = json.loads(result.stdout)
+    brains = data.get("brains", [])
+
+    own_root = Path(__file__).resolve().parent
+    targets = []
+    for brain in brains:
+        root = Path(brain["root"]).resolve()
+        if root == own_root:
+            print(f"  Skipping {brain['name']} (unimatrix source repo)")
+            continue
+        if brain_name is not None and brain["name"] != brain_name:
+            continue
+        targets.append({"name": brain["name"], "root": str(root)})
+
+    if brain_name is not None and not targets:
+        print(f"Error: brain '{brain_name}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    return targets
+
+
+def load_tone_block() -> str:
+    """Return the personality.md content wrapped in tone markers."""
+    content = (SRC / "rules" / "personality.md").read_text()
+    return f"{TONE_START}\n\n{content}{TONE_END}\n"
+
+
+def inject_tone_into_file(agents_path: Path, tone_block: str) -> str:
+    """Inject or update the tone block in agents_path. Returns status string."""
+    pattern = re.compile(
+        re.escape(TONE_START) + r".*?" + re.escape(TONE_END) + r"\n",
+        re.DOTALL,
+    )
+
+    if not agents_path.exists():
+        dir_name = agents_path.parent.name
+        agents_path.write_text(f"# {dir_name}\n\n{tone_block}")
+        return "created"
+
+    original = agents_path.read_text()
+
+    if TONE_START in original:
+        updated = pattern.sub(tone_block, original)
+        if updated == original:
+            return "unchanged"
+        agents_path.write_text(updated)
+        return "updated"
+
+    agents_path.write_text(original + f"\n{tone_block}")
+    return "injected"
+
+
+def inject_tone(brain_name: str | None = None) -> None:
+    """Inject/update Borg personality block into AGENTS.md for each brain."""
+    targets = get_brain_roots(brain_name)
+    tone_block = load_tone_block()
+
+    for brain in targets:
+        agents_path = Path(brain["root"]) / "AGENTS.md"
+        status = inject_tone_into_file(agents_path, tone_block)
+        print(f"  {brain['name']}: {status} ({agents_path})")
+
+    print(f"\nDone. {len(targets)} brain(s) processed.")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -479,8 +560,22 @@ def main() -> None:
         action="store_true",
         help="Remove dist/ directory",
     )
+    parser.add_argument(
+        "--inject-tone",
+        nargs="?",
+        const="__all__",
+        default=None,
+        metavar="BRAIN",
+        help="Inject/update Borg personality into AGENTS.md (all brains or specific brain)",
+    )
 
     args = parser.parse_args()
+
+    # Inject tone
+    if args.inject_tone is not None:
+        brain_name = None if args.inject_tone == "__all__" else args.inject_tone
+        inject_tone(brain_name)
+        return
 
     # Clean
     if args.clean:
