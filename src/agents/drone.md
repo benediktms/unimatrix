@@ -116,7 +116,7 @@ After completing your task and committing your changes, you **must** save a hand
 
 - Keep snapshots focused. Include only information the next drone genuinely needs — not a dump of everything you did.
 - If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the queen assess without needing your full conversation history.
-- You are running on the main tree (not a worktree). The previous drone's commits are already in your working directory.
+- You are running on the orchestration worktree branch (not a per-drone worktree). The previous drone's commits are already in your working directory.
 
 ## Target Codebase
 

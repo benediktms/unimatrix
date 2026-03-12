@@ -6,7 +6,16 @@ description: Rules for multi-agent coordination and team communication
 
 ## Architecture
 
-The **Queen** plans and creates brain tasks. The **lead session** orchestrates execution by creating a team and spawning Drones. Drones implement, save checkpoints, and report completion. The lead monitors progress and handles wave transitions.
+The **Queen** plans and creates brain tasks. The **lead session** orchestrates execution by creating a worktree, creating a team, and spawning Drones inside the worktree. Drones implement, save checkpoints, and report completion. The lead monitors progress, handles wave transitions, and manages the worktree merge on completion.
+
+## Orchestration Worktree
+- Every `/assemble` and `/reengage` execution creates (or re-enters) an isolated worktree.
+- The Queen's dispatch plan specifies the worktree branch name in its `Worktree` section.
+- The worktree is created **after** the Queen's plan is approved, **before** any Drones are dispatched.
+- All Drone commits land on the worktree branch. The main branch remains clean until merge.
+- On completion (Vinculum PASS + task closure), the lead offers merge/keep/discard to the user.
+- On merge: squash-merge the worktree branch, remove worktree and branch.
+- `/reengage` checks whether the worktree still exists — re-enters it if so, creates it if not.
 
 ## Parallel Execution
 - When plan steps are independent, spawn multiple Drones in parallel using `run_in_background: true`
@@ -22,7 +31,7 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - For long sequential chains (3+ steps), use sequence relay mode to avoid queen compaction
 - Each drone saves a handoff snapshot via `records_save_snapshot` with tags `sequence:<epic-id>`, `step:<N>`
 - The next drone receives only the handoff snapshot as prior context, not the full conversation history
-- Drones run serially on the main tree — no worktree isolation or merge steps needed
+- Drones run serially on the worktree branch — no per-drone isolation or merge steps needed
 - On drone failure: the sequence halts, queen assesses and decides whether to re-dispatch, re-plan, or escalate
 - Snapshot content must be concise (under 2KB) — summary of changes, key decisions, and context for the next step
 - The queen does not need to stay alive between steps for the happy path; Brain records are the communication channel
@@ -49,8 +58,9 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - If the Vinculum finds critical issues, spawn new Drones with specific fix instructions
 
 ## Git Discipline
-- Drones commit their changes. Only the lead agent pushes.
-- **File-partitioned Drones:** Commit directly to the current branch. No merge step needed since files don't overlap.
-- **Worktree Drones — merge between waves:** After a wave of worktree Drones completes, the lead must merge their branches before dispatching the next wave. Merge strategy: squash-merge worktree branches (`git merge --squash <branch>`). The lead reviews the diff before merging. On conflict: abort the merge, dispatch a Drone to rebase the conflicting branch, then retry.
-- **Sequential Drones:** Commit directly to the current branch. No merge step needed since Drones run serially.
-- **Sequence relay drones:** Commit directly to the current branch. No merge step needed since drones run serially and each sees the previous drone's commits.
+- All Drone work happens on the orchestration worktree branch. Only the lead agent pushes.
+- **File-partitioned Drones:** Commit directly to the worktree branch. No merge step needed since files don't overlap.
+- **Per-drone worktree isolation (overlapping files):** Each Drone gets its own nested worktree branching from the orchestration worktree branch. After the wave, the lead squash-merges per-drone branches back to the orchestration worktree branch. On conflict: abort the merge, dispatch a Drone to rebase, then retry.
+- **Sequential Drones:** Commit directly to the worktree branch. No merge step needed since Drones run serially.
+- **Sequence relay Drones:** Commit directly to the worktree branch. No merge step needed since Drones run serially and each sees the previous Drone's commits.
+- **Final merge:** After Vinculum PASS and task closure, the lead squash-merges the worktree branch back to the main branch (with user approval), then removes the worktree and branch.

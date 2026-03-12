@@ -161,7 +161,7 @@ When all Drones complete:
 
 When executing a wave, select the appropriate isolation mode:
 
-**a) File-partitioned (parallel waves with non-overlapping files):** Drones work directly on the main branch. Each Drone is assigned a non-overlapping set of files. No merge step needed. Append to each Drone's prompt:
+**a) File-partitioned (parallel waves with non-overlapping files):** Drones work directly on the worktree branch. Each Drone is assigned a non-overlapping set of files. No merge step needed. Append to each Drone's prompt:
 ```
 FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
 ```
@@ -171,7 +171,7 @@ FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your t
 WORKTREE ISOLATION ACTIVE. Run `pwd` first to discover your worktree root. All file paths in the task description are relative to the project root — prepend your worktree root to every path. Never navigate outside your worktree.
 ```
 
-**c) Sequence relay (long sequential chains):** Drones run serially on the main tree; no worktrees or merge steps needed. Append to each Drone's prompt:
+**c) Sequence relay (long sequential chains):** Drones run serially on the worktree branch; no per-drone isolation or merge steps needed. Append to each Drone's prompt:
 ```
 SEQUENCE HANDOFF ACTIVE. You are step <N> of <total> in a sequence relay for epic <epic-id>. After completing your task, you MUST save a handoff snapshot via `records_save_snapshot` for the next drone. The snapshot must be a concise markdown document (under 2KB) with these sections:
 ## Summary

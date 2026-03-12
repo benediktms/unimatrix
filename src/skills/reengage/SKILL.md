@@ -16,10 +16,21 @@ Re-engage the collective on a brain task that was planned by the Queen. Use this
    - Otherwise, ask the user which task to resume — use `tasks_list` (status: open) to show available parent tasks and let them choose
    - **Never auto-select a task** — always confirm with the user which plan to execute
 2. Use `tasks_get` with `expand: children` to load all subtasks
-3. Check for stale `in_progress` subtasks from a prior crashed session. If found, present them to the user — they may need to be reset to `open` (if incomplete) or closed (if actually done). Do not auto-reset.
-4. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Drone snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Drones via `PRIOR CHECKPOINTS:` in the prompt.
-5. Use `tasks_next` to find ready (unblocked) subtasks.
-6. Dispatch agents for each ready subtask based on the task's **assignee** field:
+3. **Enter worktree** — Fetch the plan artifact for the epic (`records_list` with tag `queen-plan` and the epic's task ID). The plan's `Worktree` section specifies the branch name.
+   - Check if the worktree exists: `git worktree list` and look for the branch name.
+<!-- @claude -->
+   - **If it exists:** enter it via `EnterWorktree` with the existing worktree name.
+   - **If it does not exist:** create it via `EnterWorktree` with the branch name from the plan. This handles cases where the worktree was cleaned up or the session is resuming on a different machine.
+<!-- @end -->
+<!-- @opencode -->
+   - **If it exists:** `cd` into the existing worktree directory.
+   - **If it does not exist:** create it via `git worktree add ../<branch-name> -b <branch-name>` and `cd` into it. This handles cases where the worktree was cleaned up or the session is resuming on a different machine.
+<!-- @end -->
+   - All subsequent dispatch, verification, and review happens inside this worktree.
+4. Check for stale `in_progress` subtasks from a prior crashed session. If found, present them to the user — they may need to be reset to `open` (if incomplete) or closed (if actually done). Do not auto-reset.
+5. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Drone snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Drones via `PRIOR CHECKPOINTS:` in the prompt.
+6. Use `tasks_next` to find ready (unblocked) subtasks.
+7. Dispatch agents for each ready subtask based on the task's **assignee** field:
 <!-- @claude -->
    - `Drone` → spawn as `subagent_type: "Drone"` with full prompt (designation, task ID, mode blocks, prior checkpoints)
    - `Probe` → spawn as `subagent_type: "Probe"` with the task ID as prompt
@@ -33,9 +44,10 @@ Re-engage the collective on a brain task that was planned by the Queen. Use this
    - **Parallel waves** (independent tasks): spawn all agents with `run_in_background: true`
    - **Sequential waves** (dependent tasks): spawn one at a time, passing prior checkpoint IDs via `PRIOR CHECKPOINTS:` and recon snapshot IDs via `RECON SNAPSHOTS:` in the prompt
    - Extract snapshot IDs from each agent's completion comment for subsequent waves.
-7. Monitor progress, dispatch next waves as subtasks unblock
-8. When all subtasks complete, invoke **Vinculum** for review
-9. Handle verdict (PASS → close all subtasks and the parent task via `tasks_close`, then call `memory_write_episode` to record what was accomplished and decisions made; NEEDS_CHANGES → fix; BLOCK → escalate)
+8. Monitor progress, dispatch next waves as subtasks unblock
+9. When all subtasks complete, invoke **Vinculum** for review
+10. Handle verdict (PASS → close all subtasks and the parent task via `tasks_close`, then call `memory_write_episode` to record what was accomplished and decisions made; NEEDS_CHANGES → fix; BLOCK → escalate)
+11. **Worktree merge** — After PASS, follow the same merge flow as `/assemble` Step 9b: exit worktree, present changes, ask user to merge/keep/discard, clean up worktree on merge.
 
 ## Usage
 

@@ -1,15 +1,15 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews.
+description: Assemble the collective to execute a complex task in an isolated worktree. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews. Changes merge back on completion.
 ---
 
 # /assemble
 
 <!-- @claude -->
-Orchestrate a complex task end-to-end: the Queen assesses, recon runs if needed, the Queen plans, Drones implement, Vinculum reviews. The Queen persists across phases via resume — her context carries forward.
+Orchestrate a complex task end-to-end in an isolated worktree: the Queen assesses, recon runs if needed, the Queen plans, a worktree is created, Drones implement, Vinculum reviews, and changes merge back to the main branch. The Queen persists across phases via resume — her context carries forward.
 <!-- @end -->
 <!-- @opencode -->
-Orchestrate a complex task end-to-end: you assess, recon runs if needed, you plan, Drones implement, Vinculum reviews. You maintain full context throughout — no subagent management needed.
+Orchestrate a complex task end-to-end in an isolated worktree: you assess, recon runs if needed, you plan, a worktree is created, Drones implement, Vinculum reviews, and changes merge back to the main branch. You maintain full context throughout — no subagent management needed.
 <!-- @end -->
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
@@ -303,6 +303,25 @@ After producing the implementation plan, present the dispatch plan to the user f
 
 Summarize the waves, task assignments, and file partitions clearly. Wait for the user to approve before proceeding.
 
+### Step 3c: Enter Worktree
+
+Create an isolated worktree for the implementation. Use the branch name from the Queen's dispatch plan (the `Worktree` section):
+
+<!-- @claude -->
+```
+EnterWorktree:
+  name: "<branch name from dispatch plan>"
+```
+<!-- @end -->
+<!-- @opencode -->
+```bash
+git worktree add ../<branch-name> -b <branch-name>
+cd ../<branch-name>
+```
+<!-- @end -->
+
+All subsequent steps (drone dispatch, verification, review) execute inside this worktree. The main branch remains clean until the user chooses to merge.
+
 ### Step 4: Create Team and Generate Designations
 
 <!-- @claude -->
@@ -426,12 +445,58 @@ task(
 
 ### Step 9: Handle Verdict
 
-- **PASS** — Close all subtasks and the parent task via `tasks_close`. Write collective memory via `memory_write_episode`.
-<!-- @claude -->
-- **PASS (Claude cleanup)** — Clean up the team.
-<!-- @end -->
+- **PASS** — Close all subtasks and the parent task via `tasks_close`. Write collective memory via `memory_write_episode`. Proceed to Step 9b.
 - **NEEDS_CHANGES** — Spawn new Drones to fix specific issues, then re-run Vinculum.
 - **BLOCK** — Report blockers to user.
+
+### Step 9b: Worktree Merge
+
+After Vinculum passes and all tasks are closed:
+
+<!-- @claude -->
+1. Exit the worktree (keep it for merge):
+   ```
+   ExitWorktree:
+     action: "keep"
+   ```
+<!-- @end -->
+<!-- @opencode -->
+1. Return to the main branch:
+   ```bash
+   cd <original-repo-path>
+   ```
+<!-- @end -->
+2. Present the change summary: `git diff --stat main..<worktree-branch>`
+3. Ask the user what to do:
+   - **Merge now** — squash-merge the worktree branch, then clean up
+   - **Keep worktree** — leave it on disk for manual review or later merging
+   - **Discard** — remove the worktree and its branch entirely
+
+#### If merge:
+```bash
+git merge --squash <branch-name>
+git commit -m "<conventional commit message based on the work done>"
+git worktree remove <worktree-path>
+git branch -d <branch-name>
+```
+
+#### If keep:
+Report the worktree path and branch name so the user can return later.
+
+#### If discard:
+<!-- @claude -->
+```
+ExitWorktree:
+  action: "remove"
+  discard_changes: true
+```
+<!-- @end -->
+<!-- @opencode -->
+```bash
+git worktree remove <worktree-path>
+git branch -D <branch-name>
+```
+<!-- @end -->
 
 ### Step 10: Cleanup
 
@@ -454,10 +519,12 @@ If you need to search the codebase during orchestration (e.g. to gather context 
 
 ## Post-Wave Git Discipline
 
-- **Swarm Drones (file-partitioned):** No merge needed — changes are on the main tree.
-- **Worktree Drones:** Squash-merge branches before the next wave (`git merge --squash <branch>`). On conflict: abort, dispatch a Drone to rebase, retry.
-- **Sequential Drones:** No merge needed — Drones run serially.
-- **Sequence relay Drones:** No merge needed — Drones run serially. Context flows via Brain snapshots.
+All Drones work inside the orchestration worktree created in Step 3c. Commits land on the worktree branch.
+
+- **Swarm Drones (file-partitioned):** No merge needed — changes are on the worktree branch.
+- **Worktree Drones (per-drone isolation):** Squash-merge per-drone branches back to the orchestration worktree branch before the next wave (`git merge --squash <branch>`). On conflict: abort, dispatch a Drone to rebase, retry.
+- **Sequential Drones:** No merge needed — Drones run serially on the worktree branch.
+- **Sequence relay Drones:** No merge needed — Drones run serially on the worktree branch. Context flows via Brain snapshots.
 
 ## Usage
 
