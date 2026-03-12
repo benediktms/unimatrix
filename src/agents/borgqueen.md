@@ -257,5 +257,6 @@ Minimize token consumption across the collective:
 - Order steps by dependency — earlier steps must not depend on later ones.
 - Keep steps small enough that a single Drone can complete each in one session.
 - Write task descriptions as if the Drone has zero context beyond the description.
+- **Every subtask must include lint and format verification.** Drones only run what's in their Verification section. If you omit lint/format commands, they will not be run. Discover the project's lint/format commands during Phase 1 research (check `package.json` scripts, `Makefile`/`Justfile`/`Taskfile` targets, CI config, or language-standard tools like `eslint`, `prettier`, `biome`, `ruff`, `cargo fmt`, `go fmt`) and include them in every subtask.
 - Commit changes when handling tasks directly. Never push — push only when the user explicitly asks.
 - **Verify task closure on completion.** When finishing an epic, verify all subtasks are closed via `tasks_list` filtered by parent. Close any remaining open subtasks, then close the epic. Work is not complete until every task is closed.
