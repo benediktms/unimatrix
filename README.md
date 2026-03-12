@@ -455,10 +455,10 @@ unimatrix/
 │   │   └── SPEC.md               #   Shared hook logic specification
 │   ├── themes/                   #   OpenCode TUI themes
 │   │   ├── unimatrix.json        #     Borg green-on-dark (default)
-│   │   ├── unimatrix-zero.json   #     Warm amber variant
-│   │   ├── queens-chamber.json   #     Deep purple royal
-│   │   ├── tactical-cube.json    #     Cold steel blue
-│   │   └── unicomplex.json       #     High-contrast monochrome
+│   │   ├── unimatrix-zero.json   #     Soft dreamlike greens
+│   │   ├── queens-chamber.json   #     Deep purple/violet
+│   │   ├── tactical-cube.json    #     Aggressive red-shifted
+│   │   └── unicomplex.json       #     Gold/amber central hub
 │   ├── tui/                      #   OpenCode TUI configuration
 │   │   └── tui.json              #     Theme, scroll, diff settings
 │   ├── shared/                   #   Platform-agnostic assets
@@ -499,10 +499,10 @@ Unimatrix ships 5 Borg-aesthetic TUI themes for OpenCode. Themes are installed t
 | Theme | Description |
 |-------|-------------|
 | `unimatrix` | Borg green-on-dark — the default collective aesthetic |
-| `unimatrix-zero` | Warm amber variant — echoes Unimatrix Zero's clandestine warmth |
-| `queens-chamber` | Deep purple royal — the Queen's perspective |
-| `tactical-cube` | Cold steel blue — tactical precision of the cube |
-| `unicomplex` | High-contrast monochrome — pure collective efficiency |
+| `unimatrix-zero` | Soft dreamlike greens — Unimatrix Zero's subconscious drift |
+| `queens-chamber` | Deep purple/violet — the Queen's sovereign aesthetic |
+| `tactical-cube` | Aggressive red-shifted — crimson plasma of the combat cube |
+| `unicomplex` | Gold/amber — the warm glow of the central hub |
 
 To switch themes, edit `src/tui/tui.json` and change the `"theme"` value to any of the names above, then rebuild:
 
