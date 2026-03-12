@@ -43,6 +43,10 @@ install path=project_root: build
 install-global: build
     bash install.sh --both --global
 
+# Inject Borg personality into a brain's AGENTS.md
+inject brain:
+    {{python}} build.py --inject-tone {{brain}}
+
 # Validate source files (structural checks)
 validate:
     {{python}} build.py --validate
