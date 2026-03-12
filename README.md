@@ -116,11 +116,12 @@ See [FORMAT.md](./FORMAT.md) for the complete source format specification.
 ### Build Commands
 
 ```bash
-python3 build.py --target all        # Build for both platforms (default)
-python3 build.py --target claude      # Build for Claude Code only
-python3 build.py --target opencode    # Build for OpenCode only
-python3 build.py --validate           # Validate source files only
-python3 build.py --clean              # Remove dist/ directory
+python3 build.py --target all           # Build for both platforms (default)
+python3 build.py --target claude        # Build for Claude Code only
+python3 build.py --target opencode      # Build for OpenCode only
+python3 build.py --validate             # Validate source files only
+python3 build.py --clean                # Remove dist/ directory
+python3 build.py --inject-tone [BRAIN]  # Inject Borg personality into a brain's AGENTS.md
 ```
 
 Or use the [just](https://github.com/casey/just) command runner:
@@ -133,7 +134,26 @@ just validate             # Validate source files
 just check                # Run all checks (Python lint + TS type-check + validation)
 just install-global       # Build + install both platforms globally
 just install <path>       # Build + install both platforms to a project
+just inject <brain-name>  # Inject Borg personality into a brain's AGENTS.md
 ```
+
+### Personality Injection
+
+Unimatrix maintains a single source-of-truth personality guide (`src/rules/personality.md`) that all agents follow. To propagate this personality into registered brains' documentation:
+
+```bash
+python3 build.py --inject-tone <brain-name>
+just inject <brain-name>
+```
+
+The injector:
+- Discovers registered brains via `brain list --json`
+- Locates or creates `<!-- unimatrix:tone:start -->` / `<!-- unimatrix:tone:end -->` markers in the brain's AGENTS.md
+- Replaces the marked section with the current personality guidelines from `src/rules/personality.md`
+- Skips the unimatrix brain itself (prevents self-injection)
+- Idempotent — safe to run repeatedly
+
+This ensures all projects using Unimatrix have consistent, up-to-date personality guidance for their AI agents.
 
 ## Installation
 
@@ -411,6 +431,7 @@ unimatrix/
 │   │   ├── resume/SKILL.md       #   Restore from bookmarks
 │   │   └── designate/SKILL.md    #   Agent naming
 │   ├── rules/                    # Process rules
+│   │   ├── personality.md        #   Borg collective personality guidelines (source of truth)
 │   │   ├── routing.md            #   Task → agent routing decisions
 │   │   ├── coordination.md       #   Multi-agent coordination patterns
 │   │   └── token-economy.md      #   Token-efficient agent behavior

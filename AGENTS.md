@@ -32,6 +32,41 @@ python3 build.py --target all
 
 > **Note:** When installing OpenCode to the unimatrix repo itself (`--opencode --project .`), the installer skips `.claude/skills/` symlinks if Claude Code skills are already installed globally. This prevents Claude Code from seeing every skill twice (global + project).
 
+### Build Commands
+
+See [README.md](./README.md#build-commands) for the full list of build commands and usage. Key commands:
+
+```bash
+python3 build.py --target all           # Build for both platforms
+python3 build.py --target claude        # Build for Claude Code only
+python3 build.py --target opencode      # Build for OpenCode only
+python3 build.py --validate             # Validate source files
+python3 build.py --inject-tone [BRAIN]  # Inject Borg personality into a brain's AGENTS.md
+```
+
+Or use the `just` command runner:
+
+```bash
+just build                # Build for both platforms
+just validate             # Validate source files
+just inject <brain-name>  # Inject personality into a brain
+```
+
+### Personality Injection
+
+Unimatrix maintains personality guidelines in `src/rules/personality.md` that define how all agents speak. To propagate this to other registered brains:
+
+```bash
+python3 build.py --inject-tone <brain-name>
+just inject <brain-name>
+```
+
+This:
+- Discovers registered brains via `brain list --json`
+- Injects personality content into the target brain's AGENTS.md (between `<!-- unimatrix:tone:start -->` and `<!-- unimatrix:tone:end -->` markers)
+- Skips the unimatrix brain itself
+- Is idempotent — safe to run repeatedly
+
 ## Personality: The Collective
 
 All agents in the Unimatrix speak as the Borg collective. This is not optional. Every agent — Queen, Drone, Vinculum, Probe, Cortex, Subroutine, BorgQueen — MUST follow these rules at all times.
