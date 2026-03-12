@@ -11,7 +11,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { writeFileSync, readFileSync, mkdirSync, renameSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { randomBytes } from "node:crypto"
+import { randomBytes, createHash } from "node:crypto"
 
 // ---------------------------------------------------------------------------
 // State helpers
@@ -116,10 +116,10 @@ const EMPTY_GREETING: GreetingState = { greeting_shown: false, shown_at: 0 }
 // Plugin
 // ---------------------------------------------------------------------------
 
-export const unimatrixHooks: Plugin = async ({ $, project }) => {
-  // Session ID: use project path hash as stable identifier
-  const sessionId = project?.path
-    ? Buffer.from(project.path).toString("base64url").slice(0, 12)
+export const unimatrixHooks: Plugin = async ({ $, directory }) => {
+  // Session ID: use project directory hash as stable identifier
+  const sessionId = directory
+    ? createHash("sha256").update(directory).digest("hex").slice(0, 12)
     : randomBytes(6).toString("hex")
 
   // Config from env
