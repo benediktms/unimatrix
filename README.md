@@ -83,6 +83,8 @@ Skills are the primary interface for invoking workflows:
 | `/swarm` | Bulk parallel changes: Queen partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
 | `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
 | `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
+| `/devise` | Feature planning with interactive scoping: Queen asks questions, dispatches recon, produces cross-brain implementation plan |
+| `/propagate` | Run `/assemble` in an isolated worktree on a fresh branch — review and merge when ready |
 | `/reengage` | Resume a previously planned brain task |
 | `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
 | `/harvest` | Session knowledge extraction: Probe-style scan of exploration findings, Cortex deduplicates and persists as brain records/memory |
@@ -397,6 +399,8 @@ unimatrix/
 │   │   ├── adapt/SKILL.md        #   Iterative refinement
 │   │   ├── swarm/SKILL.md        #   Parallel bulk changes
 │   │   ├── recon/SKILL.md        #   Reconnaissance missions
+│   │   ├── devise/SKILL.md       #   Interactive feature scoping
+│   │   ├── propagate/SKILL.md    #   Worktree-isolated orchestration
 │   │   ├── comply/SKILL.md       #   Code review
 │   │   ├── analyse/SKILL.md      #   Deep analysis
 │   │   ├── reengage/SKILL.md     #   Resume prior work
