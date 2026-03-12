@@ -334,8 +334,11 @@ src/
 │   ├── designate/SKILL.md
 │   ├── assimilate/SKILL.md
 │   ├── analyse/SKILL.md
-│   ├── start-work/SKILL.md
-│   └── reengage/SKILL.md
+│   ├── reengage/SKILL.md
+│   ├── harvest/SKILL.md
+│   ├── bisect/SKILL.md
+│   ├── bookmark/SKILL.md
+│   └── resume/SKILL.md
 ├── rules/                     # Routing and coordination rules
 │   ├── routing.md
 │   └── coordination.md

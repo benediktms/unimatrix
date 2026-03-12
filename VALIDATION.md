@@ -41,7 +41,7 @@ python3 build.py --target all
 | # | Test | How | Expected |
 |---|------|-----|----------|
 | C1 | Agents load | `/agents` or check agent list | All 6 agents visible (Queen, Drone, Vinculum, Probe, Cortex, Subroutine) |
-| C2 | Skills load | Check available skills | All 10 skills available (/assemble, /adapt, /comply, /swarm, /recon, /designate, /assimilate, /analyse, /start-work, /reengage) |
+| C2 | Skills load | Check available skills | All 13 skills available (/assemble, /adapt, /comply, /swarm, /recon, /designate, /assimilate, /analyse, /reengage, /harvest, /bisect, /bookmark, /resume) |
 | C3 | Agent dispatch | Ask lead to dispatch a Drone | `Agent` tool invokes drone agent, receives response |
 | C4 | Skill invocation | Run `/comply` on a recent change | Vinculum dispatched via `Agent` tool, returns review |
 | C5 | Background agents | Ask lead to investigate codebase | Probe fires in background, results collected |

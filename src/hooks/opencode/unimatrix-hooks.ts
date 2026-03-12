@@ -244,7 +244,7 @@ export const unimatrixHooks: Plugin = async ({ $, project }) => {
           "",
           "## Resume",
           "",
-          "Use `/reengage` or `/start-work` with the relevant task ID to resume.",
+          "Use `/reengage` with the relevant task ID to resume.",
           "",
         ].join("\n")
 

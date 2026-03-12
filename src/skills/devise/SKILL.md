@@ -12,7 +12,7 @@ Plan a feature end-to-end with interactive scoping. The Queen drives iterative d
 Plan a feature end-to-end with interactive scoping. You drive iterative discovery — asking clarifying questions and dispatching recon agents — until scope is fully defined, then produce an implementation plan with cross-brain task creation.
 <!-- @end -->
 
-**This skill only plans — it does NOT execute.** Use `/start-work <epic-id>` or `/assemble` to execute the resulting plan.
+**This skill only plans — it does NOT execute.** Use `/reengage <epic-id>` or `/assemble` to execute the resulting plan.
 
 ## Rules
 
@@ -416,7 +416,7 @@ Include:
 - **Implementation tasks** — grouped by brain, with task IDs (or proposed tasks if `--dry-run`)
 - **Dependency chains** — including cross-brain dependencies
 - **Risks & open questions** — anything unresolved
-- **Epic task ID** — for use with `/start-work <epic-id>` or `/assemble` (not shown if `--dry-run`)
+- **Epic task ID** — for use with `/reengage <epic-id>` or `/assemble` (not shown if `--dry-run`)
 - **Cached plan artifact ID** — for use with `--resume` in a future session
 
 ### Step 7: Cleanup

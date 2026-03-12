@@ -62,7 +62,6 @@ python3 build.py --target all
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 | `/harvest` | Extract and persist session exploration findings as brain records and memory episodes |
 | `/resume` | Restore context from a saved bookmark and present a session briefing |
-| `/start-work` | Resume execution of a previously planned brain task |
 
 ## Lead Session Behavior
 
@@ -170,7 +169,7 @@ After delegation completes, ALWAYS verify:
 | Save current work state for later | `/bookmark` |
 | Preserve exploration findings before session ends | `/harvest` |
 | Restore context from a prior session | `/resume` |
-| Resume work from a prior planning session | `/start-work` or `/reengage` |
+| Resume work from a prior planning session | `/reengage` |
 | End-of-session cleanup and knowledge capture | `/assimilate` |
 
 ### Code Quality Standards

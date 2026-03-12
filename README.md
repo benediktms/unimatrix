@@ -83,8 +83,7 @@ Skills are the primary interface for invoking workflows:
 | `/swarm` | Bulk parallel changes: Queen partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
 | `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
 | `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
-| `/start-work` | Resume execution of a previously planned brain task — supports both standard and sequence relay dispatch modes |
-| `/reengage` | Resume a previously planned brain task (standard dispatch only — use `/start-work` for sequence relay support) |
+| `/reengage` | Resume a previously planned brain task |
 | `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
 | `/harvest` | Session knowledge extraction: Probe-style scan of exploration findings, Cortex deduplicates and persists as brain records/memory |
 | `/bisect` | Guided binary search through commits: automated (`--test`) or AI-guided with Probe analysis, runs in worktree |
@@ -400,9 +399,12 @@ unimatrix/
 │   │   ├── recon/SKILL.md        #   Reconnaissance missions
 │   │   ├── comply/SKILL.md       #   Code review
 │   │   ├── analyse/SKILL.md      #   Deep analysis
-│   │   ├── start-work/SKILL.md   #   Resume prior work
-│   │   ├── reengage/SKILL.md     #   Resume prior work (alt)
+│   │   ├── reengage/SKILL.md     #   Resume prior work
 │   │   ├── assimilate/SKILL.md   #   End-of-session cleanup
+│   │   ├── harvest/SKILL.md      #   Session knowledge extraction
+│   │   ├── bisect/SKILL.md       #   Guided commit binary search
+│   │   ├── bookmark/SKILL.md     #   Save work checkpoints
+│   │   ├── resume/SKILL.md       #   Restore from bookmarks
 │   │   └── designate/SKILL.md    #   Agent naming
 │   ├── rules/                    # Process rules
 │   │   ├── routing.md            #   Task → agent routing decisions

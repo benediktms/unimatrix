@@ -63,7 +63,7 @@ If the current branch differs from the bookmark's branch, suggest:
 ### 6. Task Guidance
 
 If there are in-progress tasks, suggest:
-"To resume execution: `/start-work <task-id>` or `/reengage <task-id>`"
+"To resume execution: `/reengage <task-id>`"
 
 ## Important
 

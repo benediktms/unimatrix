@@ -79,7 +79,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 3. Build markdown checkpoint:
    - Active tasks table (ID, title, status, assignee)
    - Session stats (agents dispatched, cost, duration)
-   - Recommended resume action (/reengage or /start-work with task ID)
+   - Recommended resume action (/reengage with task ID)
 4. Save as brain snapshot (tagged: compaction-checkpoint, session:{session_id})
 5. Write to temp file for context injection post-compaction
 
