@@ -89,6 +89,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/session-greeting.py"
+          },
+          {
+            "type": "command",
             "command": "__UNIMATRIX_DIR__/src/hooks/claude/inject-checkpoint.py"
           },
           {
