@@ -81,6 +81,32 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - Bulk refactoring, migrations, or convention enforcement
 - The task is parallelizable by file group with no cross-group dependencies
 
+## Route to `/harvest` when:
+- The session involved significant exploration (many file reads, searches, web fetches)
+- The user wants to preserve what was learned before the session ends
+- Knowledge was gathered that would be lost when conversation context compacts
+- The user explicitly uses `/harvest`
+
+### /harvest vs /assimilate
+- `/assimilate` captures *what was done* — git changes, task progress, session summary
+- `/harvest` captures *what was learned* — file locations, API behaviors, gotchas, architectural insights
+- Use both at end of exploratory sessions: `/harvest` first (extract knowledge), then `/assimilate` (summarize work)
+
+## Route to `/bisect` when:
+- The user needs to find which commit introduced a bug or regression
+- A test is failing and the user wants to find when it broke
+- The user explicitly uses `/bisect`
+
+## Route to `/bookmark` when:
+- The user wants to save their current work state for later
+- The user is switching context and wants to come back later
+- The user explicitly uses `/bookmark`
+
+## Route to `/resume` when:
+- The user wants to restore context from a previous session
+- The user starts a new session and wants to pick up where they left off
+- The user explicitly uses `/resume`
+
 ## Do NOT delegate when:
 - You can answer directly from your existing context
 - The task is conversational (questions, explanations)
