@@ -14,6 +14,8 @@ Launch the full `/assemble` orchestration in an isolated git worktree. You plan,
 
 **This skill wraps `/assemble` in worktree isolation.** All planning, implementation, and review happens on a dedicated branch. When complete, present the results and let the user decide whether to merge.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Rules
 
 - **Follow this flow exactly.** Do not skip the worktree setup or teardown steps.

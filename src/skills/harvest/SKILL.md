@@ -7,6 +7,8 @@ description: Session knowledge extraction — persists file locations, API behav
 
 Extract and persist useful findings from exploration-heavy sessions. Where `/assimilate` captures *what was done*, `/harvest` captures *what was learned* — file locations, API behaviors, configuration gotchas, architectural insights.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## When to Use
 
 - After sessions with lots of reads, greps, and web searches

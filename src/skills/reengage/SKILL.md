@@ -7,6 +7,8 @@ description: Resume execution of a previously planned brain task by dispatching 
 
 Re-engage the collective on a brain task that was planned by the Queen. Use this when execution was interrupted or you want to continue a previously planned task.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Behavior
 
 1. Find the parent task to resume:

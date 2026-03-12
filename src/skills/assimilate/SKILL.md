@@ -7,6 +7,8 @@ description: End-of-session ritual that captures knowledge, writes memory episod
 
 End-of-session knowledge capture and cleanup ritual. Summarizes the session's work, writes collective memory, and prepares context for the next session.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Behavior
 
 When invoked, you (the lead agent) perform the following:

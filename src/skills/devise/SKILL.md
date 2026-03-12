@@ -14,6 +14,8 @@ Plan a feature end-to-end with interactive scoping. You drive iterative discover
 
 **This skill only plans — it does NOT execute.** Use `/reengage <epic-id>` or `/assemble` to execute the resulting plan.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Rules
 
 - **Follow this flow exactly.** Do not insert your own recon or research steps outside the defined loop.

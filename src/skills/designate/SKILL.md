@@ -7,6 +7,8 @@ description: Generate Borg-style designations for agents based on the number of 
 
 Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjunct of Unimatrix Zero") for agents before dispatching them.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Behavior
 
 1. **Count subtasks** — Determine how many agents will be dispatched.

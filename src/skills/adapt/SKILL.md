@@ -7,6 +7,8 @@ description: Iterative refinement loop — dispatches a Drone to implement, Vinc
 
 Autonomous adaptation cycle: implement → review → refine → repeat. The Borg's defining trait, encoded as a feedback loop.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## When to use
 
 - A task needs iterative refinement to reach quality gates

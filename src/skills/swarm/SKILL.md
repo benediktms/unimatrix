@@ -7,6 +7,8 @@ description: Partition files logically and dispatch parallel Drones to apply cha
 
 Partition a codebase into logical file groups and dispatch parallel Drones to apply the same type of change across all partitions simultaneously.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## When to use
 
 - Bulk refactoring (rename a pattern, update imports, migrate an API)

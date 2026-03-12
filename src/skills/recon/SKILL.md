@@ -9,6 +9,8 @@ Orchestrate a reconnaissance mission: spawn the Queen to scope the investigation
 
 Supports cross-brain targeting via `--include` — investigate codebases in other registered brain repositories (auto-initializes unregistered paths).
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Flow
 
 ### Step 0: Resolve Brain Targets (if --include provided)

@@ -7,6 +7,8 @@ description: Save a named work checkpoint capturing branch, tasks, changes, and 
 
 Save a named checkpoint of current work state — branch, tasks, changes, next steps. Complementary to `/assimilate` (which captures session knowledge); `/bookmark` captures restorable state you can return to with `/resume`.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## Behavior
 
 ### `/bookmark [name]` (save)

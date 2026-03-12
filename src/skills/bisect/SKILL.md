@@ -7,6 +7,8 @@ description: Guided binary search through commits to find which commit introduce
 
 Find which commit introduced a bug or regression using `git bisect`. Runs in an isolated worktree to avoid disturbing the user's working tree. Supports automated mode with a test command or AI-guided mode where a Probe agent analyzes each commit's diff.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## When to Use
 
 - **Regression hunting** — you know something broke but don't know when

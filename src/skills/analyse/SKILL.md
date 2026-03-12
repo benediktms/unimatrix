@@ -7,6 +7,8 @@ description: Deep analysis — feature review, plan validation, architectural au
 
 Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, or architectural concern. Produces a structured intelligence report with evidence-based findings.
 
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
 ## When to Use
 
 - **Feature analysis** — understand how a feature works, trace its boundaries, assess its health
