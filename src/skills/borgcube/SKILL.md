@@ -44,11 +44,12 @@ Parse ARGUMENTS to extract flags.
 For each ref in `--include`:
 
 ```
-python3 src/hooks/ensure-brain.py <ref>
+SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>
 ```
 
-This ensures the brain is registered and its root path is known. Capture the
-resolved root path for each target.
+Each ref can be a brain ID, name, alias, or filesystem path. This ensures the
+brain is registered and its root path is known. Capture the resolved root path
+for each target.
 
 If no `--include` targets are provided: abort with "DIRECTIVE INCOMPLETE.
 --include is required."
