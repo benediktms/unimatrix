@@ -1,18 +1,13 @@
 ---
 name: recon
-description: Orchestrate reconnaissance missions with optional feature planning. Agents form a recon team, self-claim brain tasks, and share discoveries in real-time. Supports cross-brain targeting (--include) and iterative feature planning (--plan).
+description: Team-based collaborative reconnaissance — agents communicate discoveries, challenge findings, and synthesize understanding in real-time via agent teams. For independent parallel scans, use /scan instead. Supports cross-brain targeting (--include) and iterative feature planning (--plan).
 ---
 
 # /recon
 
-<!-- @claude -->
-Orchestrate a reconnaissance mission: you scope the investigation, create brain tasks with a dependency graph, and deploy a recon team. Agents self-claim tasks, share discoveries via team messaging, and persist findings as brain snapshots. Optionally, with `--plan`, you drive iterative feature scoping — asking questions and dispatching recon — then produce an implementation plan.
-<!-- @end -->
-<!-- @opencode -->
-Orchestrate a reconnaissance mission: you scope the investigation, create brain tasks with a dependency graph, and dispatch recon agents. Agents work through tasks and persist findings as brain snapshots. Optionally, with `--plan`, you drive iterative feature scoping — asking questions and dispatching recon — then produce an implementation plan.
-<!-- @end -->
+Team-based collaborative reconnaissance — agents form a team, communicate discoveries, challenge each other's findings, and synthesize understanding in real-time. Use `/recon` when investigation questions are interconnected and agents benefit from sharing context. For independent parallel scans where questions are self-contained, use `/scan` instead.
 
-Supports cross-brain targeting via `--include` — investigate codebases in other registered brain repositories (auto-initializes unregistered paths).
+Supports cross-brain targeting via `--include` — investigate codebases in other registered brain repositories (auto-initializes unregistered paths). Optionally, with `--plan`, drive iterative feature scoping — asking questions and dispatching recon — then produce an implementation plan.
 
 **With `--plan`, this skill only plans — it does NOT execute.** Use `/reengage <epic-id>` or `/assemble` to execute the resulting plan.
 
@@ -20,6 +15,7 @@ Supports cross-brain targeting via `--include` — investigate codebases in othe
 
 ## Rules
 
+- **Team creation is MANDATORY.** Every `/recon` invocation creates a team via `TeamCreate` before spawning any agents. Without a team, the Agent Communication Protocol is dead — agents cannot share discoveries, challenge findings, or coordinate. If `TeamCreate` fails, **abort** — do not fall through to plain subagent dispatch. Use `/scan` for independent investigation.
 - **Follow this flow exactly.** Do not insert your own recon or research steps outside the defined steps.
 - **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
 - **You maintain context throughout** — no session management needed.
@@ -155,22 +151,31 @@ After scoping, present the recon plan for review. When approved, proceed with di
 
 ### Step 3: Create Team and Spawn Agents
 
-1. Use the recommended agent count. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+1. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+
 <!-- @claude -->
-2. Create a team: `TeamCreate` with a descriptive `team_name`
-3. Spawn all agents into the team. Agents receive the epic ID and self-claim tasks — do NOT assign specific tasks to specific agents. The task descriptions are detailed enough for agents to work autonomously.
+2. **Create the team — this is MANDATORY:**
+
+```
+TeamCreate:
+  team_name: "recon-<epic-id>"
+```
+
+**Do NOT proceed to agent spawn without a confirmed team.** If `TeamCreate` fails, abort. Without a team, the Agent Communication Protocol cannot function — agents would work in isolation, defeating the purpose of `/recon`. Use `/scan` for independent investigation.
+
+3. Spawn all agents **into the team**. Agents receive the epic ID and self-claim tasks — do NOT assign specific tasks to specific agents. The task descriptions are detailed enough for agents to work autonomously.
 
 **Cross-brain targeting:** When a task targets a non-local brain, include `TARGET CODEBASE: <root>` in the agent prompt. Agents exploring non-local brains should root all file operations in that directory.
 
 ```
 Agent:
   subagent_type: "Probe" or "Cortex"
-  team_name: "<team name>"
+  team_name: "recon-<epic-id>"   # ← REQUIRED — matches the team created above
   name: "<agent type>: <short name>"
   description: "<full designation> — recon agent"
   run_in_background: true
   prompt: |
-    You are <agent type> <designation>, member of recon unit "<team name>".
+    You are <agent type> <designation>, member of recon unit "recon-<epic-id>".
 
     <RECON PROTOCOL block — see Agent Communication Protocol section>
 
@@ -178,6 +183,7 @@ Agent:
 
     Epic: <epic-id>
 ```
+
 The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and context.
 <!-- @end -->
 <!-- @opencode -->
@@ -263,8 +269,13 @@ The planner has specified recon questions with agent types and optional brain ta
 
 1. **Generate designations** — `/designate <count> --trimatrix` with `--role Probe` for Probes, `--role Cortex` for Cortex agents.
 <!-- @claude -->
-2. **Create a team** if not already created: `TeamCreate`
-3. **Spawn agents** into the team with the epic ID. Same dispatch format as Investigation Flow Step 3 — agents self-claim brain tasks.
+2. **Create the team** (if not already created):
+   ```
+   TeamCreate:
+     team_name: "recon-plan-<epic-id>"
+   ```
+   **Do NOT spawn agents without a confirmed team.**
+3. **Spawn agents** into the team with the epic ID. Same dispatch format as Investigation Flow Step 3 — agents self-claim brain tasks. Always include `team_name` in the Agent call.
 <!-- @end -->
 <!-- @opencode -->
 2. **Dispatch agents** with the epic ID. Same dispatch format as Investigation Flow Step 3.
@@ -411,6 +422,10 @@ Coordination happens through Brain tasks and records. No team management needed.
 ```
 
 Each `<ref>` in `--include` can be a brain ID, brain name, or filesystem path (interchangeable). Comma-separated.
+
+**When to use `/recon` vs `/scan`:**
+- `/scan`: Questions are independent. Agents don't need each other's findings. Fast parallel sweep.
+- `/recon`: Questions are interconnected. Agents benefit from sharing discoveries and challenging findings. Collaborative investigation.
 
 ## Examples
 

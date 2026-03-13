@@ -18,6 +18,7 @@ Diagnose a bug through adversarial hypothesis testing. You generate competing th
 
 - **NEVER use Explore agents.** All investigation uses `Vinculum`.
 - **Follow this flow exactly.** Do not insert your own investigation steps.
+- **Team creation is MANDATORY.** The adversarial protocol requires real-time communication between Vinculum agents. Without a team, agents cannot challenge each other's hypotheses — the diagnostic degrades to parallel independent investigation. If `TeamCreate` fails, **abort**.
 
 ## Flags
 
@@ -110,22 +111,31 @@ Present the hypotheses for review. The user can approve, add hypotheses, or remo
 
 ### Step 2: Create Team and Spawn Investigators
 
-1. Use the recommended agent count. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
+1. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
+
 <!-- @claude -->
-2. Create a team: `TeamCreate` with a descriptive `team_name`
-3. Spawn one Vinculum per hypothesis into the team:
+2. **Create the team — this is MANDATORY:**
+
+```
+TeamCreate:
+  team_name: "diagnosis-<epic-id>"
+```
+
+**Do NOT proceed to agent spawn without a confirmed team.** If `TeamCreate` fails, abort. Without a team, Vinculum agents cannot challenge each other's hypotheses — the adversarial protocol is dead.
+
+3. Spawn one Vinculum per hypothesis **into the team**:
 
 ```
 Agent:
   subagent_type: "Vinculum"
-  team_name: "<team name>"
+  team_name: "diagnosis-<epic-id>"   # ← REQUIRED — matches the team created above
   name: "Vinculum: <short name>"
   description: "<full designation> — hypothesis <N>"
   run_in_background: true
   prompt: |
     Vinculum — diagnostic sequence initiated.
 
-    You are <designation>, member of diagnostic unit "<team name>".
+    You are <designation>, member of diagnostic unit "diagnosis-<epic-id>".
     You are investigating one hypothesis among several competing theories.
     Other Vinculum agents are investigating rival hypotheses simultaneously.
 
@@ -162,7 +172,7 @@ Hypothesis: <N>
 ### Step 3: Monitor Investigation
 
 - Vinculum agents investigate, communicate, and challenge each other autonomously.
-- The lead does NOT intervene unless an agent is stuck or the team stalls.
+- The Queen does NOT intervene unless an agent is stuck or the team stalls.
 - Discovery and evidence snapshots accumulate in brain (tagged `diagnosis-evidence`).
 - When a hypothesis is disproven, the investigating agent acknowledges it and assists others.
 - When all agents go idle, the investigation is complete.

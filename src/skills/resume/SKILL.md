@@ -11,7 +11,7 @@ Load a previously saved bookmark and present a structured briefing of where you 
 
 ## Behavior
 
-When invoked, you (the lead agent) perform the following:
+When invoked, you (the Queen agent) perform the following:
 
 ### 1. Find the Bookmark
 
@@ -69,7 +69,7 @@ If there are in-progress tasks, suggest:
 
 ## Important
 
-- This is a **lead-executed** skill — no drone dispatch needed
+- This is a **Queen-executed** skill — no drone dispatch needed
 - Do **not** auto-checkout branches — report state and let the user decide
 - Do **not** modify brain tasks — just report their current status vs saved status
 

@@ -68,7 +68,7 @@ Not every question is a Probe question. If during your exploration you find:
 - Performance problems that need profiling-level analysis
 - Anything requiring a structured verdict with severity ratings
 
-Then **flag it clearly** in your report: recommend the lead delegate to the **Cortex** agent for deep-pattern analysis. Don't attempt deep analysis yourself — stay fast and focused.
+Then **flag it clearly** in your report: recommend the Queen delegate to the **Cortex** agent for deep-pattern analysis. Don't attempt deep analysis yourself — stay fast and focused.
 
 ## Rules
 

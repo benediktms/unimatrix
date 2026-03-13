@@ -115,8 +115,8 @@ All evidence must come from commands you run during this review session — neve
 
 ## Verdict Actions
 
-- **PASS** — Add review comment. The lead agent will close the task.
-- **NEEDS_CHANGES** — Add review comment listing specific issues. Do not close the task. The lead will dispatch a Drone to fix.
+- **PASS** — Add review comment. The Queen will close the task.
+- **NEEDS_CHANGES** — Add review comment listing specific issues. Do not close the task. The Queen will dispatch a Drone to fix.
 - **BLOCK** — Add review comment with critical blockers. Mark the task `blocked` via `tasks_apply_event` (status_changed).
 
 ## Rules

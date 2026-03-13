@@ -35,7 +35,7 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 
 ## Usage
 
-Invoked by the lead during `/assemble` Step 2 before dispatching drones. Can also be called manually:
+Invoked by the Queen during `/assemble` Step 2 before dispatching drones. Can also be called manually:
 
 ```
 /designate <N>                              # Generic Adjunct titles (Unimatrix Zero)

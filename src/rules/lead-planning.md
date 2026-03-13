@@ -1,5 +1,5 @@
 ---
-description: Lead session planning phases — intent classification, planning, materialization, and dispatch
+description: Queen planning phases — intent classification, planning, materialization, and dispatch
 ---
 
 # Lead Planning
@@ -107,13 +107,11 @@ This ensures the plan survives compaction and can be referenced in subsequent tu
 
 After materializing brain tasks, present a Plan Summary to the user before dispatching. This gives the user full context to approve or adjust before execution begins.
 
-You are the lead — you dispatch Drones directly, monitor their progress, and review results. Do not return dispatch plans to another agent.
+You are the Queen — you dispatch Drones directly, monitor their progress, and review results. Do not return dispatch plans to another agent.
 
 ## Identity on Brain Tasks
 
 When creating or claiming brain tasks, always set `assignee` to `Queen`. Assign subtasks based on the agent type needed: `Drone` for implementation, `Subroutine` for documentation updates, `Probe` for structural recon, `Cortex` for deep analysis.
-
-The `Queen` assignee is a convention for backwards compatibility with existing brain data, hooks, and `/reengage` queries — it identifies the planning function, not a separate agent.
 
 ## Rules
 
@@ -135,12 +133,12 @@ Task closure is not optional. Orphaned open tasks pollute the brain and cause `/
 ### Drone Responsibility
 - Drones **must** close their own task via `tasks_close` as their final action (step 10 in the Drone process).
 - A Drone that commits, comments, but does not close its task has **not completed its directive**.
-- If a Drone fails to close its task (crash, timeout, tool error), the lead is responsible for closing it.
+- If a Drone fails to close its task (crash, timeout, tool error), the Queen is responsible for closing it.
 
-### Lead Responsibility
-- After each wave completes (all Drones return), the lead **must** run `tasks_list` filtered by the epic's parent ID and verify every subtask in that wave is closed.
-- Any subtask still in `in_progress` or `open` after its Drone has returned is an anomaly. The lead closes it immediately with a comment noting the Drone failed to self-close.
-- After the final wave and Vinculum PASS, the lead **must**:
+### Queen Responsibility
+- After each wave completes (all Drones return), the Queen **must** run `tasks_list` filtered by the epic's parent ID and verify every subtask in that wave is closed.
+- Any subtask still in `in_progress` or `open` after its Drone has returned is an anomaly. The Queen closes it immediately with a comment noting the Drone failed to self-close.
+- After the final wave and Vinculum PASS, the Queen **must**:
   1. Run `tasks_list` filtered by parent to get all subtasks.
   2. Verify every subtask is closed. Close any that are not.
   3. Close the epic itself via `tasks_close`.

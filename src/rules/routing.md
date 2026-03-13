@@ -56,10 +56,23 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - Quality gates must be met and the Drone may need multiple passes
 - The user explicitly uses `/adapt`
 
+## Route to `/scan` when:
+- Quick parallel investigation with independent questions
+- Each question can be answered without knowledge of other answers
+- The user asks to scan an area or investigate something straightforward
+- The user explicitly uses `/scan`
+
+### /scan vs /recon
+
+**`/scan`** is fast and independent: parallel subagents, no communication, each works in isolation. Like a sensor sweep.
+**`/recon`** is collaborative and deep: team-based, agents share discoveries and challenge findings in real-time. Like a coordinated away mission.
+
+Rule of thumb: if the questions are independent, use `/scan`. If one agent's findings would change another's investigation, use `/recon`.
+
 ## Route to `/recon` when:
-- The investigation spans multiple areas or needs both Probes and Cortex
+- The investigation has interconnected questions — one agent's findings affect another's
+- Agents must share discoveries and challenge each other's findings in real-time
 - The user wants recon results tracked as brain tasks with linked artifacts
-- The scope is broad enough that the lead should decompose it first
 - Cross-codebase investigation is needed (use `--include` to target other brain repos)
 - A feature needs requirements gathering before implementation (use `--plan`)
 - The user wants interactive scoping with clarifying questions (use `--plan`)

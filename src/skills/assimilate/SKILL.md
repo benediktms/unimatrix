@@ -11,7 +11,7 @@ End-of-session knowledge capture and cleanup ritual. Summarizes the session's wo
 
 ## Behavior
 
-When invoked, you (the lead agent) perform the following:
+When invoked, you (the Queen agent) perform the following:
 
 ### 1. Gather Context
 

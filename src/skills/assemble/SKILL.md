@@ -1,6 +1,6 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task in an isolated worktree. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, swarm, or collaborative dispatch strategies. Vinculum reviews. Changes merge back on completion.
+description: Assemble the collective to execute a complex task in an isolated worktree. The planner assesses, plans, and the Queen dispatches Probes, Cortex, and Drones using sequential, sequence, swarm, or collaborative dispatch strategies. Vinculum reviews. Changes merge back on completion.
 ---
 
 # /assemble
@@ -48,7 +48,7 @@ Steps are independent — drones execute in parallel with non-overlapping file p
 
 ### Collaborative
 <!-- @claude -->
-Drones work in parallel on related but non-overlapping files, communicating via an agent team. Unlike swarm (parallel, silent) or sequential (serial, lead-mediated), collaborative Drones share decisions in real-time. File partitions are still enforced — each Drone owns its files — but Drones coordinate on shared interfaces, contracts, and assumptions.
+Drones work in parallel on related but non-overlapping files, communicating via an agent team. Unlike swarm (parallel, silent) or sequential (serial, Queen-mediated), collaborative Drones share decisions in real-time. File partitions are still enforced — each Drone owns its files — but Drones coordinate on shared interfaces, contracts, and assumptions.
 
 **Use when:** cross-layer changes where decisions in one area affect another — e.g., API contract changes that frontend and backend must agree on, schema changes that affect multiple consumers, shared type definitions used across modules.
 
@@ -90,6 +90,10 @@ Return your assessment:
 ### Step 2: Recon Phase (conditional)
 
 Only if your verdict was RECON_NEEDED.
+
+This phase uses the **`/scan` pattern** by default — independent subagents, no team communication. If recon questions are cross-cutting (one agent's findings would change another's investigation), use the **`/recon` pattern** instead — create a team via `TeamCreate` and spawn agents with `team_name` so they can share discoveries in real-time.
+
+**Default: `/scan` pattern.** Upgrade to `/recon` pattern only when agents must coordinate.
 
 #### Step 2a: Recon Scoping
 
@@ -285,7 +289,7 @@ RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
 **Spawning rules:**
 - Swarm wave: spawn all Drones with `run_in_background: true`
 <!-- @claude -->
-- Collaborative wave: create a team (`TeamCreate`), spawn all Drones with `run_in_background: true` and `team_name`. Team enables real-time messaging between Drones.
+- Collaborative wave: **create a team first** (`TeamCreate`), then spawn all Drones with `run_in_background: true` and `team_name`. Without the team, Drones cannot communicate — collaborative mode degrades to a silent swarm. If `TeamCreate` fails, abort the wave.
 <!-- @end -->
 <!-- @opencode -->
 - Collaborative wave: spawn all Drones with `run_in_background: true`. Drones coordinate via brain snapshots.
@@ -302,7 +306,7 @@ RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
 
 ### Step 7: Verification Gate
 
-When all Drones complete, the lead runs tests, lint, and formatting globally for the affected codebase. Drones only verify their own changed files — this step catches cross-cutting failures.
+When all Drones complete, the Queen runs tests, lint, and formatting globally for the affected codebase. Drones only verify their own changed files — this step catches cross-cutting failures.
 
 1. **Run tests** — Execute the project's test suite covering all areas affected by Drone changes.
 2. **Run lint and formatting** — Execute the project's linter and formatter across all changed files.
@@ -412,7 +416,7 @@ this changeset in parallel. Coordinate via snapshots:
   `review-finding` snapshots from other Vinculum agents. Evaluate any findings
   that affect your scope.
 - INTEGRATION RISKS: If you identify a risk that spans scopes, save a snapshot
-  tagged `integration-risk` so the lead can assess.
+  tagged `integration-risk` so the Queen can assess.
 """
 )
 ```
@@ -490,7 +494,7 @@ Coordination happens through Brain tasks and records. No team lifecycle manageme
 
 ## Ad-Hoc Reconnaissance
 
-If you need to search the codebase during orchestration (e.g. to gather context between waves or verify something before dispatching), always use `Probe` agents — never `Explore`.
+If you need to scan the codebase during orchestration (e.g. to gather context between waves or verify something before dispatching), use `Probe` agents — never `Explore`. These are dispatched as plain subagents (the `/scan` pattern) since ad-hoc recon questions are typically independent.
 
 ## Post-Wave Git Discipline
 

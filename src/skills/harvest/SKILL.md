@@ -18,9 +18,9 @@ Extract and persist useful findings from exploration-heavy sessions. Where `/ass
 
 ## Behavior
 
-### Phase 1: Extract Findings (Lead)
+### Phase 1: Extract Findings (Queen)
 
-The lead performs this phase directly — subagents cannot see conversation context.
+The Queen performs this phase directly — subagents cannot see conversation context.
 
 Scan the conversation for:
 
@@ -69,7 +69,7 @@ Instructions:
 
 ### Phase 2 (Quick Mode): Direct Persist
 
-If `--quick` is passed, skip Cortex. The lead writes findings directly:
+If `--quick` is passed, skip Cortex. The Queen writes findings directly:
 
 1. Write a single `memory_write_episode` with all findings grouped by category
 2. Save a `records_save_snapshot` with the full extraction (tagged `harvest`)

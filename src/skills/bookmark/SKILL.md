@@ -13,7 +13,7 @@ Save a named checkpoint of current work state — branch, tasks, changes, next s
 
 ### `/bookmark [name]` (save)
 
-When invoked, you (the lead agent) perform the following:
+When invoked, you (the Queen agent) perform the following:
 
 #### 1. Determine bookmark name
 
@@ -106,7 +106,7 @@ Reply: "Bookmark '`<name>`' saved. Resume with `/resume <name>`."
 
 ## Important
 
-- This is a **lead-executed** skill — no drone dispatch needed
+- This is a **Queen-executed** skill — no drone dispatch needed
 - Do **not** auto-checkout branches or make any git changes
 - Do **not** close or modify brain tasks — only snapshot their current state
 
