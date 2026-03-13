@@ -16,7 +16,8 @@ Re-engage the collective on a previously planned brain task. Use this when execu
    - Otherwise, ask the user which task to resume — use `tasks_list` (status: open) to show available parent tasks and let them choose
    - **Never auto-select a task** — always confirm with the user which plan to execute
 2. Use `tasks_get` with `expand: children` to load all subtasks
-3. **Enter worktree** — Fetch the plan artifact for the epic (`records_list` with tag `queen-plan` and the epic's task ID). The plan's `Worktree` section specifies the branch name.
+3. **Load operational intelligence** — Fetch the dispatch brief for the epic (`records_list` with tags `dispatch-brief` and `epic:<epic-id>`, then `records_fetch_content`). The dispatch brief contains all operational context — wave structure, file assignments, recon intelligence, architectural decisions. **Do not re-read files or re-search the codebase. The brief is authoritative. Dispatch immediately from it.** If no dispatch brief exists, fall back to the plan artifact (`records_list` with tag `queen-plan` and the epic's task ID).
+   **Enter worktree** — The dispatch brief (or plan artifact) specifies the worktree branch name.
    - Check if the worktree exists: `git worktree list` and look for the branch name.
 <!-- @claude -->
    - **If it exists:** enter it via `EnterWorktree` with the existing worktree name.

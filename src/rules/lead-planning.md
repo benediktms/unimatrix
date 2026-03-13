@@ -23,6 +23,7 @@ Before acting on any request, classify it:
 
 ## Phase 1: Plan
 
+0. **Check for dispatch brief** — If re-engaging an existing epic, use `records_list` with tags `dispatch-brief` and `epic:<epic-id>`. If found, `records_fetch_content` to load it. **Skip directly to Phase 3** — the brief contains all operational intelligence. Do not re-read files, re-search the codebase, or re-gather context. The brief is authoritative.
 1. **Understand the goal** — Read the user's request carefully. Ask clarifying questions only if genuinely ambiguous.
 2. **Check prior plans** — Use `records_list` with the `task_id` (if re-planning an existing epic) and tag `queen-plan` to find prior plan artifacts. If one exists, use `records_fetch_content` to read it — avoid re-planning completed work.
 3. **Search memory** — Use `memory_search_minimal` with `intent: planning` to find prior decisions, patterns, or context.
@@ -68,6 +69,7 @@ Before acting on any request, classify it:
 4. **Set parent** — `tasks_apply_event` (parent_set) to link each subtask to the epic.
 5. **Set dependencies** — `tasks_deps_batch` with `chain` for sequential steps, `fan` for parallel steps.
 6. **Save plan artifact** — `records_create_artifact` with `title: "Plan: <epic title>"`, `kind: "plan"`, `data`: the full dispatch plan markdown, `task_id`: the epic's task ID, `media_type: "text/markdown"`, `tags: ["queen-plan"]`.
+7. **Save dispatch brief** — `records_create_artifact` with the dispatch brief (see Dispatch Brief Format below), `kind: "dispatch-brief"`, `task_id`: the epic's task ID, `media_type: "text/markdown"`, `tags: ["dispatch-brief", "epic:<epic-id>"]`. This is the single document that enables immediate dispatch from zero context — it must be self-contained.
 
 ### Task Description Format
 
@@ -102,6 +104,49 @@ records_save_snapshot:
 ```
 
 This ensures the plan survives compaction and can be referenced in subsequent turns.
+
+### Dispatch Brief Format
+
+The dispatch brief is the operational counterpart to the plan artifact. The plan explains *what* and *why*. The brief contains everything the Queen needs to dispatch immediately from zero context — no file reads, no searches, no re-research.
+
+```markdown
+# Dispatch Brief: <epic title>
+
+## Epic
+- ID: <task-id>
+- Branch: <worktree-branch-name>
+- Review strategy: single | sphere
+
+## Intelligence
+<One-paragraph summary of recon findings, architectural context, and key constraints.
+This replaces re-reading files — distill what matters for dispatch.>
+
+### Key Files
+- `<file:line-range>` — <why this file matters to the plan>
+
+### Decisions
+- <Architectural decision or constraint discovered during recon/planning>
+
+## Waves
+
+### Wave 1 (<swarm|collaborative|sequential|sequence>)
+| Task ID | Title | Assignee | Files |
+|---|---|---|---|
+| <id> | <title> | Drone | <file list> |
+
+### Wave 2 (<mode>, depends on Wave 1)
+| Task ID | Title | Assignee | Files |
+|---|---|---|---|
+| <id> | <title> | Drone | <file list> |
+
+## Recon Snapshots
+- `<snapshot-id>` — <one-line summary of finding>
+```
+
+**Rules:**
+- The brief must be saveable *at materialization time* — all information is known by then.
+- If context compaction occurs after materialization, the Queen loads the brief and dispatches immediately. No additional tool calls beyond `records_fetch_content`, `tasks_next`, and agent spawning.
+- If the brief is insufficient for dispatch, the planning phase was inadequate — fix the planning phase, not the dispatch phase.
 
 ## Phase 3: Dispatch
 

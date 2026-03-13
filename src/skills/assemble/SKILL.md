@@ -136,21 +136,27 @@ Use `description="<full designation> — <task summary>"` to carry designation a
 4. Wait for all recon agents to complete
 <!-- @end -->
 
-#### Step 2c: Collect Recon Results
+#### Step 2c: Collect Recon Intelligence
 
-Read each recon agent's completion comment on their brain task to extract snapshot IDs.
+Read each recon agent's completion comment on their brain task to extract snapshot IDs. Fetch each snapshot via `records_fetch_content` and distill into a recon intelligence summary:
+
+- **Key findings** — one line per snapshot summarizing the discovery
+- **Key files** — `file:line-range` with why each matters to the implementation
+- **Decisions** — constraints or architectural facts discovered during recon
+
+This intelligence feeds directly into the implementation plan and dispatch brief. Do not re-read the files the recon agents already examined — their findings are authoritative.
 
 ### Step 3: Implementation Planning
 
-You have your full assessment context (and recon scoping context if Step 2 ran). Now produce the implementation plan.
+You have your full assessment context (and recon intelligence if Step 2 ran). Now produce the implementation plan.
 
 If recon was performed:
 
-Review the recon findings via `records_fetch_content` on the snapshot IDs. Then produce the implementation plan — proceed through your full planning phases (plan, materialize, dispatch plan). The dispatch plan should contain only Drone waves — all reconnaissance is already complete.
+Use the recon intelligence distilled in Step 2c — do not re-fetch snapshots or re-read files the recon agents already examined. Produce the implementation plan — proceed through your full planning phases (plan, materialize, dispatch plan, **dispatch brief**). The dispatch plan should contain only Drone waves — all reconnaissance is already complete.
 
 If recon was skipped:
 
-Produce the implementation plan. Proceed through your full planning phases (plan, materialize, dispatch plan).
+Produce the implementation plan. Proceed through your full planning phases (plan, materialize, dispatch plan, **dispatch brief**).
 
 Produce a **Dispatch Plan** with the epic task ID, wave structure, and Drone assignments.
 

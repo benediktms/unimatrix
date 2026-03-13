@@ -187,6 +187,16 @@ Synthesize the diagnosis from the final reports. Review each Vinculum's snapshot
 - Recommended fix with specific file paths
 - Confidence level (HIGH / MEDIUM / LOW)
 
+**Save diagnosis brief** — `records_create_artifact` with:
+- `title`: `"Diagnosis: <symptom summary (first 60 chars)>"`
+- `kind`: `"diagnosis-brief"`
+- `data`: base64-encoded markdown containing the full synthesized diagnosis (root cause, evidence chain with `file:line` citations, disproven hypotheses, recommended fix, confidence level)
+- `media_type`: `"text/markdown"`
+- `task_id`: the diagnostic epic's task ID
+- `tags`: `["diagnosis-brief", "epic:<epic-id>"]`
+
+This ensures the diagnosis survives context compaction. If `--fix` is active and context is compacted before Step 6, the Queen loads this brief and dispatches the fix Drone immediately — no re-investigation.
+
 ### Step 5: Present Diagnosis
 
 Present the synthesized diagnosis to the user:
@@ -200,6 +210,8 @@ If `--fix` was NOT passed, stop here.
 ### Step 6: Fix (if --fix)
 
 Only if `--fix` was passed and the confidence is MEDIUM or HIGH (if LOW, present the diagnosis and ask the user whether to proceed).
+
+**If context was compacted**, load the diagnosis brief from Step 4 via `records_list` with tags `diagnosis-brief` and `epic:<epic-id>`, then `records_fetch_content`. The brief contains the root cause, evidence chain, and recommended fix. Do not re-read files or re-run the investigation.
 
 <!-- @claude -->
 Assess fix complexity from the recommended fix:

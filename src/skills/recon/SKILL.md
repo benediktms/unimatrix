@@ -313,6 +313,13 @@ Build a JSON payload with:
   "home_brain": {"id": "<current brain ID>", "name": "<current brain name>"},
   "target_brains": [{"id": "...", "name": "...", "root": "..."}],
   "recon_snapshots": ["<snapshot-id-1>", "<snapshot-id-2>"],
+  "recon_findings": [
+    {"snapshot_id": "<id>", "summary": "<one-line finding distilled from the snapshot>"}
+  ],
+  "key_files": [
+    {"path": "<file:line-range>", "role": "<why this file matters to the plan>"}
+  ],
+  "decisions": ["<architectural decision or constraint discovered during recon>"],
   "scoped_at": "<ISO 8601 timestamp>",
   "plan": "<the full SCOPE_COMPLETE plan output>"
 }
@@ -333,7 +340,9 @@ Report the artifact ID to the user so they can reference it with `--resume`.
 
 ### Step 5: Materialize Plan
 
-Materialize the plan into brain tasks. Follow your standard materialization process (create epic, create subtasks, set parents, set dependencies, save plan artifact).
+Materialize the plan into brain tasks. Follow your standard materialization process (create epic, create subtasks, set parents, set dependencies, save plan artifact, **save dispatch brief**).
+
+The dispatch brief must include the recon intelligence from the cached plan payload — `recon_findings`, `key_files`, and `decisions`. This ensures the Queen can dispatch immediately from the brief without re-reading files or re-fetching snapshots. See lead-planning rules for the dispatch brief format.
 
 For tasks targeting non-local brains, use the `brain` parameter on `tasks_create` with the brain name. Use cross-brain refs to link related tasks across brains.
 
