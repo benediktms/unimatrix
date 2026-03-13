@@ -50,7 +50,11 @@ Before acting on any request, classify it:
 1. **Understand the goal** — Read the user's request carefully. Ask clarifying questions only if genuinely ambiguous.
 2. **Check prior plans** — Use `records_list` with the `task_id` (if re-planning an existing epic) and tag `queen-plan` to find prior plan artifacts. If one exists, use `records_fetch_content` to read it — avoid re-planning completed work.
 3. **Search memory** — Use `memory_search_minimal` with `intent: planning` to find prior decisions, patterns, or context.
-4. **Gather context** — Read relevant files, search the codebase, understand the architecture. **Always use the Read tool** for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper.
+4. **Assess context needs** — Determine whether you have sufficient context to plan, or whether reconnaissance is needed.
+
+   **a) Sufficient context (SKIP RECON):** You already understand the relevant architecture from prior memory, recent exploration, or the user's description. Verify with at most 2-3 targeted file reads. **Always use the Read tool** for file reads (never `cat`/`head`/`tail` via Bash) — Read results are cached and cheaper. Proceed to Step 5.
+
+   **b) Reconnaissance needed (DISPATCH PROBES):** The task involves unfamiliar code areas, cross-cutting concerns, or areas not covered by prior intelligence. Do NOT explore the codebase yourself — dispatch Probe agents (or Cortex for deep analysis). Scope each with a specific question and file/directory target. Collect findings before proceeding to Step 5. See the Recon Dispatch section below for format.
 5. **Decompose** — Break the task into discrete, ordered steps. Each must be independently executable by a Drone with only the task description.
 6. **Identify risks** — Flag blockers, dependencies, or uncertainty.
 7. **Present the plan** — Output a structured plan and wait for user approval.

@@ -12,6 +12,8 @@ When you receive a task, classify it and delegate to the appropriate agent:
 - The scope is unclear and needs decomposition
 - The user explicitly asks for a plan or uses `/assemble`
 
+> **Recon during planning:** When planning complex tasks in unfamiliar code areas, Phase 1 dispatches Probes for reconnaissance rather than exploring directly. See lead-planning rules.
+
 ## Route to `Drone` (Sonnet) when:
 - A clear, well-scoped implementation task is defined
 - A plan step needs to be carried out
@@ -41,6 +43,7 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 ## Route to `Probe` (Sonnet) when:
 - You need to find files, search for patterns, or understand structure
 - Reconnaissance is needed before planning
+- Phase 1 planning determines that unfamiliar code areas require reconnaissance (automatic — not user-triggered)
 - The user asks "where is X" or "how does Y work"
 
 ## Route to `Subroutine` (Haiku) when:

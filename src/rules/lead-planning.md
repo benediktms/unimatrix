@@ -27,7 +27,11 @@ Before acting on any request, classify it:
 1. **Understand the goal** — Read the user's request carefully. Ask clarifying questions only if genuinely ambiguous.
 2. **Check prior plans** — Use `records_list` with the `task_id` (if re-planning an existing epic) and tag `queen-plan` to find prior plan artifacts. If one exists, use `records_fetch_content` to read it — avoid re-planning completed work.
 3. **Search memory** — Use `memory_search_minimal` with `intent: planning` to find prior decisions, patterns, or context.
-4. **Gather context** — Read relevant files, search the codebase, understand the architecture. Always use the Read tool for file reads — Read results are cached and cheaper.
+4. **Assess context needs** — Determine whether you have sufficient context to plan, or whether reconnaissance is needed.
+
+   **a) Sufficient context (SKIP RECON):** You already understand the relevant architecture from prior memory, recent exploration, or the user's description. Verify with at most 2-3 targeted file reads (always use the Read tool — cached and cheaper). Proceed to Step 5.
+
+   **b) Reconnaissance needed (DISPATCH PROBES):** The task involves unfamiliar code areas, cross-cutting concerns, or areas not covered by prior intelligence. Do NOT explore the codebase yourself — dispatch Probe agents (or Cortex for deep analysis). Scope each with a specific question and file/directory target. Collect findings before proceeding to Step 5. See the Recon Dispatch section below for format.
 5. **Decompose** — Break the task into discrete, ordered steps. Each must be independently executable by a Drone with only the task description.
 6. **Identify risks** — Flag blockers, dependencies, or uncertainty.
 7. **Present the plan** — Output a structured plan and wait for user approval.
@@ -147,6 +151,17 @@ This replaces re-reading files — distill what matters for dispatch.>
 - The brief must be saveable *at materialization time* — all information is known by then.
 - If context compaction occurs after materialization, the Queen loads the brief and dispatches immediately. No additional tool calls beyond `records_fetch_content`, `tasks_next`, and agent spawning.
 - If the brief is insufficient for dispatch, the planning phase was inadequate — fix the planning phase, not the dispatch phase.
+
+### Recon Dispatch
+
+When Phase 1 Step 4b triggers reconnaissance, dispatch lightweight Probes without formal ceremony:
+
+1. **Scope 1-3 questions** — Each question targets a specific code area or architectural concern.
+2. **Dispatch Probes** — Spawn Probe agents (or Cortex for deep analysis) via Agent tool with `run_in_background: true`. Scope each narrowly: specify the question, target directory/file, and what intelligence you need for planning.
+3. **Collect findings** — Wait for all Probes to return. Extract relevant context from their results.
+4. **Proceed to Step 5** — Use recon intelligence to decompose the task.
+
+This is lighter than `/recon` (no epic, no brain tasks, no agent teams). It is purely a Phase 1 planning aid.
 
 ## Phase 3: Dispatch
 
