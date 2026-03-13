@@ -99,6 +99,66 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: add_repo
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "add_repo",
+  "Add a repository to the current checkpoint. Use when expanding scope on resume. No-op if the repo already exists.",
+  {
+    name: z.string().describe("Brain name or ref for the repository"),
+    root: z.string().describe("Resolved root path of the repository"),
+    worktrees: z.array(
+      z.object({
+        branch: z.string(),
+        path: z.string().optional(),
+        stackedOn: z.string().optional(),
+        nodeId: z.string(),
+      }),
+    ).optional().describe("Worktree metadata (can be added later via add_node)"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+
+    const existing = cp.repos.find((r) => r.name === params.name);
+    if (existing) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            added: false,
+            message: `Repo '${params.name}' already exists.`,
+          }),
+        }],
+      };
+    }
+
+    const repo: RepoMetadata = {
+      name: params.name,
+      root: params.root,
+      worktrees: (params.worktrees ?? []) as RepoMetadata["worktrees"],
+    };
+    checkpoint = {
+      ...cp,
+      repos: [...cp.repos, repo],
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          added: true,
+          repos: checkpoint!.repos.map((r) => r.name),
+        }),
+      }],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: add_node
 // ---------------------------------------------------------------------------
 
@@ -545,10 +605,21 @@ server.tool(
 
 server.tool(
   "status",
-  "Return full state summary including machine state, current wave, node statuses, and wave history.",
+  "Return full state summary including machine state, current wave, node statuses, and wave history. Returns idle state if no checkpoint is loaded.",
   {},
   () => {
-    const cp = requireCheckpoint();
+    if (checkpoint === null) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ machineState: "idle" }),
+          },
+        ],
+      };
+    }
+
+    const cp = checkpoint;
 
     const nodeStatuses = Object.fromEntries(
       Object.entries(cp.graph.nodes).map(([id, node]) => [

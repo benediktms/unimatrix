@@ -12,23 +12,36 @@ before proceeding.
 ## Invocation
 
 ```
-/borgcube --include <ref,ref,...> [--resume [artifact-id]] [--dry-run]
+/borgcube --include <ref,ref,...> [--resume [artifact-id | brain-ref]] [--dry-run]
 ```
 
 **Flags:**
 
-- `--include ref,ref,...` — (required) Comma-separated brain names or paths
-  identifying target repositories.
-- `--resume [artifact-id]` — Resume from a persisted checkpoint. If artifact-id
-  is omitted, fetch the latest artifact tagged `borgcube-checkpoint`.
+- `--include ref,ref,...` — Comma-separated brain names or paths identifying
+  target repositories. Required for fresh invocations. When combined with
+  `--resume`, any refs NOT already in the checkpoint are **added** to the
+  execution context — use this to expand scope to additional repos.
+- `--resume [artifact-id | brain-ref]` — Resume from a persisted checkpoint.
+  Accepts one of:
+  - **(nothing)** — fetch the latest artifact tagged `borgcube-checkpoint`.
+  - **artifact-id** — fetch a specific checkpoint artifact by ID.
+  - **brain-ref** — brain name, alias, or ID. Searches for the latest
+    `borgcube-checkpoint` artifact tagged with `borgcube-repo:<brain-ref>`.
+    If the brain is NOT already in the loaded checkpoint, it is **added** to
+    the execution context (same as `--include` on resume).
+  After loading the checkpoint, if the user provides additional context,
+  instructions, or new brains were added, the plan enters **refinement mode**
+  — the current graph is presented and can be modified before re-dispatching.
 - `--dry-run` — Plan and build the graph only. Do not dispatch Drones or create
   worktrees.
 
 ## Step 0: Prerequisite Check
 
 Before proceeding, verify the UNIMATRIX MCP server is available by calling
-`mcp__unimatrix__status`. If the call fails or the tool is not available: abort
-immediately with:
+`mcp__unimatrix__status`. The tool returns `machineState: "idle"` when no
+checkpoint is loaded — this is normal for a fresh invocation.
+
+If the call **fails** (tool not found, connection error): abort immediately with:
 
 ```
 SUBSPACE LINK FAILURE — The UNIMATRIX MCP server is not running.
@@ -41,7 +54,17 @@ Do not continue to Step 1.
 
 Parse ARGUMENTS to extract flags.
 
-For each ref in `--include`:
+If `--resume` is provided with a value that is NOT a UUID/numeric artifact ID
+(i.e., it looks like a brain name or alias): treat it as a brain-ref. Resolve it
+using the same mechanism as `--include` refs:
+
+```
+SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>
+```
+
+Then proceed to Step 2 with the resolved brain-ref.
+
+For each ref in `--include` (if provided):
 
 ```
 SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>
@@ -51,8 +74,8 @@ Each ref can be a brain ID, name, alias, or filesystem path. This ensures the
 brain is registered and its root path is known. Capture the resolved root path
 for each target.
 
-If no `--include` targets are provided: abort with "DIRECTIVE INCOMPLETE.
---include is required."
+If neither `--include` nor `--resume` is provided: abort with "DIRECTIVE
+INCOMPLETE. --include or --resume is required."
 
 If `--dry-run` is set: proceed through Steps 3–4 only, then report the computed
 graph and halt.
@@ -62,13 +85,59 @@ graph and halt.
 If `--resume` is set:
 
 1. Locate the checkpoint artifact:
-   - If an artifact-id was provided: call `records_get` with that ID.
-   - If no artifact-id: call `records_list` with tag `borgcube-checkpoint`, take
-     the most recent result, then call `records_fetch_content` to retrieve the
-     serialized JSON.
+   - **artifact-id provided** (UUID or numeric): call `records_get` with that ID.
+   - **brain-ref provided** (resolved in Step 1): call `records_list` with tags
+     `borgcube-checkpoint` and `borgcube-repo:<brain-ref>`. If exactly one
+     result: use it. If multiple results: present the selection prompt (see
+     below). If no results: fall back to `records_list` with tag
+     `borgcube-checkpoint` alone and apply the same logic.
+   - **nothing provided**: call `records_list` with tag `borgcube-checkpoint`.
+     If exactly one result: use it. If multiple results: present the selection
+     prompt. If no results: abort with "No borgcube checkpoints found."
+   Then call `records_fetch_content` to retrieve the serialized JSON.
+
+   **Selection prompt** (when multiple checkpoints exist):
+
+   Present the candidates and ask the user to choose:
+
+   ```
+   Multiple borgcube checkpoints detected:
+
+     [1] <title> — <machineState> — <repos> — <updatedAt>
+     [2] <title> — <machineState> — <repos> — <updatedAt>
+     ...
+
+   Specify a number, or provide the artifact ID directly.
+   ```
+
+   Extract `title` from the artifact metadata. For `machineState` and `repos`,
+   call `records_fetch_content` for each candidate, deserialize just enough to
+   read `machineState` and `repos[].name`. HALT and wait for user selection.
 2. Call `restore_checkpoint` with the retrieved JSON string.
 3. Call `status` to determine current `machineState`.
-4. Route by state:
+4. **Merge repo context:** Collect all brains from three sources:
+   - Checkpoint's existing `repos` array.
+   - The `--resume` brain-ref (if it was a brain name, not an artifact-id).
+   - Any `--include` refs provided alongside `--resume`.
+   Resolve each brain name via `ensure-brain.py` to confirm accessibility.
+   For any brain NOT already in the checkpoint's `repos`, call `add_repo`
+   with the resolved name and root path. This adds the repo to the checkpoint
+   without resetting the graph.
+5. **Refinement check**: Enter **refinement mode** if ANY of the following are
+   true:
+   - New brains were added (step 4 found repos not in the checkpoint).
+   - The user's message includes additional instructions or scope changes.
+   In refinement mode:
+   a. Present the current graph: nodes, edges, wave plan, and node statuses.
+      Highlight any newly added repos that have no nodes yet.
+   b. Apply changes — add nodes for new repos, add/remove edges, modify
+      labels or implementation details.
+   c. Re-validate the graph (`validate`).
+   d. Re-compute waves (`compute_waves`).
+   e. Persist the updated checkpoint (Step 5).
+   f. Present the updated plan and wait for user approval.
+   g. After approval, route by the new `machineState` (step 6 below).
+6. Route by state (if not entering refinement mode):
    - `dispatching` → jump to Step 6 (wave dispatch loop)
    - `gate_halted` → jump to Step 8 (gate check)
    - `failed` → jump to Step 9 (failure handling)
@@ -172,7 +241,9 @@ After graph computation, persist state so execution can be resumed.
 2. Save as a brain artifact:
    - `title`: `"borgcube checkpoint: <feature-description>"`
    - `kind`: `"document"`
-   - `tags`: `["borgcube-checkpoint"]`
+   - `tags`: `["borgcube-checkpoint", "borgcube-repo:<brain-name>", ...]` — include
+     one `borgcube-repo:<name>` tag per target repo in the checkpoint. This enables
+     `--resume <brain-ref>` to locate checkpoints by brain name.
    - `text`: the serialized JSON string from `save_checkpoint`
 3. Record the returned artifact ID. Include it in user-facing status messages so
    the user can pass it to `--resume`.
@@ -419,6 +490,7 @@ themselves.
 | Tool                 | Purpose                                                                           |
 | -------------------- | --------------------------------------------------------------------------------- |
 | `init`               | Initialize with repo metadata. Creates empty graph in `initializing` state.       |
+| `add_repo`           | Add a repo to the current checkpoint. No-op if repo already exists.               |
 | `add_node`           | Add a node to the graph (id, repo, type, label, worktreeBranch, stackedOn?).      |
 | `add_edge`           | Add a directed edge (from, to, type: merge_gate\|stacked).                        |
 | `validate`           | Check graph integrity — edge refs, stackedOn refs, cycles.                        |
@@ -428,7 +500,7 @@ themselves.
 | `fail_node`          | Mark a node failed with a reason string.                                          |
 | `clear_gate`         | Clear merge gate on a node. Auto-advances state if all gates in wave are cleared. |
 | `next_wave`          | Return the next wave ready for dispatch, or null with a reason.                   |
-| `status`             | Full state dump: machineState, nodes, waves, waveHistory.                         |
+| `status`             | Full state dump: machineState, nodes, waves, waveHistory. Returns `idle` if no checkpoint loaded. |
 | `save_checkpoint`    | Serialize current state to JSON string for persistence.                           |
 | `restore_checkpoint` | Deserialize a JSON string and load it as the current checkpoint.                  |
 
