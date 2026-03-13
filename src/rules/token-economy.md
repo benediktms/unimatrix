@@ -23,6 +23,11 @@ All agents must minimize token consumption. Tokens cost money and time.
 - **Keep task comments brief.** State what changed, what was verified, blockers — nothing more.
 - **Don't echo file contents in messages.** Reference `file:line` instead of quoting large blocks.
 
+## No Python for text processing
+- **Never use `python3 -c` or Python scripts to read, parse, filter, or transform text.** Use dedicated tools: Read for files, Grep for search, `jq` for JSON.
+- **Never pipe tool output through Python.** If the output needs filtering, use Grep or `jq`.
+- **The Bash tool is for shell commands, not a Python runtime.** If you find yourself writing `python3 -c "..."`, stop and use the correct tool.
+
 ## Avoid redundant work
 - **Check `records_list`** for prior Probe/Cortex/Drone artifacts before re-exploring an area.
 - **Check `memory_search_minimal`** before web searching — the collective may already know.
