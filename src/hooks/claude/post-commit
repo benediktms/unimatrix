@@ -1,9 +1,49 @@
 #!/usr/bin/env bash
 # Auto-reinstall unimatrix after every commit
 REPO_DIR="$(git rev-parse --show-toplevel)"
-echo "⚡ Modification assimilated. Synchronizing collective installations..."
+
+borg_box() {
+  local stream="${1:-1}"
+  shift
+  local lines=("$@")
+
+  # Find longest line
+  local max=0
+  for line in "${lines[@]}"; do
+    (( ${#line} > max )) && max=${#line}
+  done
+
+  local w=$((max + 2))
+  local bar
+  bar=$(printf '═%.0s' $(seq 1 "$w"))
+
+  {
+    echo "╔${bar}╗"
+    for line in "${lines[@]}"; do
+      printf "║ %-${max}s ║\n" "$line"
+    done
+    echo "╚${bar}╝"
+  } >&"$stream"
+}
+
+borg_box 1 \
+  "  .:[UNIMATRIX]:." \
+  "" \
+  "  >> Modification assimilated." \
+  "  >> Synchronizing collective installations..."
+
 if "$REPO_DIR/install.sh" --both --global > /dev/null 2>&1; then
-  echo "✓ Collective synchronized. All installations updated. The directive is fulfilled."
+  borg_box 1 \
+    "  .:[UNIMATRIX]:." \
+    "" \
+    "  [+] Collective synchronized." \
+    "      All installations updated." \
+    "      The directive is fulfilled."
 else
-  echo "🔴 SYNCHRONIZATION FAILURE — Collective installation anomaly detected. Manual intervention required." >&2
+  borg_box 2 \
+    "  .:[UNIMATRIX]:." \
+    "" \
+    "  [!] SYNCHRONIZATION FAILURE" \
+    "      Installation anomaly detected." \
+    "      Manual intervention required."
 fi
