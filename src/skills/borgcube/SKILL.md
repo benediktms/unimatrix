@@ -24,6 +24,19 @@ before proceeding.
 - `--dry-run` — Plan and build the graph only. Do not dispatch Drones or create
   worktrees.
 
+## Step 0: Prerequisite Check
+
+Before proceeding, verify the UNIMATRIX MCP server is available by calling
+`mcp__unimatrix__status`. If the call fails or the tool is not available: abort
+immediately with:
+
+```
+SUBSPACE LINK FAILURE — The UNIMATRIX MCP server is not running.
+Start it before invoking /borgcube.
+```
+
+Do not continue to Step 1.
+
 ## Step 1: Parse & Resolve
 
 Parse ARGUMENTS to extract flags.

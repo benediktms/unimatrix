@@ -498,6 +498,13 @@ def build(target: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _brain_matches(brain: dict, identifier: str) -> bool:
+    """Check if a brain matches by name, id, or alias."""
+    if brain["name"] == identifier or brain.get("id") == identifier:
+        return True
+    return identifier in brain.get("aliases", [])
+
+
 def get_brain_roots(brain_name: str | None = None) -> list[dict]:
     """Return list of {name, root} dicts for registered brains, excluding unimatrix."""
     result = subprocess.run(
@@ -513,12 +520,12 @@ def get_brain_roots(brain_name: str | None = None) -> list[dict]:
         if root == own_root:
             print(f"  Skipping {brain['name']} (unimatrix source repo)")
             continue
-        if brain_name is not None and brain["name"] != brain_name:
+        if brain_name is not None and not _brain_matches(brain, brain_name):
             continue
         targets.append({"name": brain["name"], "root": str(root)})
 
     if brain_name is not None and not targets:
-        print(f"Error: brain '{brain_name}' not found.", file=sys.stderr)
+        print(f"Error: no brain matching '{brain_name}' (checked name, id, aliases).", file=sys.stderr)
         sys.exit(1)
 
     return targets
