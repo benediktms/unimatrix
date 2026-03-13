@@ -10,12 +10,12 @@ Unimatrix follows a plan-execute-review cycle:
 
 ```mermaid
 flowchart LR
-    Plan["Queen / BorgQueen\nplans"] --> Execute["Drones\nbuild"] --> Review["Vinculum\nreviews"] --> Cleanup["Subroutine\ncleans up"]
+    Plan["Lead / BorgQueen<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Vinculum<br/>reviews"] --> Cleanup["Subroutine<br/>cleans up"]
     Review -->|NEEDS_CHANGES| Execute
 ```
 
-1. **The Queen plans** (Claude Code) or **BorgQueen plans directly** (OpenCode) — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan
-2. **The lead session orchestrates** — spawns Drones (and optionally Probes/Cortex) to carry out the plan
+1. **The lead session plans** (Claude Code) or **BorgQueen plans directly** (OpenCode) — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan
+2. **The lead session dispatches** — spawns Drones (and optionally Probes/Cortex) to carry out the plan
 3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
 4. **The Vinculum reviews** — validates correctness with evidence-based verification
 5. **The Subroutine cleans up** — commits, closes tasks, writes memory episodes
@@ -26,9 +26,8 @@ All task state, checkpoints, and learned patterns are persisted in Brain, enabli
 
 ```mermaid
 graph TB
-    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
+    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates (Claude Code)<br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
 
-    Lead --> Queen["<b>Queen</b><br/>Opus<br/><i>plans</i><br/>(Claude Code)"]
     Lead --> BorgQueen["<b>BorgQueen</b><br/>Opus<br/><i>plans + executes</i><br/>(OpenCode)"]
     Lead --> Drone["<b>Drone</b><br/>Sonnet<br/><i>builds</i>"]
     Lead --> Vinculum["<b>Vinculum</b><br/>Opus<br/><i>reviews</i>"]
@@ -36,7 +35,7 @@ graph TB
     Lead --> Cortex["<b>Cortex</b><br/>Opus<br/><i>audits</i>"]
     Lead --> Subroutine["<b>Subroutine</b><br/>Haiku<br/><i>cleans up</i>"]
 
-    Queen --> Brain
+    Lead --> Brain
     BorgQueen --> Brain
     Drone --> Brain
     Vinculum --> Brain
@@ -48,7 +47,6 @@ graph TB
 
     style Lead fill:#1a1a2e,stroke:#e94560,color:#fff
     style Brain fill:#0f3460,stroke:#e94560,color:#fff
-    style Queen fill:#2d1b4e,stroke:#b388ff,color:#fff
     style BorgQueen fill:#2d1b4e,stroke:#b388ff,color:#fff
     style Drone fill:#1b3a2d,stroke:#69f0ae,color:#fff
     style Vinculum fill:#1b2d3a,stroke:#80deea,color:#fff
@@ -61,7 +59,6 @@ graph TB
 
 | Agent | Model | Platform | Role |
 |-------|-------|----------|------|
-| **Queen** | Opus | Claude Code | Strategic planner — decomposes work into brain tasks with dependencies, produces dispatch plans |
 | **BorgQueen** | Opus | OpenCode | Lead agent — strategic planner with direct execution capabilities |
 | **Drone** | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
 | **Vinculum** | Opus | Both | Code reviewer — evidence-based verification with tiered reviews (Quick/Standard/Deep) and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
@@ -77,10 +74,10 @@ Skills are the primary interface for invoking workflows:
 
 | Skill | Description |
 |-------|-------------|
-| `/assemble` | End-to-end orchestration: Queen plans, Drones implement (parallel or sequential waves), Vinculum reviews |
+| `/assemble` | End-to-end orchestration: lead plans, Drones implement (parallel or sequential waves), Vinculum reviews |
 | `/recon` | Reconnaissance and feature planning: recon team self-claims brain tasks, shares discoveries in real-time. `--plan` for iterative feature scoping |
 | `/adapt` | Iterative refinement loop: Drone implements, Vinculum reviews, repeat until PASS (default 3 cycles, max 5) |
-| `/swarm` | Bulk parallel changes: Queen partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
+| `/swarm` | Bulk parallel changes: lead partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
 | `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
 | `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
 | `/diagnose` | Adversarial hypothesis testing: Vinculum team investigates competing theories, converges on root cause. `--fix` to implement |
@@ -101,9 +98,9 @@ Unimatrix uses a single set of source files in `src/` to generate platform-speci
 
 ```mermaid
 flowchart LR
-    Src["src/\nagents, skills,\nrules, hooks"] --> Build["build.py\nvalidate → merge\nfrontmatter → strip\nconditionals"]
-    Build --> Claude["dist/claude-code/\n.claude/agents\n.claude/skills\n.claude/rules"]
-    Build --> OC["dist/opencode/\n.opencode/agents\n.claude/skills\nthemes/\ntui.json"]
+    Src["src/<br/>agents, skills,<br/>rules, hooks"] --> Build["build.py<br/>validate → merge<br/>frontmatter → strip<br/>conditionals"]
+    Build --> Claude["dist/claude-code/<br/>.claude/agents<br/>.claude/skills<br/>.claude/rules"]
+    Build --> OC["dist/opencode/<br/>.opencode/agents<br/>.claude/skills<br/>themes/<br/>tui.json"]
 ```
 
 Source files use:
@@ -210,11 +207,11 @@ flowchart TD
     Request([User request])
     Request --> Assess
 
-    Assess["Queen assesses"]
+    Assess["Lead assesses"]
     Assess -->|RECON_NEEDED| Recon["Probes / Cortex investigate"]
     Assess -->|SKIP_RECON| Plan
 
-    Recon --> Plan["Queen plans<br/><i>dispatch plan with waves + dependencies</i>"]
+    Recon --> Plan["Lead plans<br/><i>dispatch plan with waves + dependencies</i>"]
 
     Plan --> Wave1
 
@@ -254,7 +251,7 @@ For applying the same kind of change across many files:
 
 ```mermaid
 flowchart TD
-    Queen["Queen partitions files<br/>into non-overlapping groups"] --> Drone1 & Drone2 & Drone3
+    Lead["Lead partitions files<br/>into non-overlapping groups"] --> Drone1 & Drone2 & Drone3
     Drone1["Drone 1<br/><code>src/components/*.tsx</code>"]
     Drone2["Drone 2<br/><code>src/hooks/*.ts</code>"]
     Drone3["Drone 3<br/><code>src/utils/*.ts</code>"]
@@ -267,7 +264,7 @@ For understanding a codebase area before making changes:
 
 ```mermaid
 flowchart TD
-    Queen["Queen scopes investigation"] --> ProbeA & ProbeB & Cortex
+    Lead["Lead scopes investigation"] --> ProbeA & ProbeB & Cortex
     ProbeA["Probe A<br/>trace auth flow"]
     ProbeB["Probe B<br/>find all API endpoints"]
     Cortex["Cortex<br/>audit security posture"]
@@ -290,7 +287,7 @@ Epic: "Implement auth system"
 └── Task 4: "Integration tests" (blocked by 2, 3)
 ```
 
-- The **Queen** creates epics and subtasks with dependencies via `tasks_apply_event`
+- The **lead session** creates epics and subtasks with dependencies via `tasks_apply_event`
 - **Drones** mark tasks `in_progress`, add comments, and report completion
 - `tasks_next` returns the highest-priority unblocked tasks
 - `tasks_close` closes completed tasks and unblocks dependents
@@ -303,7 +300,7 @@ Brain stores checkpoints and artifacts that enable context flow between agents:
 |------|-------------|---------|------|
 | Drone checkpoints | Drone | Pass context to subsequent waves | `drone-checkpoint`, `parent:<task-id>` |
 | Implementation artifacts | Drone | Permanent record of what changed | `drone-implementation` |
-| Queen plans | Queen | Plan record before execution | `queen-plan` |
+| Lead plans | Lead | Plan record before execution | `queen-plan` |
 | Probe findings | Probe | Recon results linked to tasks | `probe-recon` |
 | Cortex analyses | Cortex | Structured analysis reports | `cortex-analysis` |
 | Vinculum reviews | Vinculum | Review verdicts and evidence | `vinculum-review` |
@@ -376,11 +373,11 @@ When steps have dependencies, Drones run one at a time. Prior checkpoint IDs flo
 
 ### Sequence Relay
 
-For long sequential chains (3+ steps), each Drone saves a handoff snapshot and the next Drone receives only the handoff as prior context — avoiding queen compaction in long chains.
+For long sequential chains (3+ steps), each Drone saves a handoff snapshot and the next Drone receives only the handoff as prior context — avoiding lead session compaction in long chains.
 
 ### Mixed-Mode
 
-Most real plans mix both: parallel foundation waves, sequential integration steps, parallel finishing work. The Queen's dispatch plan specifies the wave structure.
+Most real plans mix both: parallel foundation waves, sequential integration steps, parallel finishing work. The lead's dispatch plan specifies the wave structure.
 
 ```mermaid
 flowchart TD
@@ -408,7 +405,6 @@ flowchart TD
 unimatrix/
 ├── src/                          # Combined source (human-authored)
 │   ├── agents/                   # Agent definitions (combined frontmatter)
-│   │   ├── queen.md              #   Strategic planner — Claude Code only
 │   │   ├── borgqueen.md          #   Lead agent — OpenCode only
 │   │   ├── drone.md              #   Implementation worker
 │   │   ├── vinculum.md           #   Code reviewer
