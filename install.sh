@@ -163,11 +163,13 @@ install_claude() {
   # Merge settings (spinner verbs, status line, hooks)
   merge_settings "$target"
 
-  # Register unimatrix MCP server (mirrors how brain registers via `claude mcp add`)
+  # Register unimatrix MCP server (idempotent — skips if already registered)
   if command -v claude > /dev/null 2>&1 && [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
-    echo "  mcp: registering unimatrix MCP server"
-    claude mcp remove unimatrix 2>/dev/null || true
-    claude mcp add unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix"
+    if claude mcp add unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix" 2>/dev/null; then
+      echo "  mcp: registered unimatrix MCP server"
+    else
+      echo "  mcp: unimatrix MCP server already registered"
+    fi
   fi
 
   # Git hooks

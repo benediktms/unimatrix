@@ -31,20 +31,25 @@ build-claude: (_build "claude")
 # Build for OpenCode only
 build-opencode: (_build "opencode")
 
+# Compile the unimatrix MCP server binary
+compile:
+    mkdir -p bin
+    deno compile --allow-read --allow-env --output bin/unimatrix src/skills/borgcube/server.ts
+
 # Install to a project for Claude Code
-install-claude path=project_root: build-claude
+install-claude path=project_root: build-claude compile
     bash install.sh --claude --project {{path}}
 
 # Install to a project for OpenCode
-install-opencode path=project_root: build-opencode
+install-opencode path=project_root: build-opencode compile
     bash install.sh --opencode --project {{path}}
 
 # Install both platforms to a project
-install path=project_root: build
+install path=project_root: build compile
     bash install.sh --both --project {{path}}
 
 # Install both platforms globally
-install-global: build
+install-global: build compile
     bash install.sh --both --global
 
 # Inject Borg personality into a brain's AGENTS.md
