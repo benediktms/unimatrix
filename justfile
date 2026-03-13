@@ -2,6 +2,10 @@
 
 set dotenv-load := false
 
+# List available commands
+default:
+    @just --list
+
 project_root := justfile_directory()
 python := project_root / ".venv/bin/python3"
 
