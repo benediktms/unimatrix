@@ -1,0 +1,216 @@
+/**
+ * Shared TypeScript types for the borgcube cross-repository orchestration system.
+ *
+ * These interfaces define the state machine, execution graph, and all data
+ * structures used throughout the borgcube skill.
+ */
+
+// ---------------------------------------------------------------------------
+// Graph types
+// ---------------------------------------------------------------------------
+
+/**
+ * A single unit of work in the borgcube execution graph.
+ * Corresponds to one branch/PR per repository.
+ */
+export interface Node {
+  /** Unique identifier for this node within the graph. */
+  id: string;
+  /** Brain name or ref identifying the target repository. */
+  repo: string;
+  /** Whether this node defines an API contract or an implementation against it. */
+  type: "contract" | "implementation";
+  /** Human-readable description of this node's purpose. */
+  label: string;
+  /** Brain task ID once the corresponding task has been materialized. */
+  taskId?: string;
+  /** Name of the worktree branch for this node. */
+  worktreeBranch: string;
+  /** Node ID this node is stacked on within the same repository. */
+  stackedOn?: string;
+  /** Current execution status of this node. */
+  status: "pending" | "active" | "pr_created" | "merged" | "blocked" | "failed";
+  /** URL of the pull request created for this node, if any. */
+  prUrl?: string;
+  /** Number of the pull request created for this node, if any. */
+  prNumber?: number;
+  /** Human-readable reason for failure, if status is "failed" or "blocked". */
+  failureReason?: string;
+}
+
+/**
+ * A directed dependency edge between two nodes in the execution graph.
+ */
+export interface Edge {
+  /** Source node ID. */
+  from: string;
+  /** Target node ID. */
+  to: string;
+  /**
+   * Relationship type:
+   * - `merge_gate`: target cannot proceed until source is merged.
+   * - `stacked`: target branch is stacked on top of source within one repo.
+   */
+  type: "merge_gate" | "stacked";
+}
+
+/**
+ * The full directed acyclic graph of nodes and edges for one borgcube execution.
+ */
+export interface Graph {
+  /** All nodes in the graph, keyed by node ID for O(1) lookup and JSON compatibility. */
+  nodes: Record<string, Node>;
+  /** All directed edges in the graph. */
+  edges: Edge[];
+}
+
+// ---------------------------------------------------------------------------
+// Wave types
+// ---------------------------------------------------------------------------
+
+/**
+ * A group of nodes that can be executed in parallel within the same wave.
+ */
+export interface Wave {
+  /** Sequential wave index (0-based). */
+  id: number;
+  /** Node IDs included in this wave. */
+  nodes: string[];
+  /**
+   * When true, execution halts after this wave completes and waits for
+   * explicit merge confirmation before proceeding to the next wave.
+   */
+  hasMergeGate: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// State machine types
+// ---------------------------------------------------------------------------
+
+/**
+ * Top-level states of the borgcube execution state machine.
+ */
+export type MachineState =
+  | "initializing"
+  | "dispatching"
+  | "gate_halted"
+  | "failed"
+  | "completed";
+
+/**
+ * Persisted checkpoint capturing the full state of a borgcube execution.
+ * Saved to brain snapshots to survive process restarts.
+ */
+export interface Checkpoint {
+  /** Schema version string for forward compatibility (e.g., "1.0.0"). */
+  version: string;
+  /** Current state of the execution state machine. */
+  machineState: MachineState;
+  /** The full execution graph. */
+  graph: Graph;
+  /** Ordered list of waves derived from the graph. */
+  waves: Wave[];
+  /** ID of the wave currently being executed, or null if none is active. */
+  currentWaveId: number | null;
+  /** Metadata about each repository involved in this execution. */
+  repos: RepoMetadata[];
+  /** Historical results of all waves that have completed. */
+  waveHistory: WaveResult[];
+  /** ISO 8601 timestamp when this checkpoint was first created. */
+  createdAt: string;
+  /** ISO 8601 timestamp when this checkpoint was last updated. */
+  updatedAt: string;
+  /** Brain task ID of the epic task for this borgcube execution, if materialized. */
+  epicTaskId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Repository metadata
+// ---------------------------------------------------------------------------
+
+/**
+ * Metadata about a single repository participating in the borgcube execution.
+ */
+export interface RepoMetadata {
+  /** Brain name for this repository. */
+  name: string;
+  /** Absolute filesystem path to the repository root. */
+  root: string;
+  /** All worktrees managed by borgcube within this repository. */
+  worktrees: WorktreeInfo[];
+}
+
+/**
+ * Information about a single git worktree managed by borgcube.
+ */
+export interface WorktreeInfo {
+  /** Branch name checked out in this worktree. */
+  branch: string;
+  /** Absolute filesystem path to the worktree, if it has been created on disk. */
+  path?: string;
+  /** Branch name this worktree is stacked on, if applicable. */
+  stackedOn?: string;
+  /** The node ID this worktree corresponds to. */
+  nodeId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Wave results
+// ---------------------------------------------------------------------------
+
+/**
+ * Result summary for a completed (or failed) wave.
+ */
+export interface WaveResult {
+  /** ID of the wave this result corresponds to. */
+  waveId: number;
+  /** Aggregate outcome of the wave. */
+  status: "completed" | "partial_failure" | "failed";
+  /** Node IDs that completed successfully within this wave. */
+  completedNodes: string[];
+  /** Node IDs that failed within this wave. */
+  failedNodes: string[];
+  /** Pull requests created during this wave. */
+  prs: PrInfo[];
+}
+
+/**
+ * Information about a pull request created during borgcube execution.
+ */
+export interface PrInfo {
+  /** The node ID this PR was created for. */
+  nodeId: string;
+  /** Brain name of the repository this PR targets. */
+  repo: string;
+  /** Full URL of the pull request. */
+  url: string;
+  /** Pull request number within the repository. */
+  number: number;
+  /** Base branch the PR targets. */
+  base: string;
+  /** Whether this PR has been merged. */
+  merged: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Events (state machine transitions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Union of all events that drive state machine transitions in borgcube.
+ */
+export type Event =
+  | { type: "plan_approved" }
+  | { type: "wave_dispatched"; waveId: number }
+  | {
+    type: "node_completed";
+    nodeId: string;
+    prUrl?: string;
+    prNumber?: number;
+  }
+  | { type: "node_failed"; nodeId: string; reason: string }
+  | { type: "gate_cleared"; nodeId: string }
+  | { type: "wave_completed"; waveId: number }
+  | { type: "wave_failed"; waveId: number }
+  | { type: "execution_completed" }
+  | { type: "retry_wave"; waveId: number };

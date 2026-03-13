@@ -1,6 +1,17 @@
 {
   "imports": {
-    "@opencode-ai/plugin": "npm:@opencode-ai/plugin"
+    "@opencode-ai/plugin": "npm:@opencode-ai/plugin",
+    "@modelcontextprotocol/sdk/server/mcp.js": "npm:@modelcontextprotocol/sdk@latest/server/mcp.js",
+    "@modelcontextprotocol/sdk/server/stdio.js": "npm:@modelcontextprotocol/sdk@latest/server/stdio.js",
+    "@std/assert": "jsr:@std/assert@^1",
+    "zod": "npm:zod/v3"
+  },
+  "tasks": {
+    "test:borgcube": "deno test src/skills/borgcube/",
+    "lint:borgcube": "deno lint src/skills/borgcube/",
+    "fmt:borgcube": "deno fmt src/skills/borgcube/",
+    "check:borgcube": "deno check src/skills/borgcube/server.ts",
+    "compile:borgcube": "deno compile --allow-read --allow-env --output bin/unimatrix src/skills/borgcube/server.ts"
   },
   "compilerOptions": {
     "strict": true

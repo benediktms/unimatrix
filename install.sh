@@ -55,6 +55,29 @@ ensure_build() {
   fi
 }
 
+compile_binaries() {
+  local bin_dir="$UNIMATRIX_DIR/bin"
+  local server_src="$UNIMATRIX_DIR/src/skills/borgcube/server.ts"
+
+  [ -f "$server_src" ] || return 0
+
+  if [ ! -f "$bin_dir/unimatrix" ] || [ "$server_src" -nt "$bin_dir/unimatrix" ]; then
+    echo "Compiling unimatrix..."
+    mkdir -p "$bin_dir"
+    (cd "$UNIMATRIX_DIR" && deno compile --allow-read --allow-env --output bin/unimatrix src/skills/borgcube/server.ts)
+    echo ""
+  fi
+}
+
+link_binaries() {
+  local bin_dir="$UNIMATRIX_DIR/bin"
+  mkdir -p "$HOME/bin"
+
+  if [ -f "$bin_dir/unimatrix" ]; then
+    link "$bin_dir/unimatrix" "$HOME/bin/unimatrix"
+  fi
+}
+
 merge_settings() {
   local target="$1"
   local settings_file="$target/settings.json"
@@ -139,6 +162,13 @@ install_claude() {
 
   # Merge settings (spinner verbs, status line, hooks)
   merge_settings "$target"
+
+  # Register unimatrix MCP server (mirrors how brain registers via `claude mcp add`)
+  if command -v claude > /dev/null 2>&1 && [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
+    echo "  mcp: registering unimatrix MCP server"
+    claude mcp remove unimatrix 2>/dev/null || true
+    claude mcp add unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix"
+  fi
 
   # Git hooks
   if git -C "$UNIMATRIX_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -288,6 +318,10 @@ done
 
 [ -z "$PLATFORM" ] && usage
 [ -z "$TARGET_MODE" ] && usage
+
+# Compile and link binaries (platform-agnostic, runs once)
+compile_binaries
+link_binaries
 
 case "$PLATFORM" in
   claude)
