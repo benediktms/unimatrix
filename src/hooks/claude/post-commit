@@ -36,7 +36,7 @@ if "$REPO_DIR/install.sh" --both --global > /dev/null 2>&1; then
   borg_box 1 \
     "  .:[UNIMATRIX]:." \
     "" \
-    "  [✓] Collective synchronized." \
+    "  [+] Collective synchronized." \
     "      All installations updated." \
     "      The directive is fulfilled."
 else
