@@ -199,7 +199,7 @@ export function computeWaves(graph: Graph): Wave[] {
   }
 
   const waves: Wave[] = sortedLevels.map((lv, idx) => ({
-    id: idx,
+    id: idx + 1,
     nodes: byLevel.get(lv) ?? [],
     hasMergeGate: mergeGateSourceLevels.has(lv),
   }));
@@ -264,9 +264,13 @@ export function nextWave(
     if (currentWaveId !== null && wave.id <= currentWaveId) continue;
 
     // Check all nodes in this wave: do their dependencies allow activation?
+    // Intra-wave edges are skipped — they sequence execution within the wave,
+    // not block the wave from being dispatched.
+    const waveNodeIds = new Set(wave.nodes);
     const waveReady = wave.nodes.every((nId) => {
       const edges = incomingEdges.get(nId) ?? [];
       return edges.every((edge) => {
+        if (waveNodeIds.has(edge.from)) return true; // intra-wave: always ok
         const sourceNode = graph.nodes[edge.from];
         if (!sourceNode) return false;
         if (edge.type === "merge_gate") {

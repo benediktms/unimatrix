@@ -156,7 +156,7 @@ Deno.test("computeWaves: parallel independence — 1 wave", () => {
   assertEquals(waves[0].hasMergeGate, false);
 });
 
-Deno.test("computeWaves: fan-out after gate — wave 0:[A], wave 1:[B,C]", () => {
+Deno.test("computeWaves: fan-out after gate — wave 1:[A], wave 2:[B,C]", () => {
   const g = makeGraph(
     [makeNode({ id: "A" }), makeNode({ id: "B" }), makeNode({ id: "C" })],
     [
@@ -235,11 +235,29 @@ Deno.test("computeWaves: diamond dependency A→B, A→C, B→D, C→D", () => {
 // nextWave
 // ---------------------------------------------------------------------------
 
-Deno.test("nextWave: first wave (currentWaveId null → wave 0)", () => {
+Deno.test("nextWave: first wave (currentWaveId null → wave 1)", () => {
   const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
   const waves = computeWaves(g);
   const next = nextWave(g, waves, null);
-  assertEquals(next?.id, 0);
+  assertEquals(next?.id, 1);
+});
+
+Deno.test("nextWave: wave 1 with intra-wave stacked edge (currentWaveId null)", () => {
+  // Reproduces the bug: stacked nodes in wave 1, both pending, currentWaveId null.
+  // nextWave must return wave 1 — intra-wave stacked edges do not block dispatch.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", repo: "repo-x" }),
+      makeNode({ id: "B", repo: "repo-x", stackedOn: "A" }),
+    ],
+    [{ from: "A", to: "B", type: "stacked" }],
+  );
+  const waves = computeWaves(g);
+  assertEquals(waves.length, 1);
+  assertEquals(waves[0].nodes.sort(), ["A", "B"]);
+  const next = nextWave(g, waves, null);
+  assertEquals(next?.id, 1);
+  assertEquals(next?.nodes.sort(), ["A", "B"]);
 });
 
 Deno.test("nextWave: gate not cleared → returns null", () => {
@@ -253,12 +271,12 @@ Deno.test("nextWave: gate not cleared → returns null", () => {
     [{ from: "A", to: "B", type: "merge_gate" }],
   );
   const waves = computeWaves(g);
-  // currentWaveId = 0 (wave 0 is active)
-  const next = nextWave(g, waves, 0);
+  // currentWaveId = 1 (wave 1 is active)
+  const next = nextWave(g, waves, 1);
   assertEquals(next, null);
 });
 
-Deno.test("nextWave: gate cleared (A merged) → returns wave 1", () => {
+Deno.test("nextWave: gate cleared (A merged) → returns wave 2", () => {
   // A merged → B's merge_gate dependency is satisfied.
   const g = makeGraph(
     [
@@ -268,16 +286,16 @@ Deno.test("nextWave: gate cleared (A merged) → returns wave 1", () => {
     [{ from: "A", to: "B", type: "merge_gate" }],
   );
   const waves = computeWaves(g);
-  const next = nextWave(g, waves, 0);
-  assertEquals(next?.id, 1);
+  const next = nextWave(g, waves, 1);
+  assertEquals(next?.id, 2);
   assertEquals(next?.nodes, ["B"]);
 });
 
 Deno.test("nextWave: all waves done → returns null", () => {
   const g = makeGraph([makeNode({ id: "A", status: "merged" })]);
   const waves = computeWaves(g);
-  // currentWaveId = 0, wave 0 is the last wave
-  const next = nextWave(g, waves, 0);
+  // currentWaveId = 1, wave 1 is the last wave
+  const next = nextWave(g, waves, 1);
   assertEquals(next, null);
 });
 

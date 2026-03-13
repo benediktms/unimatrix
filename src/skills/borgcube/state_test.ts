@@ -51,7 +51,7 @@ function makeCheckpoint(overrides: Partial<Checkpoint> = {}): Checkpoint {
     version: "1.0.0",
     machineState: "initializing",
     graph,
-    waves: [{ id: 0, nodes: ["n1"], hasMergeGate: false }],
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
     currentWaveId: null,
     repos: [],
     waveHistory: [],
@@ -82,14 +82,14 @@ Deno.test("canTransition: plan_approved rejected in dispatching", () => {
 // Test 3: wave_dispatched allowed in dispatching state
 Deno.test("canTransition: wave_dispatched allowed in dispatching", () => {
   const cp = makeCheckpoint({ machineState: "dispatching" });
-  const result = canTransition(cp, { type: "wave_dispatched", waveId: 0 });
+  const result = canTransition(cp, { type: "wave_dispatched", waveId: 1 });
   assertEquals(result, { allowed: true });
 });
 
 // Test 4: wave_dispatched rejected in initializing state
 Deno.test("canTransition: wave_dispatched rejected in initializing", () => {
   const cp = makeCheckpoint({ machineState: "initializing" });
-  const result = canTransition(cp, { type: "wave_dispatched", waveId: 0 });
+  const result = canTransition(cp, { type: "wave_dispatched", waveId: 1 });
   assertEquals(result.allowed, false);
 });
 
@@ -110,14 +110,14 @@ Deno.test("canTransition: gate_cleared rejected in dispatching", () => {
 // Test 7: retry_wave allowed in failed state
 Deno.test("canTransition: retry_wave allowed in failed", () => {
   const cp = makeCheckpoint({ machineState: "failed" });
-  const result = canTransition(cp, { type: "retry_wave", waveId: 0 });
+  const result = canTransition(cp, { type: "retry_wave", waveId: 1 });
   assertEquals(result, { allowed: true });
 });
 
 // Test 8: retry_wave rejected in completed state
 Deno.test("canTransition: retry_wave rejected in completed", () => {
   const cp = makeCheckpoint({ machineState: "completed" });
-  const result = canTransition(cp, { type: "retry_wave", waveId: 0 });
+  const result = canTransition(cp, { type: "retry_wave", waveId: 1 });
   assertEquals(result.allowed, false);
 });
 
@@ -136,8 +136,8 @@ Deno.test("transition: happy path initializing -> dispatching -> completed", () 
   assertEquals(cp1.machineState, "dispatching");
 
   // wave_dispatched
-  const cp2 = transition(cp1, { type: "wave_dispatched", waveId: 0 });
-  assertEquals(cp2.currentWaveId, 0);
+  const cp2 = transition(cp1, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp2.currentWaveId, 1);
   assertEquals(cp2.machineState, "dispatching");
 
   // node_completed with PR
@@ -154,7 +154,7 @@ Deno.test("transition: happy path initializing -> dispatching -> completed", () 
   );
 
   // wave_completed (last wave, no merge gate) -> completed
-  const cp4 = transition(cp3, { type: "wave_completed", waveId: 0 });
+  const cp4 = transition(cp3, { type: "wave_completed", waveId: 1 });
   assertEquals(cp4.machineState, "completed");
 });
 
@@ -163,7 +163,7 @@ Deno.test("transition: failure path dispatching -> failed", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
   let cp = createCheckpoint([], graph);
   cp = transition(cp, { type: "plan_approved" });
-  cp = transition(cp, { type: "wave_dispatched", waveId: 0 });
+  cp = transition(cp, { type: "wave_dispatched", waveId: 1 });
   cp = transition(cp, {
     type: "node_failed",
     nodeId: "n1",
@@ -174,43 +174,24 @@ Deno.test("transition: failure path dispatching -> failed", () => {
   assertEquals(cp.graph.nodes["n1"].failureReason, "Build error");
 
   // wave_failed -> failed machine state
-  cp = transition(cp, { type: "wave_failed", waveId: 0 });
+  cp = transition(cp, { type: "wave_failed", waveId: 1 });
   assertEquals(cp.machineState, "failed");
 });
 
 // Test 11: Retry path -> back to dispatching
 Deno.test("transition: retry_wave from failed -> dispatching", () => {
   let cp = makeCheckpoint({ machineState: "failed" });
-  cp = transition(cp, { type: "retry_wave", waveId: 0 });
+  cp = transition(cp, { type: "retry_wave", waveId: 1 });
   assertEquals(cp.machineState, "dispatching");
-  assertEquals(cp.currentWaveId, 0);
+  assertEquals(cp.currentWaveId, 1);
 });
 
 // Test 12: Wave with merge gate -> gate_halted
 Deno.test("transition: wave_completed with merge gate -> gate_halted", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
   const waves: Wave[] = [
-    { id: 0, nodes: ["n1"], hasMergeGate: true },
-    { id: 1, nodes: ["n2"], hasMergeGate: false },
-  ];
-  let cp = makeCheckpoint({
-    machineState: "dispatching",
-    graph,
-    waves,
-    currentWaveId: 0,
-  });
-
-  // wave_completed on a non-final wave with hasMergeGate -> gate_halted
-  cp = transition(cp, { type: "wave_completed", waveId: 0 });
-  assertEquals(cp.machineState, "gate_halted");
-});
-
-// Test 13: Final wave -> completed
-Deno.test("transition: wave_completed on final wave -> completed", () => {
-  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
-  const waves: Wave[] = [
-    { id: 0, nodes: ["n1"], hasMergeGate: true },
-    { id: 1, nodes: ["n2"], hasMergeGate: false },
+    { id: 1, nodes: ["n1"], hasMergeGate: true },
+    { id: 2, nodes: ["n2"], hasMergeGate: false },
   ];
   let cp = makeCheckpoint({
     machineState: "dispatching",
@@ -219,23 +200,42 @@ Deno.test("transition: wave_completed on final wave -> completed", () => {
     currentWaveId: 1,
   });
 
-  // wave_completed on the final wave (id 1) -> completed regardless of gate
+  // wave_completed on a non-final wave with hasMergeGate -> gate_halted
   cp = transition(cp, { type: "wave_completed", waveId: 1 });
+  assertEquals(cp.machineState, "gate_halted");
+});
+
+// Test 13: Final wave -> completed
+Deno.test("transition: wave_completed on final wave -> completed", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const waves: Wave[] = [
+    { id: 1, nodes: ["n1"], hasMergeGate: true },
+    { id: 2, nodes: ["n2"], hasMergeGate: false },
+  ];
+  let cp = makeCheckpoint({
+    machineState: "dispatching",
+    graph,
+    waves,
+    currentWaveId: 2,
+  });
+
+  // wave_completed on the final wave (id 2) -> completed regardless of gate
+  cp = transition(cp, { type: "wave_completed", waveId: 2 });
   assertEquals(cp.machineState, "completed");
 });
 
 // Test 14: Partial failure in waveHistory
 Deno.test("transition: partial failure recorded in waveHistory", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
-  const waves: Wave[] = [{ id: 0, nodes: ["n1", "n2"], hasMergeGate: false }];
+  const waves: Wave[] = [{ id: 1, nodes: ["n1", "n2"], hasMergeGate: false }];
   let cp = makeCheckpoint({
     machineState: "dispatching",
     graph,
     waves,
-    currentWaveId: 0,
+    currentWaveId: 1,
     waveHistory: [
       {
-        waveId: 0,
+        waveId: 1,
         status: "partial_failure",
         completedNodes: ["n1"],
         failedNodes: ["n2"],
@@ -296,12 +296,12 @@ Deno.test("serialize: version field present in raw JSON", () => {
 // Test 18: currentWave returns active wave
 Deno.test("currentWave: returns active wave", () => {
   const waves: Wave[] = [
-    { id: 0, nodes: ["n1"], hasMergeGate: false },
-    { id: 1, nodes: ["n2"], hasMergeGate: false },
+    { id: 1, nodes: ["n1"], hasMergeGate: false },
+    { id: 2, nodes: ["n2"], hasMergeGate: false },
   ];
-  const cp = makeCheckpoint({ waves, currentWaveId: 1 });
+  const cp = makeCheckpoint({ waves, currentWaveId: 2 });
   const wave = currentWave(cp);
-  assertEquals(wave?.id, 1);
+  assertEquals(wave?.id, 2);
   assertEquals(wave?.nodes, ["n2"]);
 });
 
@@ -332,11 +332,11 @@ Deno.test("pendingGates: returns blocked node IDs in current wave", () => {
     makeNode("n3", { status: "blocked" }),
   ]);
   const waves: Wave[] = [{
-    id: 0,
+    id: 1,
     nodes: ["n1", "n2", "n3"],
     hasMergeGate: true,
   }];
-  const cp = makeCheckpoint({ graph, waves, currentWaveId: 0 });
+  const cp = makeCheckpoint({ graph, waves, currentWaveId: 1 });
   const result = pendingGates(cp);
   result.sort();
   assertEquals(result, ["n1", "n3"]);

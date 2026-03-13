@@ -188,10 +188,43 @@ We execute waves in topological order.
 - `"Execution failed."` → go to Step 9.
 - Other: report the reason and halt.
 
-**6b. Dispatch wave:** Call `dispatch_wave` with `waveId` from the returned
+**6b. Present wave plan:** Before dispatching, present a detailed plan for the
+wave to the user and wait for approval. The plan must include:
+
+```
+WAVE <N> — <node count> nodes across <repo count> repos
+
+  [<repo>] <node-id>: <label>
+    Branch: <worktreeBranch>
+    Stacked on: <stackedOn branch or "main">
+    Implementation:
+      - <specific change 1>
+      - <specific change 2>
+      - ...
+
+  [<repo>] <node-id>: <label>
+    Branch: <worktreeBranch>
+    Implementation:
+      - <specific change 1>
+      - ...
+
+Dependencies from prior waves:
+  - <dependency description, e.g., "pkg-grpc-impl depends on proto definitions from pkg-proto">
+
+Risks:
+  - <anything that could go wrong or needs attention>
+```
+
+For each node, the implementation details must be concrete — file paths, function
+names, API changes, proto definitions, etc. The user must be able to evaluate
+whether the plan is correct before drones execute it.
+
+**HALT and wait for user approval before proceeding to 6c.**
+
+**6c. Dispatch wave:** Call `dispatch_wave` with `waveId` from the returned
 wave.
 
-**6c. Create worktrees:** For each node in the wave, create a git worktree in
+**6d. Create worktrees:** For each node in the wave, create a git worktree in
 the target repo:
 
 ```bash
@@ -203,7 +236,7 @@ Use path `<repo-root>/.worktrees/<worktreeBranch>`.
 If the node has `stackedOn` set: the new branch must be created from the
 `stackedOn` branch, not from main.
 
-**6d. Create brain tasks:** For each node, create a brain task under the
+**6e. Create brain tasks:** For each node, create a brain task under the
 borgcube epic:
 
 - Title: `<node-label>`
@@ -215,17 +248,20 @@ Store the returned task ID. Update the node's `taskId` in the graph via any
 available means (note: `add_node` is idempotent — re-calling it with the same ID
 updates it).
 
-**6e. Dispatch Drones:** Dispatch one Drone per node in parallel
+**6f. Dispatch Drones:** If the wave has multiple nodes, create a team first
+(`TeamCreate`) so Drones can coordinate. Dispatch one Drone per node in parallel
 (`run_in_background: true`). Pass:
 
 - The brain task ID
 - The worktree path (`WORKTREE ISOLATION ACTIVE`)
 - The target repo root
+- The team name (if a team was created)
 - Relevant context from prior waves (via `PRIOR CHECKPOINTS:` if available)
 
-Wait for all Drones in the wave to return before proceeding.
+Wait for all Drones in the wave to return before proceeding. Delete the team
+(`TeamDelete`) after the wave completes.
 
-**6f. Record outcomes:** For each Drone result:
+**6g. Record outcomes:** For each Drone result:
 
 - Success: call `complete_node` with `nodeId`. If a PR was created, include
   `prUrl` and `prNumber`.
@@ -233,10 +269,10 @@ Wait for all Drones in the wave to return before proceeding.
 
 If any node failed: go to Step 9.
 
-**6g. Vinculum review:** Dispatch Vinculum to review the wave's changes. If
+**6h. Vinculum review:** Dispatch Vinculum to review the wave's changes. If
 Vinculum rejects: treat affected nodes as failed, go to Step 9.
 
-**6h. Create PRs:** For each successfully completed node that does not yet have
+**6i. Create PRs:** For each successfully completed node that does not yet have
 a PR:
 
 ```bash
@@ -245,10 +281,10 @@ gh pr create --repo <repo-remote> --head <worktreeBranch> --base <base-branch> -
 
 Call `complete_node` again with the returned PR URL and number to record them.
 
-**6i. Persist checkpoint:** Call Steps 5 again to update the persisted
+**6j. Persist checkpoint:** Call Steps 5 again to update the persisted
 checkpoint.
 
-**6j. Check for merge gate:** Call `status`. If any wave in `waves` has
+**6k. Check for merge gate:** Call `status`. If any wave in `waves` has
 `hasMergeGate: true` and the current wave matches: go to Step 7.
 
 Otherwise: loop back to Step 6a for the next wave.

@@ -196,7 +196,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
 
     case "wave_completed": {
       const wave = checkpoint.waves.find((w) => w.id === event.waveId);
-      const isLastWave = event.waveId === checkpoint.waves.length - 1;
+      const isLastWave = event.waveId === checkpoint.waves.length;
 
       if (wave?.hasMergeGate && !isLastWave) {
         // Gate halt — pause execution for merge confirmation
