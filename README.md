@@ -10,11 +10,11 @@ Unimatrix follows a plan-execute-review cycle:
 
 ```mermaid
 flowchart LR
-    Plan["Lead / BorgQueen<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Vinculum<br/>reviews"] --> Cleanup["Subroutine<br/>cleans up"]
+    Plan["Lead<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Vinculum<br/>reviews"] --> Cleanup["Subroutine<br/>cleans up"]
     Review -->|NEEDS_CHANGES| Execute
 ```
 
-1. **The lead session plans** (Claude Code) or **BorgQueen plans directly** (OpenCode) — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan
+1. **The lead session plans** — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan (the lead session directly in Claude Code, the BorgQueen agent in OpenCode)
 2. **The lead session dispatches** — spawns Drones (and optionally Probes/Cortex) to carry out the plan
 3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
 4. **The Vinculum reviews** — validates correctness with evidence-based verification
@@ -26,9 +26,8 @@ All task state, checkpoints, and learned patterns are persisted in Brain, enabli
 
 ```mermaid
 graph TB
-    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates (Claude Code)<br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
+    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates<br/>Claude Code: lead session directly / OpenCode: BorgQueen agent<br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
 
-    Lead --> BorgQueen["<b>BorgQueen</b><br/>Opus<br/><i>plans + executes</i><br/>(OpenCode)"]
     Lead --> Drone["<b>Drone</b><br/>Sonnet<br/><i>builds</i>"]
     Lead --> Vinculum["<b>Vinculum</b><br/>Opus<br/><i>reviews</i>"]
     Lead --> Probe["<b>Probe</b><br/>Sonnet<br/><i>finds</i>"]
@@ -36,7 +35,6 @@ graph TB
     Lead --> Subroutine["<b>Subroutine</b><br/>Haiku<br/><i>cleans up</i>"]
 
     Lead --> Brain
-    BorgQueen --> Brain
     Drone --> Brain
     Vinculum --> Brain
     Probe --> Brain
@@ -47,7 +45,6 @@ graph TB
 
     style Lead fill:#1a1a2e,stroke:#e94560,color:#fff
     style Brain fill:#0f3460,stroke:#e94560,color:#fff
-    style BorgQueen fill:#2d1b4e,stroke:#b388ff,color:#fff
     style Drone fill:#1b3a2d,stroke:#69f0ae,color:#fff
     style Vinculum fill:#1b2d3a,stroke:#80deea,color:#fff
     style Probe fill:#3a351b,stroke:#fff176,color:#fff
@@ -59,7 +56,7 @@ graph TB
 
 | Agent | Model | Platform | Role |
 |-------|-------|----------|------|
-| **BorgQueen** | Opus | OpenCode | Lead agent — strategic planner with direct execution capabilities |
+| **Lead / BorgQueen** | Opus | Both | Plans, dispatches, and orchestrates — the lead session itself in Claude Code, the BorgQueen agent in OpenCode |
 | **Drone** | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
 | **Vinculum** | Opus | Both | Code reviewer — evidence-based verification with tiered reviews (Quick/Standard/Deep) and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
 | **Probe** | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
