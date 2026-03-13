@@ -78,12 +78,11 @@ Skills are the primary interface for invoking workflows:
 | Skill | Description |
 |-------|-------------|
 | `/assemble` | End-to-end orchestration: Queen plans, Drones implement (parallel or sequential waves), Vinculum reviews |
-| `/recon` | Reconnaissance missions: Queen scopes the investigation, Probes and Cortex agents execute, results linked to brain tasks |
+| `/recon` | Reconnaissance and feature planning: recon team self-claims brain tasks, shares discoveries in real-time. `--plan` for iterative feature scoping |
 | `/adapt` | Iterative refinement loop: Drone implements, Vinculum reviews, repeat until PASS (default 3 cycles, max 5) |
 | `/swarm` | Bulk parallel changes: Queen partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
 | `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
 | `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
-| `/devise` | Feature planning with interactive scoping: Queen asks questions, dispatches recon, produces cross-brain implementation plan |
 | `/propagate` | Run `/assemble` in an isolated worktree on a fresh branch — review and merge when ready |
 | `/reengage` | Resume a previously planned brain task |
 | `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
@@ -420,8 +419,7 @@ unimatrix/
 │   │   ├── assemble/SKILL.md     #   End-to-end orchestration
 │   │   ├── adapt/SKILL.md        #   Iterative refinement
 │   │   ├── swarm/SKILL.md        #   Parallel bulk changes
-│   │   ├── recon/SKILL.md        #   Reconnaissance missions
-│   │   ├── devise/SKILL.md       #   Interactive feature scoping
+│   │   ├── recon/SKILL.md        #   Reconnaissance and feature planning
 │   │   ├── propagate/SKILL.md    #   Worktree-isolated orchestration
 │   │   ├── comply/SKILL.md       #   Code review
 │   │   ├── analyse/SKILL.md      #   Deep analysis

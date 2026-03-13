@@ -5,7 +5,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 ## Structure
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
-- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/devise`, `/comply`, `/swarm`, `/adapt`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
+- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/comply`, `/swarm`, `/adapt`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
 - `src/rules/` — Routing and coordination rules
 - `src/themes/` — OpenCode TUI themes (Borg-aesthetic color palettes): `unimatrix`, `unimatrix-zero`, `queens-chamber`, `tactical-cube`, `unicomplex`
 - `src/tui/` — OpenCode TUI configuration (theme selection, scroll, keybinds). Switch themes by editing `src/tui/tui.json` → change the `"theme"` value.
@@ -155,8 +155,7 @@ Key rules for thinking traces:
 | `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
 | `/bisect` | Guided binary search through commits — automated (`--test`) or AI-guided with Probe analysis |
 | `/bookmark` | Save a named checkpoint of current work state for later resumption |
-| `/recon` | Orchestrate reconnaissance — Queen scopes, lead dispatches Probes and Cortex with task IDs. Supports `--include` for cross-brain targeting |
-| `/devise` | Feature planning with interactive scoping — Queen asks questions, dispatches recon, iterates until scope is defined, produces cross-brain implementation plan. Supports `--dry-run`, `--resume`, `--skip-review` |
+| `/recon` | Orchestrate reconnaissance — Queen scopes, recon team self-claims brain tasks, shares discoveries in real-time. Supports `--include` for cross-brain targeting and `--plan` for iterative feature scoping with plan materialization |
 | `/reengage` | Re-engage the collective on a previously planned task |
 | `/comply` | Validate changes via Vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
@@ -260,11 +259,11 @@ After delegation completes, ALWAYS verify:
 | New feature spanning multiple files | `/assemble` |
 | Bulk refactoring (rename, migrate, style) | `/swarm` |
 | Multi-area codebase investigation | `/recon` |
-| Feature planning with requirements gathering | `/devise` |
-| Preview a feature plan without creating tasks | `/devise --dry-run` |
-| Resume a cached feature plan for materialization | `/devise --resume` |
+| Feature planning with requirements gathering | `/recon --plan` |
+| Preview a feature plan without creating tasks | `/recon --plan --dry-run` |
+| Resume a cached feature plan for materialization | `/recon --plan --resume` |
 | Cross-codebase investigation | `/recon --include <brains>` |
-| Cross-codebase feature planning | `/devise --include <brains>` |
+| Cross-codebase feature planning | `/recon --plan --include <brains>` |
 | Review recent changes for correctness | `/comply` |
 | Deep architecture/security/perf analysis | `/analyse` |
 | Implement → review → fix loop until pass | `/adapt` |

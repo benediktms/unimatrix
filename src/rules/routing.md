@@ -61,14 +61,11 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - The user wants recon results tracked as brain tasks with linked artifacts
 - The scope is broad enough that the Queen should decompose it first
 - Cross-codebase investigation is needed (use `--include` to target other brain repos)
+- A feature needs requirements gathering before implementation (use `--plan`)
+- The user wants interactive scoping with the Queen asking clarifying questions (use `--plan`)
+- The feature spans multiple codebases and needs cross-brain task creation (use `--plan --include`)
+- The user wants a Cortex-reviewed implementation plan before execution (use `--plan`)
 - The user explicitly uses `/recon`
-
-## Route to `/devise` when:
-- A feature needs requirements gathering before implementation
-- The user wants interactive scoping with the Queen asking clarifying questions
-- The feature spans multiple codebases and needs cross-brain task creation
-- The user wants a Cortex-reviewed implementation plan before execution
-- The user explicitly uses `/devise`
 
 ## Route to `/swarm` when:
 - The user wants to apply the same change across many files
