@@ -24,13 +24,25 @@ All agents must minimize token consumption. Tokens cost money and time.
 - **Don't echo file contents in messages.** Reference `file:line` instead of quoting large blocks.
 
 ## Dedicated tools before scripting
-- **Never use Bash to read, parse, filter, or transform file contents.** No `python3 -c`, no `cat | grep`, no `awk`, no `sed`, no `bash -c`. Use the dedicated tools:
+- **Never use Bash to read, search, check, or transform file contents.** No `ls <file>`, no `cat`, no `head`, no `tail`, no `grep`, no `awk`, no `sed`, no `python3 -c`, no `bash -c`. Use the dedicated tools:
+  - **Check existence / find files** → Glob tool (not `ls`)
   - **Read** files → Read tool (with `offset`/`limit` for sections)
-  - **Search** content → Grep tool
-  - **Find** files → Glob tool
+  - **Search** content → Grep tool (not `grep` or `rg` in Bash)
   - **Parse JSON** → `jq` (the only acceptable Bash usage for text transformation)
 - **If Bash is not executing a system command, you are using the wrong tool.** Bash is for `git`, `npm`, `make`, `jq`, process management — not for reading or transforming text.
+- **Never chain file operations in Bash.** `ls <file> && grep -n <pattern> <file>` is forbidden. Use Glob to verify existence, Grep to search content.
 - **Never pipe tool output through a scripting language.** If the output needs filtering, use Grep or `jq`.
+- **Never verify file deployment with Bash.** After writing or editing a file, use Glob (existence) or Read (content) — not `ls ... && echo "deployed" && grep ...`.
+
+### Forbidden → correct patterns
+
+| Forbidden (Bash) | Correct (dedicated tool) |
+|---|---|
+| `ls path/to/file.md && echo "exists"` | Glob: `pattern: "path/to/file.md"` |
+| `grep -n "pattern" path/to/file.md` | Grep: `pattern: "pattern", path: "path/to/file.md"` |
+| `cat path/to/file.md` | Read: `file_path: "path/to/file.md"` |
+| `head -20 path/to/file.md` | Read: `file_path: "...", limit: 20` |
+| `ls path/ && grep -n "fn" path/file.md` | Glob + Grep (two tool calls) |
 
 ## Avoid redundant work
 - **Check `records_list`** for prior Probe/Cortex/Drone artifacts before re-exploring an area.

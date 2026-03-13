@@ -205,22 +205,24 @@ def detect_event(data):
     return "compact"
 
 
-def find_queen_epic(tasks_in_progress):
-    """Find the Queen's in-progress epic from a task list.
+def find_active_epic(tasks_in_progress):
+    """Find the most recent in-progress epic from a task list.
 
-    Returns the epic dict or None. If multiple match, returns the most
+    Returns the epic dict or None. Prefers Queen-assigned epics if present,
+    falls back to any in-progress epic. If multiple match, returns the most
     recently created (highest task_id, which contains a ULID).
     """
     epics = [
         t for t in tasks_in_progress
-        if t.get("assignee", "").lower() == "queen"
-        and t.get("task_type") == "epic"
+        if t.get("task_type") == "epic"
     ]
     if not epics:
         return None
-    # Sort by task_id descending (ULID = chronological)
-    epics.sort(key=lambda t: t.get("task_id", ""), reverse=True)
-    return epics[0]
+    # Prefer Queen-assigned epics, then any epic — most recent first
+    queen_epics = [e for e in epics if e.get("assignee", "").lower() == "queen"]
+    candidates = queen_epics if queen_epics else epics
+    candidates.sort(key=lambda t: t.get("task_id", ""), reverse=True)
+    return candidates[0]
 
 
 def build_plan_checkpoint(epic, tasks_open, tasks_in_progress):
@@ -281,7 +283,7 @@ def main():
 
     if event == "plan":
         # Plan exit: look for the Queen's epic and build a plan-focused checkpoint
-        epic = find_queen_epic(tasks_in_progress)
+        epic = find_active_epic(tasks_in_progress)
         if not epic:
             return  # No epic found — nothing to checkpoint
 
@@ -303,7 +305,7 @@ def main():
         parts = [f"Compaction #{compaction_num}"]
 
         # Include epic title if there's an active one
-        epic = find_queen_epic(tasks_in_progress)
+        epic = find_active_epic(tasks_in_progress)
         if epic:
             parts.append(epic.get("title", "Untitled"))
 
