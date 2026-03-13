@@ -481,8 +481,10 @@ When all Drones complete, the lead runs tests, lint, and formatting globally for
 
 ### Step 8: Review
 
-When verification passes, spawn a `Vinculum` agent:
 <!-- @claude -->
+When verification passes, check the Queen's dispatch plan for the **Review Strategy**:
+
+**Single review** (default — one Vinculum):
 ```
 Agent:
   subagent_type: "Vinculum"
@@ -490,8 +492,54 @@ Agent:
   description: "<full designation> — review"
   prompt: "<parent task ID>"
 ```
+
+**Sphere review** (multiple Vinculum agents with communication):
+
+Deploy a Borg sphere — one Vinculum per scope area specified in the review strategy.
+
+1. Create a team: `TeamCreate` with a descriptive name (e.g., `review-sphere-<epic-id>`)
+2. Spawn each Vinculum with scoped prompts and team membership:
+```
+Agent:
+  subagent_type: "Vinculum"
+  name: "Vinculum: <short name>"
+  description: "<full designation> — <scope area> review"
+  run_in_background: true
+  team_name: "<team name>"
+  prompt: |
+    Vinculum — verification sequence initiated.
+
+    Task: <parent task ID>
+    Scope: <scope area from review strategy>
+    Focus: <focus areas from review strategy>
+
+    Analyze the implementation within your scope. Validate against requirements.
+    Collect evidence. Report.
+
+    REVIEW SPHERE ACTIVE — you are part of a Borg sphere reviewing this changeset
+    from different angles. Communicate with your fellow Vinculum agents:
+    - CROSS-CUTTING FINDINGS: When you discover something that affects another
+      Vinculum's scope, message them immediately. Example: "Backend changed the
+      auth token format from JWT to opaque — frontend deserialization at
+      client.ts:42 assumes JWT structure."
+    - CHALLENGE FINDINGS: If another Vinculum's assessment conflicts with your
+      evidence, raise it. Example: "You marked the API contract as correct, but
+      the response shape at handler.ts:88 omits the `updatedAt` field that the
+      frontend relies on."
+    - INTEGRATION RISKS: Flag cases where changes are individually correct but
+      create problems in combination. Example: "Backend returns paginated results
+      now, but frontend still fetches all records in a single call."
+    - RESPOND TO MESSAGES: When a fellow Vinculum messages you, evaluate their
+      finding against your scope and acknowledge.
+```
+3. Wait for all Vinculum agents to complete
+4. Merge verdicts: any BLOCK → BLOCK, any NEEDS_CHANGES → NEEDS_CHANGES, PASS only if all PASS
+5. Tear down team: `SendMessage` with `type: "shutdown_request"`, then `TeamDelete`
 <!-- @end -->
 <!-- @opencode -->
+When verification passes, check your dispatch plan for the **Review Strategy**:
+
+**Single review** (default — one Vinculum):
 ```
 task(
   subagent_type="vinculum",
@@ -500,12 +548,48 @@ task(
   prompt="<parent task ID>"
 )
 ```
+
+**Sphere review** (multiple Vinculum agents with snapshot coordination):
+
+Deploy a Borg sphere — one Vinculum per scope area specified in the review strategy.
+
+1. Spawn each Vinculum with scoped prompts:
+```
+task(
+  subagent_type="vinculum",
+  description="<full designation> — <scope area> review",
+  run_in_background=true,
+  prompt="""
+Vinculum — verification sequence initiated.
+
+Task: <parent task ID>
+Scope: <scope area from review strategy>
+Focus: <focus areas from review strategy>
+
+Analyze the implementation within your scope. Validate against requirements.
+Collect evidence. Report.
+
+REVIEW SPHERE ACTIVE — other Vinculum agents are reviewing different areas of
+this changeset in parallel. Coordinate via snapshots:
+- CROSS-CUTTING FINDINGS: When you discover something that affects another area,
+  save a brain snapshot (tagged `review-finding`, `scope:<your-scope>`,
+  `epic:<epic-id>`) describing the cross-cutting impact.
+- CHECK FINDINGS: Before finalizing your verdict, check `records_list` for
+  `review-finding` snapshots from other Vinculum agents. Evaluate any findings
+  that affect your scope.
+- INTEGRATION RISKS: If you identify a risk that spans scopes, save a snapshot
+  tagged `integration-risk` so the lead can assess.
+"""
+)
+```
+2. Wait for all Vinculum agents to complete
+3. Merge verdicts: any BLOCK → BLOCK, any NEEDS_CHANGES → NEEDS_CHANGES, PASS only if all PASS
 <!-- @end -->
 
 ### Step 9: Handle Verdict
 
 - **PASS** — Close all subtasks and the parent task via `tasks_close`. Write collective memory via `memory_write_episode`. Proceed to Step 9b.
-- **NEEDS_CHANGES** — Spawn new Drones to fix specific issues, then re-run Vinculum.
+- **NEEDS_CHANGES** — Spawn new Drones to fix specific issues, then re-run review (same strategy — single or sphere).
 - **BLOCK** — Report blockers to user.
 
 ### Step 9b: Worktree Merge
@@ -560,11 +644,11 @@ git branch -D <branch-name>
 ### Step 10: Cleanup
 
 <!-- @claude -->
-If any collaborative waves were dispatched:
+If any collaborative waves or sphere reviews were dispatched:
 1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
 2. Delete team: `TeamDelete`
 
-For non-collaborative waves, no team lifecycle management needed — subagents terminate on completion.
+Note: Collaborative wave teams and review sphere teams are separate. Tear down each team that was created. For non-collaborative waves and single reviews, no team lifecycle management needed — subagents terminate on completion.
 <!-- @end -->
 <!-- @opencode -->
 Coordination happens through Brain tasks and records. No team lifecycle management needed — subagents terminate on completion.

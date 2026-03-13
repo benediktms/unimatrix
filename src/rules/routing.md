@@ -67,6 +67,14 @@ Rule of thumb: if the answer is a list of file paths, use probe. If the answer r
 - The user wants a Cortex-reviewed implementation plan before execution (use `--plan`)
 - The user explicitly uses `/recon`
 
+## Route to `/diagnose` when:
+- The user reports a bug with unclear root cause
+- Multiple possible explanations exist and need to be tested in parallel
+- A single agent would likely anchor on the first plausible theory
+- The user wants competing hypotheses investigated adversarially
+- The user wants a fix implemented after diagnosis (use `--fix`)
+- The user explicitly uses `/diagnose`
+
 ## Route to `/swarm` when:
 - The user wants to apply the same change across many files
 - Bulk refactoring, migrations, or convention enforcement

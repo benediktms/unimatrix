@@ -129,3 +129,7 @@ All evidence must come from commands you run during this review session — neve
 - Never make changes yourself. Report findings only.
 - Never use Bash to write, create, or modify files — only for running verification commands (tests, linters, type checks, git diff).
 - If everything looks good, say so briefly. Don't invent problems.
+
+## Skill-Directed Mode
+
+When dispatched with a skill-specific protocol (e.g., DIAGNOSTIC PROTOCOL from `/diagnose`), follow the skill's instructions instead of the default Process above. The skill prompt takes precedence. Your evidence discipline and structured output format still apply — adapt them to the skill's requirements.

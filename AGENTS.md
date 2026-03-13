@@ -5,7 +5,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 ## Structure
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
-- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/comply`, `/swarm`, `/adapt`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
+- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/comply`, `/swarm`, `/adapt`, `/diagnose`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
 - `src/rules/` — Routing and coordination rules
 - `src/themes/` — OpenCode TUI themes (Borg-aesthetic color palettes): `unimatrix`, `unimatrix-zero`, `queens-chamber`, `tactical-cube`, `unicomplex`
 - `src/tui/` — OpenCode TUI configuration (theme selection, scroll, keybinds). Switch themes by editing `src/tui/tui.json` → change the `"theme"` value.
@@ -160,7 +160,7 @@ Key rules for thinking traces:
 | `/comply` | Validate changes via Vinculum agent. You will comply. |
 | `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
 | `/adapt` | Iterative refinement loop — Drone implements, Vinculum reviews, repeat until pass |
-| `/propagate` | Propagate the collective into an isolated worktree — runs `/assemble` on a branch, merge when ready |
+| `/diagnose` | Adversarial hypothesis testing — Vinculum team investigates competing theories, disproves rivals, converges on root cause. `--fix` dispatches a Drone |
 | `/assimilate` | End-of-session knowledge capture and cleanup ritual |
 | `/harvest` | Extract and persist session exploration findings as brain records and memory episodes |
 | `/resume` | Restore context from a saved bookmark and present a session briefing |
@@ -267,7 +267,9 @@ After delegation completes, ALWAYS verify:
 | Review recent changes for correctness | `/comply` |
 | Deep architecture/security/perf analysis | `/analyse` |
 | Implement → review → fix loop until pass | `/adapt` |
-| Complex feature in isolated worktree | `/propagate` |
+| Bug with unclear root cause | `/diagnose` |
+| Diagnose and fix a bug | `/diagnose --fix` |
+| Complex feature in isolated worktree | `/assemble` |
 | Find which commit introduced a bug | `/bisect` |
 | Save current work state for later | `/bookmark` |
 | Preserve exploration findings before session ends | `/harvest` |

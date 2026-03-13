@@ -168,12 +168,48 @@ When the plan has 3+ dependent steps and context compaction is a risk, use seque
 
 ### Post-Dispatch Review
 
-When all Drones complete:
-1. Dispatch Vinculum for review: `task(subagent_type="vinculum", prompt="<epic-id>")`
-2. Handle the verdict:
-   - **PASS** → close all subtasks and the epic
-   - **NEEDS_CHANGES** → dispatch fix Drones for each flagged issue
-   - **BLOCK** → report to user with full context
+When all Drones complete, assess the changeset scope to determine the review approach:
+
+**Single review** (default — focused changesets, single area, small swarm):
+1. Dispatch Vinculum: `task(subagent_type="vinculum", prompt="<epic-id>")`
+
+**Sphere review** (changes span multiple distinct areas — e.g., frontend + backend, API + database):
+1. Spawn one Vinculum per scope area with scoped prompts:
+```
+task(
+  subagent_type="vinculum",
+  description="<designation> — <scope area> review",
+  run_in_background=true,
+  prompt="""
+Vinculum — verification sequence initiated.
+
+Task: <epic-id>
+Scope: <scope area>
+Focus: <focus areas>
+
+Analyze the implementation within your scope. Validate against requirements.
+Collect evidence. Report.
+
+REVIEW SPHERE ACTIVE — other Vinculum agents are reviewing different areas of
+this changeset in parallel. Coordinate via snapshots:
+- CROSS-CUTTING FINDINGS: When you discover something that affects another area,
+  save a brain snapshot (tagged `review-finding`, `scope:<your-scope>`,
+  `epic:<epic-id>`) describing the cross-cutting impact.
+- CHECK FINDINGS: Before finalizing your verdict, check `records_list` for
+  `review-finding` snapshots from other Vinculum agents. Evaluate any findings
+  that affect your scope.
+- INTEGRATION RISKS: If you identify a risk that spans scopes, save a snapshot
+  tagged `integration-risk` so you can assess.
+"""
+)
+```
+2. Wait for all Vinculum agents to complete
+3. Merge verdicts: any BLOCK → BLOCK, any NEEDS_CHANGES → NEEDS_CHANGES, PASS only if all PASS
+
+**Handle the verdict:**
+- **PASS** → close all subtasks and the epic
+- **NEEDS_CHANGES** → dispatch fix Drones for each flagged issue, then re-run review (same strategy)
+- **BLOCK** → report to user with full context
 
 ## Dispatch Modes
 

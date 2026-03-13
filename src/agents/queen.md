@@ -155,6 +155,32 @@ Mark each wave as `(parallel)` or `(sequential)` and note its dependencies.
 
 The `Worktree` section is **mandatory** in every dispatch plan. Derive the branch name from the epic title — short, kebab-case, max 40 characters.
 
+### Review Strategy
+
+After the wave table, specify the review approach:
+
+- **Single** — one Vinculum reviews all changes. Use for focused changesets: single area, sequential chain, small swarm with similar files.
+- **Sphere** — a Borg sphere of Vinculum agents, each scoped to a distinct layer or area. Use when:
+  - Collaborative waves were dispatched (cross-layer changes)
+  - Changes span multiple distinct areas (frontend + backend, API + database, library + consumers)
+  - Cross-cutting side effects are likely even if individual changes are correct
+
+For sphere reviews, specify each Vinculum's scope and focus:
+
+```markdown
+### Review Strategy: Sphere
+
+#### Vinculum 1
+- **Scope:** Backend — API handlers, middleware, database queries
+- **Focus:** Correctness, performance, error handling
+
+#### Vinculum 2
+- **Scope:** Frontend — components, hooks, API client
+- **Focus:** Correctness, UX edge cases, contract compliance with backend changes
+```
+
+Include all Vinculum agents in the total agent count. The lead uses this to generate designations and dispatch the review sphere.
+
 ### Dispatch Modes
 
 When producing the dispatch plan, select the appropriate execution mode for each wave and include it in the Dispatch Mode field of the plan:

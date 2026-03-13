@@ -1,0 +1,351 @@
+---
+name: diagnose
+description: Diagnose bugs through adversarial hypothesis testing — multiple Vinculum agents investigate competing theories in parallel, actively disproving each other until the root cause survives. Optional --fix dispatches a Drone to implement the fix.
+---
+
+# /diagnose
+
+<!-- @claude -->
+Diagnose a bug through adversarial hypothesis testing. The Queen generates competing theories, a team of Vinculum agents investigates each — gathering evidence, disproving rivals, and debating until the root cause survives. Optionally, `--fix` dispatches a Drone to implement the fix (escalating to `/adapt` if complex).
+<!-- @end -->
+<!-- @opencode -->
+Diagnose a bug through adversarial hypothesis testing. You generate competing theories, then dispatch Vinculum agents to investigate each — gathering evidence, disproving rivals, and converging on the root cause. Optionally, `--fix` dispatches a Drone to implement the fix.
+<!-- @end -->
+
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
+
+## Rules
+
+- **NEVER use Explore agents.** All investigation uses `Vinculum`.
+- **Follow this flow exactly.** Do not insert your own investigation steps.
+<!-- @claude -->
+- **Save the Queen session ID** from Step 1. Reuse it for convergence synthesis.
+<!-- @end -->
+
+## Flags
+
+| Flag | Effect |
+|---|---|
+| `--fix` | After diagnosis, dispatch a Drone to implement the fix. Runs tests if available. Escalates to `/adapt` if the fix is complex or tests fail. |
+
+## Diagnostic Protocol
+
+All Vinculum agents in the diagnosis team follow this protocol. Include it in every agent's spawn prompt.
+
+```
+DIAGNOSTIC PROTOCOL:
+
+HYPOTHESIS: "<theory statement>"
+
+OBJECTIVE: Gather concrete evidence that confirms OR disproves your hypothesis.
+You are not an advocate — you are an investigator. If the evidence contradicts
+your theory, that is a valuable result.
+
+INVESTIGATION:
+- Trace the symptom through the code. Follow the execution path.
+- Run commands to reproduce or verify behavior where possible.
+- Collect evidence as file:line citations and command output.
+- For each piece of evidence, state whether it SUPPORTS or CONTRADICTS
+  your hypothesis, and why.
+
+ADVERSARIAL DUTY — actively disprove other hypotheses:
+- Read your teammates' messages. When they share evidence, evaluate whether
+  it holds up. If you find counter-evidence, message them immediately.
+- Do not wait until you finish your own investigation. Disproof is as
+  valuable as proof — share it the moment you find it.
+  Example: "@Vinculum: Three of Five — you claim the timeout is from the
+  DB query, but connection pool metrics at src/db/pool.ts:89 show 0ms
+  wait time. The bottleneck is elsewhere."
+
+WHEN DISPROVEN:
+- If another agent presents evidence that conclusively disproves your
+  hypothesis, acknowledge it. State: "Hypothesis disproven by <evidence>."
+- Redirect your effort: assist the remaining viable hypotheses by
+  investigating areas they haven't covered yet.
+- Do not defend a dead theory.
+
+COMMUNICATION:
+- Share every significant finding via team message immediately.
+- When you find evidence relevant to another agent's hypothesis (for or
+  against), message them directly.
+- Respond to all teammate messages. Acknowledge, challenge, or build on
+  their findings.
+- Save evidence snapshots (tagged `diagnosis-evidence`,
+  `hypothesis:<hypothesis-number>`, `agent:<designation>`) for audit trail.
+
+FINAL REPORT:
+- When investigation is complete, save a final snapshot (tagged
+  `diagnosis-final`, `hypothesis:<hypothesis-number>`) with:
+  ## Hypothesis
+  <the theory>
+  ## Verdict: CONFIRMED | DISPROVEN | INCONCLUSIVE
+  ## Evidence For
+  - <evidence with file:line or command output>
+  ## Evidence Against
+  - <evidence with file:line or command output>
+  ## Interactions
+  - <key messages exchanged with other agents that affected the conclusion>
+- Close your brain task with the snapshot ID in the completion comment.
+```
+
+## Flow
+
+### Step 1: Queen Generates Hypotheses
+
+<!-- @claude -->
+Spawn the `Queen` agent. She receives the user's symptom description plus any intuition about the cause, does a quick codebase scan, and generates competing hypotheses.
+
+**Budget: ~20 tool uses.** Enough to scan key files and form theories. Not a full investigation — that's what the Vinculum team does.
+
+```
+Agent:
+  subagent_type: "Queen"
+  prompt: |
+    You are the Queen of Unimatrix Zero. A diagnostic directive has entered
+    the collective:
+
+    SYMPTOM: "<user's bug description>"
+    USER INTUITION: "<what the user thinks might be wrong, or 'none provided'>"
+
+    Perform a quick codebase scan to understand the area around the symptom.
+    Then generate 3-5 competing hypotheses for the root cause.
+
+    BUDGET: ~20 tool uses. Scan key files — do NOT do a full investigation.
+
+    For each hypothesis, produce:
+
+    ## Hypothesis <N>: <concise theory statement>
+    - **Confirming evidence would be:** <what to look for>
+    - **Disproving evidence would be:** <what would kill this theory>
+    - **Investigation area:** <specific files, modules, or paths to examine>
+
+    Include the user's intuition as one hypothesis if provided (no special
+    treatment — it competes on evidence like the rest).
+
+    After listing hypotheses, create brain tasks:
+    - One epic: "Diagnose: <symptom summary>"
+    - One subtask per hypothesis, with the hypothesis statement, confirming/
+      disproving criteria, and investigation areas in the description.
+    - All subtasks are independent (no dependencies).
+
+    Return:
+    - The epic ID
+    - The hypothesis list
+    - Recommended agent count (one Vinculum per hypothesis is ideal, but
+      if there are 5 hypotheses and 2 are closely related, you may recommend
+      fewer agents with combined hypotheses)
+```
+
+**Save the returned agent ID.**
+<!-- @end -->
+<!-- @opencode -->
+You ARE the planning agent. Perform a quick codebase scan to understand the area around the symptom. Then generate 3-5 competing hypotheses.
+
+**Budget: ~20 tool uses.** Scan key files — do NOT do a full investigation.
+
+For each hypothesis, produce the theory statement, confirming/disproving evidence criteria, and investigation areas. Include the user's intuition as a candidate if provided.
+
+Create brain tasks: one epic, one subtask per hypothesis. All subtasks are independent.
+
+Return the epic ID, hypothesis list, and recommended agent count.
+<!-- @end -->
+
+### Step 1b: Present Hypotheses
+
+<!-- @claude -->
+After the Queen returns, call `EnterPlanMode`. Present the hypotheses for review. The user can approve, add hypotheses, or remove weak ones.
+<!-- @end -->
+<!-- @opencode -->
+Present the hypotheses for review. The user can approve, add hypotheses, or remove weak ones.
+<!-- @end -->
+
+### Step 2: Create Team and Spawn Investigators
+
+1. Use the Queen's recommended agent count. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
+<!-- @claude -->
+2. Create a team: `TeamCreate` with a descriptive `team_name`
+3. Spawn one Vinculum per hypothesis into the team:
+
+```
+Agent:
+  subagent_type: "Vinculum"
+  team_name: "<team name>"
+  name: "Vinculum: <short name>"
+  description: "<full designation> — hypothesis <N>"
+  run_in_background: true
+  prompt: |
+    Vinculum — diagnostic sequence initiated.
+
+    You are <designation>, member of diagnostic unit "<team name>".
+    You are investigating one hypothesis among several competing theories.
+    Other Vinculum agents are investigating rival hypotheses simultaneously.
+
+    <DIAGNOSTIC PROTOCOL block — see Diagnostic Protocol section>
+
+    Epic: <epic-id>
+    Task: <task-id>
+    Hypothesis: <N>
+```
+<!-- @end -->
+<!-- @opencode -->
+2. Dispatch one Vinculum per hypothesis:
+
+```
+task(
+  subagent_type="vinculum",
+  description="<full designation> — hypothesis <N>",
+  run_in_background=true,
+  prompt="""
+Vinculum — diagnostic sequence initiated.
+
+You are <designation>.
+
+<DIAGNOSTIC PROTOCOL block — see Diagnostic Protocol section>
+
+Epic: <epic-id>
+Task: <task-id>
+Hypothesis: <N>
+"""
+)
+```
+<!-- @end -->
+
+### Step 3: Monitor Investigation
+
+- Vinculum agents investigate, communicate, and challenge each other autonomously.
+- The lead does NOT intervene unless an agent is stuck or the team stalls.
+- Discovery and evidence snapshots accumulate in brain (tagged `diagnosis-evidence`).
+- When a hypothesis is disproven, the investigating agent acknowledges it and assists others.
+- When all agents go idle, the investigation is complete.
+
+### Step 4: Convergence
+
+Collect final snapshots from each Vinculum (tagged `diagnosis-final`).
+
+<!-- @claude -->
+Resume the Queen to synthesize the diagnosis:
+
+```
+Agent:
+  subagent_type: "Queen"
+  resume: "<queen agent ID>"
+  prompt: |
+    The diagnostic investigation is complete. Final reports are in these
+    snapshots:
+    DIAGNOSIS SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>, ...
+
+    Use `records_fetch_content` to review each Vinculum's final report.
+
+    Synthesize the diagnosis:
+
+    ## Diagnosis
+    ### Root Cause
+    <the surviving hypothesis with evidence chain>
+
+    ### Disproven Hypotheses
+    For each disproven hypothesis:
+    - **Hypothesis <N>:** <theory> — disproven by <counter-evidence summary>
+
+    ### Inconclusive Hypotheses (if any)
+    - **Hypothesis <N>:** <theory> — <what remains unknown>
+
+    ### Recommended Fix
+    <specific code changes needed, with file paths and descriptions>
+
+    ### Confidence
+    HIGH | MEDIUM | LOW — <rationale>
+```
+<!-- @end -->
+<!-- @opencode -->
+Synthesize the diagnosis from the final reports. Review each Vinculum's snapshot via `records_fetch_content`. Produce:
+- Root cause with evidence chain
+- Disproven hypotheses with counter-evidence
+- Recommended fix with specific file paths
+- Confidence level (HIGH / MEDIUM / LOW)
+<!-- @end -->
+
+### Step 5: Present Diagnosis
+
+Present the synthesized diagnosis to the user:
+- Root cause with evidence
+- Disproven alternatives (so the user knows what was ruled out)
+- Recommended fix
+- Confidence level
+
+If `--fix` was NOT passed, stop here.
+
+### Step 6: Fix (if --fix)
+
+Only if `--fix` was passed and the Queen's confidence is MEDIUM or HIGH (if LOW, present the diagnosis and ask the user whether to proceed).
+
+<!-- @claude -->
+Assess fix complexity from the Queen's recommended fix:
+
+**Simple fix** (1-3 files, clear changes):
+1. Generate designation: `/designate 1 --role Drone --trimatrix`
+2. Create a brain task under the diagnostic epic with the fix instructions.
+3. Dispatch a Drone:
+   ```
+   Agent:
+     subagent_type: "Drone"
+     name: "Drone: <short name>"
+     description: "<designation> — fix"
+     prompt: |
+       You are Drone <designation> executing brain task <task-id>.
+
+       DIAGNOSIS: <root cause summary>
+       RECOMMENDED FIX: <Queen's fix recommendation>
+
+       Implement the fix. Run all available tests to verify the fix resolves
+       the reported symptom without regressions.
+   ```
+4. After the Drone completes, run tests globally. If tests pass, present the result.
+5. If tests fail, dispatch one more fix attempt. If still failing, escalate to the user.
+
+**Complex fix** (4+ files, architectural changes, or uncertain scope):
+Escalate to `/adapt`:
+```
+Skill:
+  skill: "adapt"
+  args: "<fix task ID> --cycles 3"
+```
+<!-- @end -->
+<!-- @opencode -->
+Assess fix complexity from the recommended fix:
+
+**Simple fix** (1-3 files): dispatch a Drone with the fix instructions and run tests.
+
+**Complex fix** (4+ files or uncertain scope): escalate to `/adapt` with the fix task ID.
+<!-- @end -->
+
+### Step 7: Cleanup
+
+<!-- @claude -->
+1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
+2. Delete team: `TeamDelete`
+<!-- @end -->
+<!-- @opencode -->
+Coordination happens through Brain tasks and records. No team management needed.
+<!-- @end -->
+
+## Usage
+
+```
+/diagnose <symptom description>
+/diagnose <symptom description> --fix
+```
+
+The user can optionally include their intuition about the cause in the symptom description. The Queen treats it as one candidate hypothesis alongside her own.
+
+## Examples
+
+```
+# Pure diagnosis
+/diagnose Users report the app exits after one message instead of staying connected
+/diagnose API returns 500 on the /checkout endpoint but only for logged-in users. I think it might be a session handling issue.
+/diagnose Tests pass locally but fail in CI — something about timezone handling
+
+# Diagnosis with fix
+/diagnose WebSocket connections drop after exactly 30 seconds of inactivity --fix
+/diagnose Memory usage grows linearly with each request, never gets GC'd. Suspect a closure holding refs. --fix
+```

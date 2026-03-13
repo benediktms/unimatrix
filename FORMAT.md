@@ -331,7 +331,8 @@ src/
 │   ├── comply/SKILL.md
 │   ├── swarm/SKILL.md
 │   ├── recon/SKILL.md
-│   ├── propagate/SKILL.md
+│   ├── diagnose/SKILL.md
+│   ├── status/SKILL.md
 │   ├── designate/SKILL.md
 │   ├── assimilate/SKILL.md
 │   ├── analyse/SKILL.md
