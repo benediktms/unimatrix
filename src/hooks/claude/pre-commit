@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Pre-commit: announce assimilation in progress
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/borg-box.sh"
+
+borg_box 1 \
+  "  .:[UNIMATRIX]:." \
+  "" \
+  "  >> Modification assimilated." \
+  "  >> Synchronizing collective installations..."
