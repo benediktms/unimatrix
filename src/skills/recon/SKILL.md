@@ -6,7 +6,7 @@ description: Orchestrate reconnaissance missions with optional feature planning.
 # /recon
 
 <!-- @claude -->
-Orchestrate a reconnaissance mission: the Queen scopes the investigation, creates brain tasks with a dependency graph, and the lead deploys a recon team. Agents self-claim tasks, share discoveries via team messaging, and persist findings as brain snapshots. Optionally, with `--plan`, the Queen drives iterative feature scoping — asking questions and dispatching recon — then produces an implementation plan.
+Orchestrate a reconnaissance mission: you scope the investigation, create brain tasks with a dependency graph, and deploy a recon team. Agents self-claim tasks, share discoveries via team messaging, and persist findings as brain snapshots. Optionally, with `--plan`, you drive iterative feature scoping — asking questions and dispatching recon — then produce an implementation plan.
 <!-- @end -->
 <!-- @opencode -->
 Orchestrate a reconnaissance mission: you scope the investigation, create brain tasks with a dependency graph, and dispatch recon agents. Agents work through tasks and persist findings as brain snapshots. Optionally, with `--plan`, you drive iterative feature scoping — asking questions and dispatching recon — then produce an implementation plan.
@@ -22,15 +22,8 @@ Supports cross-brain targeting via `--include` — investigate codebases in othe
 
 - **Follow this flow exactly.** Do not insert your own recon or research steps outside the defined steps.
 - **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
-<!-- @claude -->
-- **Save the Queen session ID** from Step 1. Reuse it for all subsequent Queen interactions via `resume`.
-- With `--plan`, the Queen is long-lived — she persists across the entire scoping loop. Her context accumulates with each iteration.
-- **The lead relays between the Queen and the user.** The Queen never addresses the user directly. Present her questions without filtering or modifying them.
-<!-- @end -->
-<!-- @opencode -->
 - **You maintain context throughout** — no session management needed.
 - **Relay questions to the user.** Present scoping questions without filtering or modifying them.
-<!-- @end -->
 - With `--plan`: **Max scoping iterations: 5.** If scope is not complete after 5 iterations, force `SCOPE_COMPLETE` with the best available information and note gaps in the plan's "Risks & Open Questions" section.
 
 ## Flags
@@ -119,129 +112,14 @@ Only if `--plan` and `--resume` are both provided:
 4. **If `--dry-run` is also set:** present the plan and **stop** — skip all remaining steps. This is a "preview cached plan" mode.
 5. Otherwise, ask: "Resume this plan?" If confirmed, **skip to Step 6** (Materialize Plan) with the cached plan content.
 <!-- @claude -->
-   Spawn a fresh Queen with the cached plan as context:
-   ```
-   Agent:
-     subagent_type: "Queen"
-     prompt: |
-       You are the Queen of Unimatrix Zero. A previously scoped feature plan is
-       being resumed for materialization:
-
-       <cached plan content>
-
-       <TARGET BRAINS block if brains were included>
-
-       Review this plan. If it still looks correct, confirm and proceed to
-       materialization when prompted.
-   ```
-   **Save the returned agent ID** for subsequent steps.
+   Load the cached plan into your context and proceed to materialization.
 <!-- @end -->
 <!-- @opencode -->
    Load the cached plan into your context and proceed to materialization.
 <!-- @end -->
 
-### Step 1: Queen Scoping
+### Step 1: Scoping
 
-<!-- @claude -->
-Spawn the `Queen` agent. The prompt differs based on whether `--plan` is active.
-
-**Without `--plan`** — single-pass investigation scoping:
-```
-Agent:
-  subagent_type: "Queen"
-  prompt: |
-    You are the Queen of Unimatrix Zero. A reconnaissance directive has entered
-    the collective:
-
-    "<user question or scope>"
-
-    <TARGET BRAINS block if --include was provided>
-
-    Scope this investigation. Break it into granular, self-contained tasks —
-    each task should have a clear question to answer, specific files or areas
-    to examine, and concrete deliverables (what the agent should report back).
-
-    TASK GRANULARITY: Aim for 5-6 tasks per agent. If the investigation needs
-    20 tasks, recommend 3-4 agents. If it needs 8 tasks, recommend 1-2 agents.
-    You decide the optimal ratio — more detailed tasks with fewer agents is
-    better than vague tasks with many agents. Every task description must be
-    detailed enough that an agent with zero prior context can execute it.
-
-    Assign each task to either `Probe` (structural — find files, trace paths,
-    locate patterns) or `Cortex` (analytical — architecture audit, security
-    review, health assessment). Group all tasks under a single epic.
-
-    Set dependencies between tasks where ordering matters — e.g., a Cortex
-    analysis that requires Probe findings should depend on those Probe tasks.
-    Independent tasks have no dependencies and can run in parallel.
-
-    Return a dispatch plan with:
-    - The epic ID
-    - The full task dependency graph
-    - Recommended agent count with reasoning
-```
-
-**With `--plan`** — iterative feature scoping:
-```
-Agent:
-  subagent_type: "Queen"
-  prompt: |
-    You are the Queen of Unimatrix Zero. A feature design directive has entered
-    the collective:
-
-    "<feature description>"
-
-    <TARGET BRAINS block if --include was provided>
-
-    You will iteratively scope this feature. Be thorough — if you lack
-    information, ask for it. Do not guess at requirements.
-
-    In each iteration, return EXACTLY ONE of these three responses:
-
-    ### QUESTIONS_FOR_USER
-    Questions you need the user to answer before proceeding:
-    1. <question>
-    2. <question>
-    ...
-
-    ### RECON_NEEDED
-    Reconnaissance needed before proceeding. Create granular, self-contained
-    brain tasks (type: task) — each with a clear question, specific areas to
-    examine, and concrete deliverables. Task descriptions must be detailed
-    enough for an agent with zero context to execute.
-
-    TASK GRANULARITY: Aim for 5-6 tasks per agent. Recommend the agent count
-    based on the number of tasks. More detailed tasks with fewer agents is
-    better than vague tasks with many agents.
-
-    Assign to `Probe` or `Cortex`. Group under an epic. Set dependencies
-    where ordering matters. Return:
-    - The epic ID and task dependency graph
-    - Recommended agent count with reasoning
-    - Which brain each task targets (if cross-brain)
-
-    ### SCOPE_COMPLETE
-    The feature scope is fully defined. Produce the implementation plan using
-    the standard Queen plan format (Goal, Context, Steps, Dependencies,
-    Dispatch Mode, Risks & Open Questions, Verification).
-
-    Begin scoping. Assess what you know and what you need to learn.
-```
-
-When `--include` is provided, append to the Queen prompt:
-```
-TARGET BRAINS:
-- <name> (<id>): <root>
-- <name> (<id>): <root>
-
-All recon tasks stay in the local brain — do NOT use the `brain` parameter on
-`tasks_create`. Note which brain each task targets in the dispatch plan
-so agents can be dispatched with the correct TARGET CODEBASE path.
-```
-
-**Save the returned agent ID.** This is the Queen's session — reuse it for all subsequent interactions.
-<!-- @end -->
-<!-- @opencode -->
 You ARE the planning agent. Scope directly.
 
 **Without `--plan`** — single-pass investigation scoping:
@@ -261,7 +139,6 @@ All recon tasks stay in the local brain — do NOT use the `brain` parameter on
 `tasks_create`. Note which brain each task targets so agents get the correct
 TARGET CODEBASE path.
 ```
-<!-- @end -->
 
 ---
 
@@ -270,7 +147,7 @@ TARGET CODEBASE path.
 ### Step 2: Plan Approval
 
 <!-- @claude -->
-After the Queen returns, call `EnterPlanMode`. Present the recon plan for review. When approved and `ExitPlanMode` fires, the checkpoint hook captures the task state.
+After scoping, call `EnterPlanMode`. Present the recon plan for review. When approved and `ExitPlanMode` fires, the checkpoint hook captures the task state.
 <!-- @end -->
 <!-- @opencode -->
 After scoping, present the recon plan for review. When approved, proceed with dispatch.
@@ -278,10 +155,10 @@ After scoping, present the recon plan for review. When approved, proceed with di
 
 ### Step 3: Create Team and Spawn Agents
 
-1. Use the Queen's recommended agent count. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+1. Use the recommended agent count. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
 <!-- @claude -->
 2. Create a team: `TeamCreate` with a descriptive `team_name`
-3. Spawn all agents into the team. Agents receive the epic ID and self-claim tasks — do NOT assign specific tasks to specific agents. The Queen's task descriptions are detailed enough for agents to work autonomously.
+3. Spawn all agents into the team. Agents receive the epic ID and self-claim tasks — do NOT assign specific tasks to specific agents. The task descriptions are detailed enough for agents to work autonomously.
 
 **Cross-brain targeting:** When a task targets a non-local brain, include `TARGET CODEBASE: <root>` in the agent prompt. Agents exploring non-local brains should root all file operations in that directory.
 
@@ -367,25 +244,7 @@ Read the planner's response and identify which signal was returned: `QUESTIONS_F
 
 Present the questions to the user exactly as provided — do not filter, reword, or add your own questions.
 
-Collect the user's answers, then feed them back:
-
-<!-- @claude -->
-```
-Agent:
-  subagent_type: "Queen"
-  resume: "<queen agent ID>"
-  prompt: |
-    User responses to your questions:
-
-    1. <answer>
-    2. <answer>
-    ...
-
-    Continue scoping. Return QUESTIONS_FOR_USER, RECON_NEEDED, or SCOPE_COMPLETE.
-```
-<!-- @end -->
-<!-- @opencode -->
-Feed the answers back into your scoping context and continue:
+Collect the user's answers, then feed them back into your scoping context and continue:
 ```
 User responses:
 
@@ -395,7 +254,6 @@ User responses:
 
 Continue scoping.
 ```
-<!-- @end -->
 
 Increment iteration, continue loop.
 
@@ -414,49 +272,19 @@ The planner has specified recon questions with agent types and optional brain ta
 4. **Wait** for all agents to complete.
 5. **Collect snapshot IDs** from each agent's completion comment on their brain task.
 
-Feed recon results back:
-
-<!-- @claude -->
-```
-Agent:
-  subagent_type: "Queen"
-  resume: "<queen agent ID>"
-  prompt: |
-    Reconnaissance complete. Findings are in these snapshots:
-    RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>, ...
-
-    Use `records_fetch_content` to review the findings.
-    Continue scoping. Return QUESTIONS_FOR_USER, RECON_NEEDED, or SCOPE_COMPLETE.
-```
-<!-- @end -->
-<!-- @opencode -->
 Review the recon findings via `records_fetch_content` on the snapshot IDs. Continue scoping with the new context.
-<!-- @end -->
 
 Increment iteration, continue loop.
 
 #### 2d. Handle SCOPE_COMPLETE
 
-The planner has produced the implementation plan. **Break out of the loop.**
+The implementation plan is produced. **Break out of the loop.**
 
 #### 2e. Handle max iterations reached
 
 If `iteration >= max_iterations` and scope is not complete:
 
-<!-- @claude -->
-```
-Agent:
-  subagent_type: "Queen"
-  resume: "<queen agent ID>"
-  prompt: |
-    Scoping iteration limit reached. Produce the best implementation plan you
-    can with current information. Note any gaps or unresolved questions in the
-    "Risks & Open Questions" section. Return SCOPE_COMPLETE.
-```
-<!-- @end -->
-<!-- @opencode -->
 Force scope completion: produce the best plan with current information. Note gaps in "Risks & Open Questions". Return SCOPE_COMPLETE.
-<!-- @end -->
 
 ### Step 3: Cache Plan
 
@@ -475,7 +303,7 @@ Build a JSON payload with:
   "target_brains": [{"id": "...", "name": "...", "root": "..."}],
   "recon_snapshots": ["<snapshot-id-1>", "<snapshot-id-2>"],
   "scoped_at": "<ISO 8601 timestamp>",
-  "plan": "<the Queen's full SCOPE_COMPLETE plan output>"
+  "plan": "<the full SCOPE_COMPLETE plan output>"
 }
 ```
 
@@ -494,28 +322,9 @@ Report the artifact ID to the user so they can reference it with `--resume`.
 
 ### Step 5: Materialize Plan
 
-<!-- @claude -->
-Resume the Queen to materialize the plan into brain tasks:
-
-```
-Agent:
-  subagent_type: "Queen"
-  resume: "<queen agent ID>"
-  prompt: |
-    Materialize this plan into brain tasks. Follow your standard Phase 2
-    materialization process (create epic, create subtasks, set parents,
-    set dependencies, save plan artifact).
-
-    For tasks targeting non-local brains, use the `brain` parameter on
-    `tasks_create` with the brain name. Use cross-brain refs
-    (cross_brain_ref_added) to link related tasks across brains.
-```
-<!-- @end -->
-<!-- @opencode -->
 Materialize the plan into brain tasks. Follow your standard materialization process (create epic, create subtasks, set parents, set dependencies, save plan artifact).
 
 For tasks targeting non-local brains, use the `brain` parameter on `tasks_create` with the brain name. Use cross-brain refs to link related tasks across brains.
-<!-- @end -->
 
 ### Step 6: Cortex Review (skip with --skip-review)
 
@@ -561,23 +370,7 @@ Unless `--skip-review` was passed:
 3. Wait for Cortex to complete.
 4. Read Cortex findings from the brain task snapshot.
 5. If Cortex found **critical** issues:
-<!-- @claude -->
-   ```
-   Agent:
-     subagent_type: "Queen"
-     resume: "<queen agent ID>"
-     prompt: |
-       Cortex review found issues with your plan:
-
-       <Cortex findings — critical and warning items>
-
-       Revise the plan to address the critical findings. Update the brain tasks
-       accordingly (modify descriptions, add missing tasks, fix dependencies).
-   ```
-<!-- @end -->
-<!-- @opencode -->
    Revise the plan to address critical findings. Update brain tasks accordingly.
-<!-- @end -->
 
 ### Step 7: Present Plan
 

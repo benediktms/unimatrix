@@ -6,12 +6,12 @@ description: Rules for multi-agent coordination and team communication
 
 ## Architecture
 
-The **Queen** plans and creates brain tasks. The **lead session** orchestrates execution by creating a worktree and spawning Drones inside the worktree. Drones implement, save checkpoints, and report completion. The lead monitors progress, handles wave transitions, and manages the worktree merge on completion.
+The **lead session** plans, creates brain tasks, and orchestrates execution by creating a worktree and spawning Drones inside the worktree. Drones implement, save checkpoints, and report completion. The lead monitors progress, handles wave transitions, and manages the worktree merge on completion.
 
 ## Orchestration Worktree
 - Every `/assemble` and `/reengage` execution creates (or re-enters) an isolated worktree.
-- The Queen's dispatch plan specifies the worktree branch name in its `Worktree` section.
-- The worktree is created **after** the Queen's plan is approved, **before** any Drones are dispatched.
+- The dispatch plan specifies the worktree branch name in its `Worktree` section.
+- The worktree is created **after** the plan is approved, **before** any Drones are dispatched.
 - After worktree creation, the lead runs `brain link <brain-name>` from inside the worktree to register it as an additional root of the brain. This enables agents spawned in the worktree to access brain tasks and records.
 - All Drone commits land on the worktree branch. The main branch remains clean until merge.
 - On completion (Vinculum PASS + task closure), the lead offers merge/keep/discard to the user.
@@ -29,18 +29,18 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - Pass prior checkpoint IDs from completed Drones to the next Drone's prompt
 
 ## Sequence Execution (Relay)
-- For long sequential chains (3+ steps), use sequence relay mode to avoid queen compaction
+- For long sequential chains (3+ steps), use sequence relay mode to avoid context compaction
 - Each drone saves a handoff snapshot via `records_save_snapshot` with tags `sequence:<epic-id>`, `step:<N>`
 - The next drone receives only the handoff snapshot as prior context, not the full conversation history
 - Drones run serially on the worktree branch — no per-drone isolation or merge steps needed
-- On drone failure: the sequence halts, queen assesses and decides whether to re-dispatch, re-plan, or escalate
+- On drone failure: the sequence halts, the lead assesses and decides whether to re-dispatch, re-plan, or escalate
 - Snapshot content must be concise (under 2KB) — summary of changes, key decisions, and context for the next step
-- The queen does not need to stay alive between steps for the happy path; Brain records are the communication channel
+- The lead does not need to stay alive between steps for the happy path; Brain records are the communication channel
 
 ## Mixed-Mode Execution
 - Plans are often mixed — some waves parallel, others sequential
 - A typical pattern: parallel foundation → sequential integration → parallel finishing
-- The Queen's dispatch plan specifies the wave structure; the lead follows it
+- The dispatch plan specifies the wave structure
 
 ## Drone Checkpoints
 - Every Drone saves a completion checkpoint via `records_save_snapshot` (tagged `drone-checkpoint`, `parent:<parent-task-id>`)
@@ -53,6 +53,16 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - When using agent teams, prefer targeted `message` over `broadcast` to save tokens
 - Keep inter-agent messages concise — share findings, not full file contents
 - If a Drone is blocked, escalate to the lead immediately
+
+## Task Closure
+
+Ownership is explicit. No task is left in a non-terminal state.
+
+- **Drones close their own tasks.** Every Drone calls `tasks_close` as its final action. A Drone that returns without closing its task is non-compliant.
+- **The lead verifies after each wave.** After all Drones in a wave return, the lead runs `tasks_list` filtered by the epic to confirm all wave subtasks are closed. Any orphaned task is closed by the lead with a comment noting the Drone's failure to self-close.
+- **The lead closes the epic last.** After Vinculum PASS and all subtasks are verified closed, the lead closes the epic. An epic with open subtasks must never be closed.
+- **Failed or blocked tasks** are marked `blocked` (not left `in_progress`). The lead decides whether to re-dispatch, cancel, or re-plan.
+- **Cancelled tasks** are closed with status `cancelled` and a comment explaining why. They are not left open.
 
 ## Error Handling
 - If a Drone fails, do not retry with the same approach

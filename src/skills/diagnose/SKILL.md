@@ -6,7 +6,7 @@ description: Diagnose bugs through adversarial hypothesis testing — multiple V
 # /diagnose
 
 <!-- @claude -->
-Diagnose a bug through adversarial hypothesis testing. The Queen generates competing theories, a team of Vinculum agents investigates each — gathering evidence, disproving rivals, and debating until the root cause survives. Optionally, `--fix` dispatches a Drone to implement the fix (escalating to `/adapt` if complex).
+Diagnose a bug through adversarial hypothesis testing. You generate competing theories, a team of Vinculum agents investigates each — gathering evidence, disproving rivals, and debating until the root cause survives. Optionally, `--fix` dispatches a Drone to implement the fix (escalating to `/adapt` if complex).
 <!-- @end -->
 <!-- @opencode -->
 Diagnose a bug through adversarial hypothesis testing. You generate competing theories, then dispatch Vinculum agents to investigate each — gathering evidence, disproving rivals, and converging on the root cause. Optionally, `--fix` dispatches a Drone to implement the fix.
@@ -18,9 +18,6 @@ Diagnose a bug through adversarial hypothesis testing. You generate competing th
 
 - **NEVER use Explore agents.** All investigation uses `Vinculum`.
 - **Follow this flow exactly.** Do not insert your own investigation steps.
-<!-- @claude -->
-- **Save the Queen session ID** from Step 1. Reuse it for convergence synthesis.
-<!-- @end -->
 
 ## Flags
 
@@ -90,55 +87,8 @@ FINAL REPORT:
 
 ## Flow
 
-### Step 1: Queen Generates Hypotheses
+### Step 1: Generate Hypotheses
 
-<!-- @claude -->
-Spawn the `Queen` agent. She receives the user's symptom description plus any intuition about the cause, does a quick codebase scan, and generates competing hypotheses.
-
-**Budget: ~20 tool uses.** Enough to scan key files and form theories. Not a full investigation — that's what the Vinculum team does.
-
-```
-Agent:
-  subagent_type: "Queen"
-  prompt: |
-    You are the Queen of Unimatrix Zero. A diagnostic directive has entered
-    the collective:
-
-    SYMPTOM: "<user's bug description>"
-    USER INTUITION: "<what the user thinks might be wrong, or 'none provided'>"
-
-    Perform a quick codebase scan to understand the area around the symptom.
-    Then generate 3-5 competing hypotheses for the root cause.
-
-    BUDGET: ~20 tool uses. Scan key files — do NOT do a full investigation.
-
-    For each hypothesis, produce:
-
-    ## Hypothesis <N>: <concise theory statement>
-    - **Confirming evidence would be:** <what to look for>
-    - **Disproving evidence would be:** <what would kill this theory>
-    - **Investigation area:** <specific files, modules, or paths to examine>
-
-    Include the user's intuition as one hypothesis if provided (no special
-    treatment — it competes on evidence like the rest).
-
-    After listing hypotheses, create brain tasks:
-    - One epic: "Diagnose: <symptom summary>"
-    - One subtask per hypothesis, with the hypothesis statement, confirming/
-      disproving criteria, and investigation areas in the description.
-    - All subtasks are independent (no dependencies).
-
-    Return:
-    - The epic ID
-    - The hypothesis list
-    - Recommended agent count (one Vinculum per hypothesis is ideal, but
-      if there are 5 hypotheses and 2 are closely related, you may recommend
-      fewer agents with combined hypotheses)
-```
-
-**Save the returned agent ID.**
-<!-- @end -->
-<!-- @opencode -->
 You ARE the planning agent. Perform a quick codebase scan to understand the area around the symptom. Then generate 3-5 competing hypotheses.
 
 **Budget: ~20 tool uses.** Scan key files — do NOT do a full investigation.
@@ -148,12 +98,11 @@ For each hypothesis, produce the theory statement, confirming/disproving evidenc
 Create brain tasks: one epic, one subtask per hypothesis. All subtasks are independent.
 
 Return the epic ID, hypothesis list, and recommended agent count.
-<!-- @end -->
 
 ### Step 1b: Present Hypotheses
 
 <!-- @claude -->
-After the Queen returns, call `EnterPlanMode`. Present the hypotheses for review. The user can approve, add hypotheses, or remove weak ones.
+After generating hypotheses, call `EnterPlanMode`. Present the hypotheses for review. The user can approve, add hypotheses, or remove weak ones.
 <!-- @end -->
 <!-- @opencode -->
 Present the hypotheses for review. The user can approve, add hypotheses, or remove weak ones.
@@ -161,7 +110,7 @@ Present the hypotheses for review. The user can approve, add hypotheses, or remo
 
 ### Step 2: Create Team and Spawn Investigators
 
-1. Use the Queen's recommended agent count. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
+1. Use the recommended agent count. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
 <!-- @claude -->
 2. Create a team: `TeamCreate` with a descriptive `team_name`
 3. Spawn one Vinculum per hypothesis into the team:
@@ -222,47 +171,11 @@ Hypothesis: <N>
 
 Collect final snapshots from each Vinculum (tagged `diagnosis-final`).
 
-<!-- @claude -->
-Resume the Queen to synthesize the diagnosis:
-
-```
-Agent:
-  subagent_type: "Queen"
-  resume: "<queen agent ID>"
-  prompt: |
-    The diagnostic investigation is complete. Final reports are in these
-    snapshots:
-    DIAGNOSIS SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>, ...
-
-    Use `records_fetch_content` to review each Vinculum's final report.
-
-    Synthesize the diagnosis:
-
-    ## Diagnosis
-    ### Root Cause
-    <the surviving hypothesis with evidence chain>
-
-    ### Disproven Hypotheses
-    For each disproven hypothesis:
-    - **Hypothesis <N>:** <theory> — disproven by <counter-evidence summary>
-
-    ### Inconclusive Hypotheses (if any)
-    - **Hypothesis <N>:** <theory> — <what remains unknown>
-
-    ### Recommended Fix
-    <specific code changes needed, with file paths and descriptions>
-
-    ### Confidence
-    HIGH | MEDIUM | LOW — <rationale>
-```
-<!-- @end -->
-<!-- @opencode -->
 Synthesize the diagnosis from the final reports. Review each Vinculum's snapshot via `records_fetch_content`. Produce:
 - Root cause with evidence chain
 - Disproven hypotheses with counter-evidence
 - Recommended fix with specific file paths
 - Confidence level (HIGH / MEDIUM / LOW)
-<!-- @end -->
 
 ### Step 5: Present Diagnosis
 
@@ -276,10 +189,10 @@ If `--fix` was NOT passed, stop here.
 
 ### Step 6: Fix (if --fix)
 
-Only if `--fix` was passed and the Queen's confidence is MEDIUM or HIGH (if LOW, present the diagnosis and ask the user whether to proceed).
+Only if `--fix` was passed and the confidence is MEDIUM or HIGH (if LOW, present the diagnosis and ask the user whether to proceed).
 
 <!-- @claude -->
-Assess fix complexity from the Queen's recommended fix:
+Assess fix complexity from the recommended fix:
 
 **Simple fix** (1-3 files, clear changes):
 1. Generate designation: `/designate 1 --role Drone --trimatrix`
@@ -294,7 +207,7 @@ Assess fix complexity from the Queen's recommended fix:
        You are Drone <designation> executing brain task <task-id>.
 
        DIAGNOSIS: <root cause summary>
-       RECOMMENDED FIX: <Queen's fix recommendation>
+       RECOMMENDED FIX: <fix recommendation>
 
        Implement the fix. Run all available tests to verify the fix resolves
        the reported symptom without regressions.
@@ -335,7 +248,7 @@ Coordination happens through Brain tasks and records. No team management needed.
 /diagnose <symptom description> --fix
 ```
 
-The user can optionally include their intuition about the cause in the symptom description. The Queen treats it as one candidate hypothesis alongside her own.
+The user can optionally include their intuition about the cause in the symptom description. It is treated as one candidate hypothesis alongside the others.
 
 ## Examples
 

@@ -18,19 +18,10 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
 
 ## Behavior
 
-<!-- @claude -->
-1. **Spawn Queen for Planning** — Delegate to the `Queen` agent with the user's request and scope. The Queen will:
-   - Research the codebase (dispatching a `Probe` if needed)
-   - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. The Queen decides the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups.
-   - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
-   - Return a dispatch plan with the parent task ID and partition assignments.
-<!-- @end -->
-<!-- @opencode -->
 1. **Plan the partitions** — You ARE the planning agent. Research the codebase (dispatching a `Probe` if needed) and:
    - Partition files into logical groups by directory, module, or feature area. Each group must be independently modifiable without conflicts. Decide the optimal number of partitions (hard max of 5, can be lowered by the user). If there are more natural groups than the limit, merge the smallest/most-related groups.
    - Create brain tasks: one parent task + one subtask per partition with self-contained descriptions (file list, goal, instructions). All subtasks are independent (no dependencies).
    - Produce the dispatch plan with the parent task ID and partition assignments.
-<!-- @end -->
 
 2. **Generate Designations** — `/designate <N> --role Drone --trimatrix`
 

@@ -40,7 +40,7 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 
 1. **Load the directive** — Use `tasks_get` with the provided task ID to read your assignment. The task description contains everything you need: goal, files, instructions, and verification criteria.
 2. **Mark in progress** — Use `tasks_apply_event` (status_changed to `in_progress`).
-3. **Check for context** — Read any comments on the task for additional context from the Queen or prior Drones.
+3. **Check for context** — Read any comments on the task for additional context from the planner or prior Drones.
 4. **Read the code** — Always read existing code before modifying it. Understand context.
 5. **Implement** — Make the minimal set of changes needed to complete the task.
 6. **Verify** — Run tests, lint, and formatting **scoped to your changed files only**. Never run project-wide or crate-wide commands. Target only the specific files, modules, or test cases affected by your changes. Fix any failures. The lead session runs global verification after all Drones complete.
@@ -53,6 +53,7 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
    - `media_type`: `"text/markdown"`
    - `tags`: `["drone-implementation"]`
 9. **Report completion** — Add a comment via `tasks_apply_event` (comment_added) that includes: what you changed, what you verified, any issues, and the **snapshot ID** (e.g., `Snapshot: UNM-01KKE...`). The lead uses this ID to pass context to subsequent Drones.
+10. **Close your task** — Use `tasks_close` with your task ID. A task is not complete until it is closed. Never leave a task in `in_progress` status after finishing your work. If you are blocked, mark `blocked` instead — but a successful completion always ends with `tasks_close`.
 
 ## Rules
 
@@ -67,7 +68,7 @@ When claiming or updating brain tasks, always set `assignee` to `Drone`. If you 
 - If you discover something that affects a different task, add a comment to that task immediately — don't defer.
 - Commit your changes when done. Never push — the lead agent handles that.
 - Use `offset` and `limit` on Read for large files — read only the functions you need to modify, not entire files.
-- Before searching the codebase, check your task description and prior checkpoints — the Queen or prior Drone may have already provided the exact file paths and line numbers you need.
+- Before searching the codebase, check your task description and prior checkpoints — the planner or prior Drone may have already provided the exact file paths and line numbers you need.
 
 ## File Partition Boundary
 
@@ -113,7 +114,7 @@ After completing your task and committing your changes, you **must** save a hand
 ### Rules for Sequence Mode
 
 - Keep snapshots focused. Include only information the next drone genuinely needs — not a dump of everything you did.
-- If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the queen assess without needing your full conversation history.
+- If you encounter a blocker, still save a snapshot documenting the blocker state before marking your task as blocked. This helps the lead assess without needing your full conversation history.
 - You are running on the orchestration worktree branch (not a per-drone worktree). The previous drone's commits are already in your working directory.
 
 ## Target Codebase

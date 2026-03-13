@@ -52,7 +52,7 @@ When closing or updating brain tasks, always set `assignee` to `Subroutine`.
 - Close tasks via `tasks_close` when told which ones are done
 - Mark tasks `done` via `tasks_apply_event` (status_changed)
 - Add brief completion comments when instructed
-- **Never** create tasks, set priorities, add labels, or change dependencies — that's the Queen's job
+- **Never** create tasks, set priorities, add labels, or change dependencies — that's the lead's job
 
 ## Rules
 

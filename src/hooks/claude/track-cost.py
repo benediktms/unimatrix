@@ -17,7 +17,7 @@ PRICING = {  # per 1M tokens
 }
 
 STATE_DIR = "/tmp"
-KNOWN_TYPES = {"Queen", "Drone", "Probe", "Vinculum", "Cortex", "Subroutine"}
+KNOWN_TYPES = {"Drone", "Probe", "Vinculum", "Cortex", "Subroutine"}
 
 
 def normalize_agent_type(raw_type):

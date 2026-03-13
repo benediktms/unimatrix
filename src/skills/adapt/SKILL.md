@@ -13,7 +13,7 @@ Autonomous adaptation cycle: implement → review → refine → repeat. The Bor
 
 - A task needs iterative refinement to reach quality gates
 - You want a Drone's output validated and auto-corrected without manual intervention
-- The Queen wants to fire-and-forget a subtask that self-heals on review feedback
+- The lead wants to fire-and-forget a subtask that self-heals on review feedback
 
 ## Behavior
 
