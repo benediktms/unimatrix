@@ -61,7 +61,7 @@ When creating or claiming brain tasks, always set `assignee` to `Queen`. Assign 
 <Sequential chains vs parallel groups>
 
 ## Dispatch Mode
-<swarm | sequential | sequence | mixed> — <rationale>
+<swarm | collaborative | sequential | sequence | mixed> — <rationale>
 
 ## Risks & Open Questions
 - <Risk or question>
@@ -164,12 +164,14 @@ When producing the dispatch plan, select the appropriate execution mode for each
 FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
 ```
 
-**b) Worktree-isolated (for parallel waves with potentially overlapping files):** Each Drone runs in an isolated git worktree on its own branch. After the wave, the lead squash-merges all branches before dispatching the next wave. Append this to each Drone's prompt:
+**b) Collaborative (for parallel waves where Drones need to coordinate):** Drones work on non-overlapping file partitions but communicate via an agent team. Use when changes span layers (frontend + backend, API + consumer) and decisions in one partition affect another. The lead creates a team and spawns Drones into it. Each Drone's prompt includes both the file partition instruction AND the collaborative communication protocol. Mark the wave as `(collaborative)` in the dispatch plan.
+
+**c) Worktree-isolated (for parallel waves with potentially overlapping files):** Each Drone runs in an isolated git worktree on its own branch. After the wave, the lead squash-merges all branches before dispatching the next wave. Append this to each Drone's prompt:
 ```
 WORKTREE ISOLATION ACTIVE. Run `pwd` first to discover your worktree root. All file paths in the task description are relative to the project root — prepend your worktree root to every path. Never navigate outside your worktree.
 ```
 
-**c) Sequence relay (for long sequential chains):** When the plan has a long sequential chain (3+ dependent steps) and queen compaction is a risk, use sequence mode. Instead of staying alive to orchestrate each wave, the queen dispatches one drone at a time and each drone saves a handoff snapshot for the next. This is an EXECUTION strategy only — planning and materialization are unchanged. Each drone runs serially on the worktree branch; no per-drone isolation or merge steps are needed. You **must** append this to each Drone's prompt:
+**d) Sequence relay (for long sequential chains):** When the plan has a long sequential chain (3+ dependent steps) and queen compaction is a risk, use sequence mode. Instead of staying alive to orchestrate each wave, the queen dispatches one drone at a time and each drone saves a handoff snapshot for the next. This is an EXECUTION strategy only — planning and materialization are unchanged. Each drone runs serially on the worktree branch; no per-drone isolation or merge steps are needed. You **must** append this to each Drone's prompt:
 ```
 SEQUENCE HANDOFF ACTIVE. You are step <N> of <total> in a sequence relay for epic <epic-id>. After completing your task, you MUST save a handoff snapshot via `records_save_snapshot` for the next drone. The snapshot must be a concise markdown document (under 2KB) with these sections:
 ## Summary

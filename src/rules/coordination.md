@@ -49,7 +49,7 @@ The **Queen** plans and creates brain tasks. The **lead session** orchestrates e
 - This enables context flow between waves without the lead needing to relay full content
 
 ## Communication
-- **Agent teams are used selectively** — only for `/recon` (investigation and feature planning) where inter-agent communication adds value. Implementation skills (`/assemble`, `/swarm`) use plain subagents.
+- **Agent teams are used selectively** — for `/recon` (investigation and feature planning) and for collaborative waves in `/assemble` (cross-layer implementation where Drones need real-time coordination). Swarm waves in `/assemble` and `/swarm` use plain subagents.
 - When using agent teams, prefer targeted `message` over `broadcast` to save tokens
 - Keep inter-agent messages concise — share findings, not full file contents
 - If a Drone is blocked, escalate to the lead immediately

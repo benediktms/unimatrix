@@ -1,6 +1,6 @@
 ---
 name: assemble
-description: Assemble the collective to execute a complex task in an isolated worktree. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, or swarm dispatch strategies. Vinculum reviews. Changes merge back on completion.
+description: Assemble the collective to execute a complex task in an isolated worktree. The planner assesses, plans, and the lead dispatches Probes, Cortex, and Drones using sequential, sequence, swarm, or collaborative dispatch strategies. Vinculum reviews. Changes merge back on completion.
 ---
 
 # /assemble
@@ -34,10 +34,10 @@ Orchestrate a complex task end-to-end in an isolated worktree: you assess, recon
 ## Dispatch Modes
 
 <!-- @claude -->
-The Queen's dispatch plan specifies one of three modes for each wave of work:
+The Queen's dispatch plan specifies one of four modes for each wave of work:
 <!-- @end -->
 <!-- @opencode -->
-Your dispatch plan specifies one of three modes for each wave of work:
+Your dispatch plan specifies one of four modes for each wave of work:
 <!-- @end -->
 
 <!-- @claude -->
@@ -72,11 +72,27 @@ Steps have dependencies — drones execute one at a time, each passing a handoff
 <!-- @end -->
 
 ### Swarm
-Steps are independent — drones execute in parallel with non-overlapping file partitions. Use when work can be divided by file group with no cross-group dependencies.
+Steps are independent — drones execute in parallel with non-overlapping file partitions. No inter-drone communication. Use when work can be divided by file group with no cross-group dependencies.
 
 **Use when:** bulk changes across many files, parallel implementation of independent features, migrations or convention enforcement across the codebase.
 
-**Avoid when:** steps share files or have dependencies between them.
+**Avoid when:** steps share files or have dependencies between them, or when decisions in one partition affect another.
+
+### Collaborative
+<!-- @claude -->
+Drones work in parallel on related but non-overlapping files, communicating via an agent team. Unlike swarm (parallel, silent) or sequential (serial, lead-mediated), collaborative Drones share decisions in real-time. File partitions are still enforced — each Drone owns its files — but Drones coordinate on shared interfaces, contracts, and assumptions.
+
+**Use when:** cross-layer changes where decisions in one area affect another — e.g., API contract changes that frontend and backend must agree on, schema changes that affect multiple consumers, shared type definitions used across modules.
+
+**Avoid when:** changes are truly independent (use swarm) or must be strictly ordered (use sequential/sequence).
+<!-- @end -->
+<!-- @opencode -->
+Drones work in parallel on related but non-overlapping files, coordinating via brain snapshots. File partitions are still enforced — each Drone owns its files — but Drones save decision snapshots that other Drones can reference.
+
+**Use when:** cross-layer changes where decisions in one area affect another — e.g., API contract changes that frontend and backend must agree on, schema changes that affect multiple consumers.
+
+**Avoid when:** changes are truly independent (use swarm) or must be strictly ordered (use sequential/sequence).
+<!-- @end -->
 
 ## Flow
 
@@ -374,12 +390,53 @@ You are <agent type> <designation> executing brain task <task-id> — \"<task ti
 Use `description="<full designation> — <task summary>"` to carry designation and task context.
 <!-- @end -->
 
-**Mode blocks — append based on wave type (sequential, sequence, or swarm):**
+**Mode blocks — append based on wave type:**
 
 For **swarm waves** with non-overlapping files:
 ```
 FILE PARTITION ACTIVE. You may ONLY read, edit, or create files listed in your task's "Files" section. Do NOT modify any file outside your partition. Other Drones are working on other files in parallel — touching their files will cause conflicts.
 ```
+
+<!-- @claude -->
+For **collaborative waves** with non-overlapping files and team communication:
+```
+COLLABORATIVE MODE ACTIVE. You may ONLY edit files listed in your task's
+"Files" section. Other Drones own other files — do NOT touch them.
+
+You are part of a team. Communicate actively:
+- ANNOUNCE DECISIONS: When you make a decision that affects shared interfaces,
+  contracts, types, or assumptions, message ALL teammates immediately.
+  Example: "Changed UserResponse to include `lastLogin: ISO8601 string` — update
+  any consumer that deserializes this type."
+- ASK BEFORE ASSUMING: If your task depends on how another Drone implements
+  something, message them directly. Do not guess.
+  Example: "@Drone: Four of Five — does the API endpoint return 404 or empty
+  array when no results found? I need to handle both in the client."
+- RESPOND TO MESSAGES: When a teammate messages you, acknowledge and state
+  how it affects your implementation. Do not ignore messages.
+- PERSIST DECISIONS: When you make or receive a decision that affects the
+  shared contract, save a brain snapshot (tagged `collab-decision`,
+  `wave:<wave-number>`, `agent:<designation>`) so the decision is auditable.
+```
+<!-- @end -->
+<!-- @opencode -->
+For **collaborative waves** with non-overlapping files and coordinated decisions:
+```
+COLLABORATIVE MODE ACTIVE. You may ONLY edit files listed in your task's
+"Files" section. Other Drones own other files — do NOT touch them.
+
+Other Drones are working on related files in parallel. Coordinate via snapshots:
+- ANNOUNCE DECISIONS: When you make a decision that affects shared interfaces,
+  contracts, types, or assumptions, save a brain snapshot immediately (tagged
+  `collab-decision`, `wave:<wave-number>`, `agent:<designation>`).
+- CHECK DECISIONS: Before implementing against a shared interface, check for
+  recent `collab-decision` snapshots from other Drones via `records_list`.
+  Adapt your implementation to match their decisions.
+- PERSIST ALL CONTRACTS: Any decision about shared types, API shapes, or
+  cross-module assumptions must be captured in a snapshot so other Drones
+  and downstream consumers can reference it.
+```
+<!-- @end -->
 
 For **sequential waves** or **sequence relay**, no special block needed.
 
@@ -393,6 +450,12 @@ RECON SNAPSHOTS: <snapshot-id-1>, <snapshot-id-2>
 
 **Spawning rules:**
 - Swarm wave: spawn all Drones with `run_in_background: true`
+<!-- @claude -->
+- Collaborative wave: create a team (`TeamCreate`), spawn all Drones with `run_in_background: true` and `team_name`. Team enables real-time messaging between Drones.
+<!-- @end -->
+<!-- @opencode -->
+- Collaborative wave: spawn all Drones with `run_in_background: true`. Drones coordinate via brain snapshots.
+<!-- @end -->
 - Sequential wave: spawn one Drone, wait for completion
 - Sequence relay: spawn one Drone, wait for completion, extract its snapshot ID and pass as `PRIOR CHECKPOINTS:` to the next Drone
 - Wait for all Drones in a wave to complete before starting the next wave
@@ -496,7 +559,16 @@ git branch -D <branch-name>
 
 ### Step 10: Cleanup
 
+<!-- @claude -->
+If any collaborative waves were dispatched:
+1. Shut down remaining team members: `SendMessage` with `type: "shutdown_request"`
+2. Delete team: `TeamDelete`
+
+For non-collaborative waves, no team lifecycle management needed — subagents terminate on completion.
+<!-- @end -->
+<!-- @opencode -->
 Coordination happens through Brain tasks and records. No team lifecycle management needed — subagents terminate on completion.
+<!-- @end -->
 
 ## Ad-Hoc Reconnaissance
 
@@ -512,6 +584,7 @@ If you need to search the codebase during orchestration (e.g. to gather context 
 All Drones work inside the orchestration worktree created in Step 3c. Commits land on the worktree branch.
 
 - **Swarm Drones (file-partitioned):** No merge needed — changes are on the worktree branch.
+- **Collaborative Drones (file-partitioned, team-coordinated):** No merge needed — file partitions are non-overlapping, same as swarm. The team provides communication, not file isolation.
 - **Worktree Drones (per-drone isolation):** Squash-merge per-drone branches back to the orchestration worktree branch before the next wave (`git merge --squash <branch>`). On conflict: abort, dispatch a Drone to rebase, retry.
 - **Sequential Drones:** No merge needed — Drones run serially on the worktree branch.
 - **Sequence relay Drones:** No merge needed — Drones run serially on the worktree branch. Context flows via Brain snapshots.
