@@ -94,6 +94,7 @@ export type MachineState =
   | "initializing"
   | "dispatching"
   | "gate_halted"
+  | "refining"
   | "failed"
   | "completed";
 
@@ -122,6 +123,17 @@ export interface Checkpoint {
   updatedAt: string;
   /** Brain task ID of the epic task for this borgcube execution, if materialized. */
   epicTaskId?: string;
+  /** History of plan refinements applied after initial dispatch. */
+  refinementHistory: Array<{
+    /** ISO 8601 timestamp when this refinement was applied. */
+    timestamp: string;
+    /** Node IDs added during this refinement. */
+    addedNodes: string[];
+    /** Edges added during this refinement. */
+    addedEdges: Array<{ from: string; to: string; type: string }>;
+    /** Repository names added during this refinement. */
+    addedRepos: string[];
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,4 +225,6 @@ export type Event =
   | { type: "wave_completed"; waveId: number }
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }
-  | { type: "retry_wave"; waveId: number };
+  | { type: "retry_wave"; waveId: number }
+  | { type: "refine" }
+  | { type: "refinement_approved" };
