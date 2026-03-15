@@ -17,9 +17,12 @@ import type {
 } from "./types.ts";
 import {
   activateNodes,
+  addEdge,
+  addNode,
   clearGate,
   completeNode,
   computeWaves,
+  computeWavesFromRefinement,
   failNode,
   nextWave,
   validate,
@@ -158,6 +161,12 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_repo requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const existing = cp.repos.find((r) => r.name === params.name);
     if (existing) {
       return {
@@ -215,6 +224,13 @@ server.tool(
   },
   (params) => {
     const cp = requireCheckpoint();
+
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_node requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const node = {
       id: params.id,
       repo: params.repo,
@@ -226,12 +242,15 @@ server.tool(
         : {}),
       status: "pending" as const,
     };
+
+    const result = addNode(cp.graph, node, cp.machineState === "refining");
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
     checkpoint = {
       ...cp,
-      graph: {
-        ...cp.graph,
-        nodes: { ...cp.graph.nodes, [params.id]: node },
-      },
+      graph: result.value!,
       updatedAt: new Date().toISOString(),
     };
     return {
@@ -257,17 +276,27 @@ server.tool(
   },
   (params) => {
     const cp = requireCheckpoint();
+
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_edge requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const edge = {
       from: params.from,
       to: params.to,
       type: params.type as "merge_gate" | "stacked",
     };
+
+    const result = addEdge(cp.graph, edge, cp.machineState === "refining");
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
     checkpoint = {
       ...cp,
-      graph: {
-        ...cp.graph,
-        edges: [...cp.graph.edges, edge],
-      },
+      graph: result.value!,
       updatedAt: new Date().toISOString(),
     };
     return {
@@ -275,6 +304,42 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify({ ok: true, from: params.from, to: params.to }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: refine
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "refine",
+  "Enter refining state to add new nodes, edges, or repos to an in-progress execution. Call compute_waves when done to apply the changes and resume dispatching.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+
+    const check = canTransition(cp, { type: "refine" });
+    if (!check.allowed) {
+      throw new Error(`Cannot enter refining state: ${check.reason}`);
+    }
+
+    const transitioned = transition(cp, { type: "refine" });
+    checkpoint = transitioned;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            currentWaveId: checkpoint.currentWaveId,
+            nodeCount: Object.keys(checkpoint.graph.nodes).length,
+            waveCount: checkpoint.waves.length,
+          }),
         },
       ],
     };
@@ -304,7 +369,7 @@ server.tool(
 
 server.tool(
   "compute_waves",
-  "Validate graph, compute execution waves, and transition to dispatching state (plan_approved).",
+  "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
   {},
   () => {
     const cp = requireCheckpoint();
@@ -316,6 +381,72 @@ server.tool(
       );
     }
 
+    if (cp.machineState === "refining") {
+      // Partial recomputation — preserve completed waves, append new waves
+      const check = canTransition(cp, { type: "refinement_approved" });
+      if (!check.allowed) {
+        throw new Error(`Cannot transition: ${check.reason}`);
+      }
+
+      // Determine the last completed wave number to offset new wave IDs
+      const completedWaves = cp.waves.filter((w) =>
+        w.nodes.every((nId) => cp.graph.nodes[nId]?.status === "merged")
+      );
+      const waveOffset = completedWaves.length > 0
+        ? Math.max(...completedWaves.map((w) => w.id))
+        : 0;
+
+      const newWaves = computeWavesFromRefinement(cp.graph, waveOffset);
+
+      // Merge: keep completed waves, replace remaining with recomputed waves
+      const mergedWaves = [...completedWaves, ...newWaves];
+
+      // Collect what was added in this refinement for the history record
+      const existingNodeIds = new Set(
+        cp.waves.flatMap((w) => w.nodes),
+      );
+      const addedNodes = Object.keys(cp.graph.nodes).filter(
+        (id) => !existingNodeIds.has(id),
+      );
+
+      // Record all edges pointing to or from new nodes
+      const addedEdges = cp.graph.edges
+        .filter((e) => addedNodes.includes(e.from) || addedNodes.includes(e.to))
+        .map((e) => ({ from: e.from, to: e.to, type: e.type }));
+
+      const refinementRecord = {
+        timestamp: new Date().toISOString(),
+        addedNodes,
+        addedEdges,
+        addedRepos: [] as string[],
+      };
+
+      const transitioned = transition(
+        {
+          ...cp,
+          waves: mergedWaves,
+          refinementHistory: [...cp.refinementHistory, refinementRecord],
+        },
+        { type: "refinement_approved" },
+      );
+      checkpoint = transitioned;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              machineState: checkpoint.machineState,
+              waves: checkpoint.waves,
+              refinementHistory: checkpoint.refinementHistory,
+            }),
+          },
+        ],
+      };
+    }
+
+    // initializing state — full computation
     const check = canTransition(cp, { type: "plan_approved" });
     if (!check.allowed) {
       throw new Error(`Cannot transition: ${check.reason}`);
