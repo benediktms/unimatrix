@@ -11,7 +11,10 @@ import { computeWaves } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+
+/** All checkpoint versions this runtime can load. */
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -347,10 +350,15 @@ export function deserialize(json: string): Checkpoint {
   }
 
   const cp = parsed as Checkpoint;
-  if (cp.version !== VERSION) {
+  if (!SUPPORTED_VERSIONS.has(cp.version)) {
     throw new Error(
-      `Checkpoint version mismatch — expected ${VERSION}, got ${cp.version}`,
+      `Checkpoint version unsupported — supported: ${[...SUPPORTED_VERSIONS].join(", ")}, got ${cp.version}`,
     );
+  }
+
+  // Backward compat: 1.0.0 checkpoints lack refinementHistory — default to [].
+  if (cp.version === "1.0.0") {
+    cp.refinementHistory ??= [];
   }
 
   return cp;
