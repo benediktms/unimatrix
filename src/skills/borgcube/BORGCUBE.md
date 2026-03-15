@@ -97,9 +97,9 @@ flowchart TD
     FailChoice -->|diagnose| Diagnose[Invoke /diagnose]
     FailChoice -->|abandon| Done
 
-    Done --> [*]
-    LoopGate --> [*]
-    AbortWave --> [*]
+    Done --> End([End])
+    LoopGate --> End
+    AbortWave --> End
     Diagnose --> FailHand
 ```
 
@@ -121,8 +121,7 @@ sequenceDiagram
     participant Server as UNIMATRIX Server
     participant User
 
-    rect rgb(100, 150, 200)
-        Note over Lead,User: Wave Approval Flow
+    Note over Lead,User: Wave Approval Flow
         Lead->>Server: next_wave()
         Server-->>Lead: Wave object
         Lead->>User: Present wave plan, elicit approval
@@ -137,10 +136,8 @@ sequenceDiagram
         else Rejected
             Lead->>Server: Abort (no state change)
         end
-    end
 
-    rect rgb(150, 200, 150)
-        Note over Lead,User: Failure Triage Flow
+    Note over Lead,User: Failure Triage Flow
         Lead->>Server: status()
         Server-->>Lead: Enumerate failed nodes
         Lead->>User: Present failures, elicit triage
@@ -157,10 +154,8 @@ sequenceDiagram
         else abandon
             Lead->>Server: Mark tasks done, remove worktrees
         end
-    end
 
-    rect rgb(200, 150, 150)
-        Note over Lead,User: Refinement Approval Flow
+    Note over Lead,User: Refinement Approval Flow
         Lead->>Lead: Detect new repos via --resume --include
         Lead->>User: Present graph + plan, elicit modifications
         alt User has elicitation
@@ -175,7 +170,6 @@ sequenceDiagram
         alt Approved
             Lead->>Server: dispatch_wave()
         end
-    end
 
     Note over Lead: Graceful degradation: if client has no elicitation capability, fallback to text prompts.
 ```
