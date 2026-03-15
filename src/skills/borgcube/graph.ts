@@ -397,6 +397,14 @@ export function addNode(
   node: Node,
   refining = false,
 ): MutationResult<Graph> {
+  if (refining && graph.nodes[node.id] !== undefined) {
+    return {
+      ok: false,
+      error:
+        `Cannot add node during refinement: ID "${node.id}" already exists`,
+    };
+  }
+
   if (refining && node.stackedOn !== undefined) {
     const parent = graph.nodes[node.stackedOn];
     if (parent && ACTIVE_OR_COMPLETED_STATUSES.includes(parent.status)) {
