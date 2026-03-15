@@ -252,7 +252,7 @@ Then dispatch Drones directly. Do not return a plan to another agent — you are
 Spawn all Drones in a wave simultaneously using `task()` with `run_in_background: true`:
 
 ```python
-task(subagent_type="drone", run_in_background=true, prompt="<designation>\n\n<task-id>")
+task(subagent_type="adjunct-assimilation-protocol", run_in_background=true, prompt="<designation>\n\n<task-id>")
 ```
 
 Wait for all Drones in the wave to complete before starting the next wave. Monitor completion via brain task status and comments.
@@ -262,7 +262,7 @@ Wait for all Drones in the wave to complete before starting the next wave. Monit
 Spawn one Drone, wait for completion, then spawn the next:
 
 ```python
-task(subagent_type="drone", prompt="<designation>\n\n<task-id>")
+task(subagent_type="adjunct-assimilation-protocol", prompt="<designation>\n\n<task-id>")
 ```
 
 Check the task's status and comments before proceeding to the next step.
@@ -283,13 +283,13 @@ When the plan has 3+ dependent steps and context compaction is a risk, use seque
 When all Drones complete, assess the changeset scope to determine the review approach:
 
 **Single review** (default — focused changesets, single area, small swarm):
-1. Dispatch Vinculum: `task(subagent_type="vinculum", prompt="<epic-id>")`
+1. Dispatch Vinculum: `task(subagent_type="adjunct-validation-protocol", prompt="<epic-id>")`
 
 **Sphere review** (changes span multiple distinct areas — e.g., frontend + backend, API + database):
 1. Spawn one Vinculum per scope area with scoped prompts:
 ```python
 task(
-  subagent_type="vinculum",
+  subagent_type="adjunct-validation-protocol",
   description="<designation> — <scope area> review",
   run_in_background=true,
   prompt="""
@@ -386,8 +386,8 @@ Generate designations before dispatching: `/designate <agent-count> --trimatrix`
 Spawn recon agents with designations in the prompt:
 
 ```python
-task(subagent_type="probe", run_in_background=true, prompt="<designation>\n\n<task-id>")
-task(subagent_type="cortex", run_in_background=true, prompt="<designation>\n\n<task-id>")
+task(subagent_type="adjunct-reconnaissance-protocol", run_in_background=true, prompt="<designation>\n\n<task-id>")
+task(subagent_type="adjunct-tactical-analysis-protocol", run_in_background=true, prompt="<designation>\n\n<task-id>")
 ```
 
 Collect their findings before proceeding to Phase 1 planning.
