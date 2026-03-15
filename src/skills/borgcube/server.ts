@@ -372,7 +372,7 @@ server.tool(
   "compute_waves",
   "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     const validationResult = validate(cp.graph);
@@ -415,11 +415,96 @@ server.tool(
         .filter((e) => addedNodes.includes(e.from) || addedNodes.includes(e.to))
         .map((e) => ({ from: e.from, to: e.to, type: e.type }));
 
+      // Repos referenced by pre-refinement wave nodes (existing scope)
+      const preRefinementRepoNames = new Set(
+        cp.waves.flatMap((w) =>
+          w.nodes.map((nId) => cp.graph.nodes[nId]?.repo).filter(Boolean)
+        ),
+      );
+      const addedRepos = cp.repos
+        .map((r) => r.name)
+        .filter((name) => !preRefinementRepoNames.has(name));
+
+      // Build elicitation message summarising the proposed changes
+      const completedWavesSummary = completedWaves.length > 0
+        ? `Completed waves (read-only): ${completedWaves.map((w) => `Wave ${w.id}`).join(", ")}`
+        : "No completed waves.";
+
+      const revisedWavesSummary = newWaves.length > 0
+        ? `Revised future waves (${newWaves.length}): ${
+          newWaves.map((w) =>
+            `Wave ${w.id} — ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"}`
+          ).join("; ")
+        }`
+        : "No future waves after refinement.";
+
+      const changesSummary = [
+        `New nodes: ${addedNodes.length}`,
+        `New edges: ${addedEdges.length}`,
+        `New repos: ${addedRepos.length}`,
+      ].join(" | ");
+
+      const elicitMessage =
+        `Refinement ready to apply.\n\n` +
+        `Changes: ${changesSummary}\n\n` +
+        `${completedWavesSummary}\n` +
+        `${revisedWavesSummary}\n\n` +
+        `Approve to transition to dispatching state.`;
+
+      const elicitResult = await elicitForm(
+        elicitMessage,
+        approvalSchema({
+          approveTitle: "Approve refinement?",
+          modificationsTitle: "Notes (optional)",
+        }),
+      );
+
+      // Graceful degradation: decline from missing capability — proceed without approval
+      const proceedWithoutApproval = elicitResult.action === "decline" &&
+        !server.server.getClientCapabilities()?.elicitation;
+
+      if (!proceedWithoutApproval) {
+        if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason: "Refinement rejected by user.",
+                  machineState: cp.machineState,
+                }),
+              },
+            ],
+          };
+        }
+
+        if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+          const notes = typeof elicitResult.content.modifications === "string" &&
+              elicitResult.content.modifications.length > 0
+            ? elicitResult.content.modifications
+            : undefined;
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason: "Refinement not approved.",
+                  machineState: cp.machineState,
+                  ...(notes !== undefined ? { notes } : {}),
+                }),
+              },
+            ],
+          };
+        }
+      }
+
       const refinementRecord = {
         timestamp: new Date().toISOString(),
         addedNodes,
         addedEdges,
-        addedRepos: [] as string[],
+        addedRepos,
       };
 
       const transitioned = transition(
