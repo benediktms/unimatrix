@@ -123,11 +123,11 @@ TeamCreate:
 
 **Do NOT proceed to agent spawn without a confirmed team.** If `TeamCreate` fails, abort. Without a team, Vinculum agents cannot challenge each other's hypotheses — the adversarial protocol is dead.
 
-3. Spawn one Vinculum per hypothesis **into the team**:
+3. Spawn one Validation Adjunct per hypothesis **into the team**:
 
 ```
 Agent:
-  subagent_type: "Vinculum"
+  subagent_type: "adjunct-validation-protocol"
   team_name: "diagnosis-<epic-id>"   # ← REQUIRED — matches the team created above
   name: "Vinculum: <short name>"
   description: "<full designation> — hypothesis <N>"
@@ -147,11 +147,11 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-2. Dispatch one Vinculum per hypothesis:
+2. Dispatch one Validation Adjunct per hypothesis:
 
 ```
 task(
-  subagent_type="vinculum",
+  subagent_type="adjunct-validation-protocol",
   description="<full designation> — hypothesis <N>",
   run_in_background=true,
   prompt="""
@@ -219,10 +219,10 @@ Assess fix complexity from the recommended fix:
 **Simple fix** (1-3 files, clear changes):
 1. Generate designation: `/designate 1 --role Drone --trimatrix`
 2. Create a brain task under the diagnostic epic with the fix instructions.
-3. Dispatch a Drone:
+3. Dispatch an Assimilation Adjunct:
    ```
    Agent:
-     subagent_type: "Drone"
+     subagent_type: "adjunct-assimilation-protocol"
      name: "Drone: <short name>"
      description: "<designation> — fix"
      prompt: |

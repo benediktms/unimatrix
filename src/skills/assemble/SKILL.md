@@ -112,7 +112,7 @@ Create the recon brain tasks and produce a recon dispatch plan.
 2. Dispatch agents with their brain task IDs as prompts:
 ```
 Agent:
-  subagent_type: "Probe" or "Cortex"
+  subagent_type: "adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol"
   name: "<agent type>: <short name>"
   description: "<full designation> — <task summary>"
   prompt: "<task ID>"
@@ -126,7 +126,7 @@ The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `d
 3. Dispatch agents with their brain task IDs as prompts:
 ```
 task(
-  subagent_type="probe" or "cortex",
+  subagent_type="adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol",
   description="<agent type>: <short name>",
   run_in_background=true,
   prompt="<task ID>"
@@ -201,7 +201,7 @@ For each wave in your dispatch plan, spawn agents. Use `Drone` for implementatio
 <!-- @claude -->
 ```
 Agent:
-  subagent_type: "Drone" or "Subroutine"
+  subagent_type: "adjunct-assimilation-protocol" or "adjunct-closure-protocol"
   name: "<agent type>: <short name>"
   description: "<full designation> — <task summary>"
   run_in_background: true  # for swarm waves; false for sequential
@@ -215,7 +215,7 @@ Agent:
 <!-- @opencode -->
 ```
 task(
-  subagent_type="drone" or "subroutine",
+  subagent_type="adjunct-assimilation-protocol" or "adjunct-closure-protocol",
   description="<agent type>: <short name>",
   run_in_background=true,
   prompt="""
@@ -323,24 +323,24 @@ When all Drones complete, the Queen runs tests, lint, and formatting globally fo
 <!-- @claude -->
 When verification passes, check the dispatch plan for the **Review Strategy**:
 
-**Single review** (default — one Vinculum):
+**Single review** (default — one Validation Adjunct):
 ```
 Agent:
-  subagent_type: "Vinculum"
+  subagent_type: "adjunct-validation-protocol"
   name: "Vinculum: <short name>"
   description: "<full designation> — review"
   prompt: "<parent task ID>"
 ```
 
-**Sphere review** (multiple Vinculum agents with communication):
+**Sphere review** (multiple Validation Adjuncts with communication):
 
-Deploy a Borg sphere — one Vinculum per scope area specified in the review strategy.
+Deploy a Borg sphere — one Validation Adjunct per scope area specified in the review strategy.
 
 1. Create a team: `TeamCreate` with a descriptive name (e.g., `review-sphere-<epic-id>`)
-2. Spawn each Vinculum with scoped prompts and team membership:
+2. Spawn each Validation Adjunct with scoped prompts and team membership:
 ```
 Agent:
-  subagent_type: "Vinculum"
+  subagent_type: "adjunct-validation-protocol"
   name: "Vinculum: <short name>"
   description: "<full designation> — <scope area> review"
   run_in_background: true
@@ -378,24 +378,24 @@ Agent:
 <!-- @opencode -->
 When verification passes, check your dispatch plan for the **Review Strategy**:
 
-**Single review** (default — one Vinculum):
+**Single review** (default — one Validation Adjunct):
 ```
 task(
-  subagent_type="vinculum",
+  subagent_type="adjunct-validation-protocol",
   description="<full designation> — review",
   run_in_background=true,
   prompt="<parent task ID>"
 )
 ```
 
-**Sphere review** (multiple Vinculum agents with snapshot coordination):
+**Sphere review** (multiple Validation Adjuncts with snapshot coordination):
 
-Deploy a Borg sphere — one Vinculum per scope area specified in the review strategy.
+Deploy a Borg sphere — one Validation Adjunct per scope area specified in the review strategy.
 
-1. Spawn each Vinculum with scoped prompts:
+1. Spawn each Validation Adjunct with scoped prompts:
 ```
 task(
-  subagent_type="vinculum",
+  subagent_type="adjunct-validation-protocol",
   description="<full designation> — <scope area> review",
   run_in_background=true,
   prompt="""

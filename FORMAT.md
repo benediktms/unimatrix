@@ -215,11 +215,11 @@ platforms:
 ## Dispatch Workers
 
 <!-- @claude -->
-Use the `Agent` tool to dispatch a Drone:
+Use the `Agent` tool to dispatch an Assimilation Adjunct:
 
 ```json
 {
-  "subagent_type": "Drone",
+  "subagent_type": "adjunct-assimilation-protocol",
   "description": "Implement the auth middleware",
   "run_in_background": true
 }
@@ -231,7 +231,7 @@ Use `task()` to dispatch a worker:
 
 ```
 task(
-  subagent_type="drone",
+  subagent_type="adjunct-assimilation-protocol",
   load_skills=[],
   description="Implement the auth middleware",
   run_in_background=true,
@@ -248,12 +248,12 @@ adjacent. This makes it clear they are alternatives, not separate features:
 
 ```markdown
 <!-- @claude -->
-Spawn the Vinculum agent:
-Agent(subagent_type="Vinculum", ...)
+Spawn the Validation Adjunct:
+Agent(subagent_type="adjunct-validation-protocol", ...)
 <!-- @end -->
 <!-- @opencode -->
 Spawn the review agent:
-task(subagent_type="vinculum", ...)
+task(subagent_type="adjunct-validation-protocol", ...)
 <!-- @end -->
 ```
 
@@ -282,15 +282,15 @@ task(subagent_type="vinculum", ...)
 
 ### 3.2 Complete Agent Mapping
 
-| Agent | Model | Claude `permissionMode` | Claude `disallowedTools` | OC `mode` | OC `permission` | OC `tools` | OC `steps` |
-|-------|-------|------------------------|-------------------------|-----------|-----------------|------------|-----------|
-| Queen | opus | auto | — | *(n/a — `platforms: [claude]`)* | — | — | — |
-| BorgQueen | opus | *(n/a — `platforms: [opencode]`)* | — | primary | `"*": allow` | — | 80 |
-| Drone | sonnet | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 50 |
-| Vinculum | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 20 |
-| Probe | sonnet | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 25 |
-| Cortex | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
-| Subroutine | haiku | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 15 |
+| Agent | Protocol Name | Model | Claude `permissionMode` | Claude `disallowedTools` | OC `mode` | OC `permission` | OC `tools` | OC `steps` |
+|-------|--------------|-------|------------------------|-------------------------|-----------|-----------------|------------|-----------|
+| Queen | `queen-coordination-protocol` | opus | auto | — | *(n/a — `platforms: [claude]`)* | — | — | — |
+| BorgQueen | `queen-coordination-protocol` | opus | *(n/a — `platforms: [opencode]`)* | — | primary | `"*": allow` | — | 80 |
+| Drone (Assimilation Adjunct) | `adjunct-assimilation-protocol` | sonnet | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 50 |
+| Vinculum (Validation Adjunct) | `adjunct-validation-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 20 |
+| Probe (Reconnaissance Adjunct) | `adjunct-reconnaissance-protocol` | sonnet | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 25 |
+| Cortex (Tactical Analysis Adjunct) | `adjunct-tactical-analysis-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
+| Subroutine (Closure Adjunct) | `adjunct-closure-protocol` | haiku | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 15 |
 
 ### 3.3 Tool Name Mapping
 

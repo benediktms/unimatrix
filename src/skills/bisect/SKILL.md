@@ -85,10 +85,10 @@ Loop up to 20 iterations:
 3. Dispatch a Probe agent with the commit diff and symptom description.
 
 <!-- @claude -->
-   Use `Agent(subagent_type="Probe", ...)` for dispatch.
+   Use `Agent(subagent_type="adjunct-reconnaissance-protocol", ...)` for dispatch.
 <!-- @end -->
 <!-- @opencode -->
-   Use `task(subagent_type="probe", ...)` for dispatch.
+   Use `task(subagent_type="adjunct-reconnaissance-protocol", ...)` for dispatch.
 <!-- @end -->
 
    Probe prompt template:

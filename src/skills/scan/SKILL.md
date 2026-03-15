@@ -59,7 +59,7 @@ Present the scan plan with epic ID, task dependency graph, and recommended agent
 <!-- @claude -->
 ```
 Agent:
-  subagent_type: "Probe" or "Cortex"
+  subagent_type: "adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol"
   name: "<agent type>: <short name>"
   description: "<full designation> — scan agent"
   run_in_background: true
@@ -84,7 +84,7 @@ The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `d
 <!-- @opencode -->
 ```
 task(
-  subagent_type="probe" or "cortex",
+  subagent_type="adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol",
   description="<full designation> — scan agent",
   run_in_background=true,
   prompt="""

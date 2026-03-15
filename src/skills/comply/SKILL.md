@@ -12,10 +12,10 @@ Invoke the **Vinculum** agent to validate recent changes. The Vinculum applies e
 ## Behavior
 
 <!-- @claude -->
-Dispatch the reviewer with `Agent(subagent_type="Vinculum", ...)`.
+Dispatch the reviewer with `Agent(subagent_type="adjunct-validation-protocol", ...)`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatch the reviewer with `task(subagent_type="vinculum", ...)`.
+Dispatch the reviewer with `task(subagent_type="adjunct-validation-protocol", ...)`.
 <!-- @end -->
 
 1. Determine the review target from the arguments
