@@ -15,6 +15,7 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
+import { approvalSchema } from "./types.ts";
 import {
   activateNodes,
   addEdge,
@@ -701,7 +702,7 @@ server.tool(
   "next_wave",
   "Return the next wave ready for execution, or null with a reason if none is available.",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     if (cp.machineState === "gate_halted") {
@@ -762,8 +763,64 @@ server.tool(
       };
     }
 
+    // Build node summary lines for the elicitation message
+    const nodeSummaries = wave.nodes
+      .map((nodeId) => {
+        const node = cp.graph.nodes[nodeId];
+        if (!node) return `  - ${nodeId} (unknown)`;
+        return `  - ${node.id} | repo: ${node.repo} | ${node.label} | branch: ${node.worktreeBranch}`;
+      })
+      .join("\n");
+
+    const message =
+      `Wave ${wave.id + 1} is ready for dispatch.\n` +
+      `Nodes (${wave.nodes.length}):\n${nodeSummaries}\n\n` +
+      `Approve this wave to proceed with execution.`;
+
+    const elicitResult = await elicitForm(
+      message,
+      approvalSchema({
+        approveTitle: "Approve this wave?",
+        modificationsTitle: "Modification notes (optional)",
+      }),
+    );
+
+    if (elicitResult.action === "accept") {
+      const approved = Boolean(elicitResult.content.approve);
+      const modifications =
+        typeof elicitResult.content.modifications === "string" &&
+          elicitResult.content.modifications.length > 0
+          ? elicitResult.content.modifications
+          : undefined;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              wave,
+              approved,
+              ...(modifications !== undefined ? { modifications } : {}),
+            }),
+          },
+        ],
+      };
+    }
+
+    if (elicitResult.action === "decline") {
+      // Client lacks elicitation capability — preserve current behavior
+      return {
+        content: [{ type: "text", text: JSON.stringify({ wave }) }],
+      };
+    }
+
+    // cancel
     return {
-      content: [{ type: "text", text: JSON.stringify({ wave }) }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ wave, approved: false }),
+        },
+      ],
     };
   },
 );
