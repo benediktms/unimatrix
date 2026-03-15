@@ -359,6 +359,14 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 - When making changes that affect documented surface area, **update AGENTS.md in the same commit**
 
 <!-- brain:start -->
+## Build & Test
+
+```bash
+just           # Run default recipe
+just test      # Test
+just build     # Build
+```
+
 ## Task Management
 
 This project uses `brain` for task tracking. **Always use MCP tools for task operations** — they provide structured responses and are the canonical interface for AI agents. CLI commands exist for human terminal use only.
@@ -369,6 +377,7 @@ When running as an MCP server (`brain mcp`), these tools are available:
 
 **Task tools:**
 - `tasks_apply_event` — Single tool for all task mutations. Event types: `task_created`, `task_updated`, `status_changed`, `dependency_added`, `dependency_removed`, `comment_added`, `label_added`, `label_removed`, `note_linked`, `note_unlinked`, `parent_set`. Accepts task ID as full ID or unique prefix (e.g. `BRN-01JPH`).
+- `tasks_create` — Create a task with a flat schema (no event envelope). Required param: `title`. Optional: `description`, `priority` (0-4, default 4), `task_type` (task|bug|feature|epic|spike), `assignee`, `parent` (task ID prefix), `due_ts` (ISO 8601), `defer_until` (ISO 8601), `actor` (default: mcp). Returns `{task_id, task, unblocked_task_ids}`.
 - `tasks_list` — List tasks filtered by status: `open` (default, excludes done), `ready` (no unresolved deps), `blocked` (has unresolved deps), `done`. Supports `task_ids` array for batch lookup, `limit` for pagination, `include_description` flag, and per-field filters: `priority` (0-4), `task_type`, `assignee`, `label`, `search` (FTS5 full-text search on title+description).
 - `tasks_get` — Get full task details including relationships, comments, labels, and linked notes. Use `expand` parameter (`parent`, `children`, `blocked_by`, `blocks`) to inline related task objects.
 - `tasks_next` — Get highest-priority ready tasks sorted by priority then due date. Use for "what should I work on?" queries.
@@ -377,11 +386,31 @@ When running as an MCP server (`brain mcp`), these tools are available:
 - `tasks_labels_batch` — Batch label operations. Actions: `add` (label + task_ids), `remove` (label + task_ids), `rename` (old_label + new_label), `purge` (label). Returns succeeded/failed/summary.
 - `tasks_deps_batch` — Batch dependency operations. Actions: `add`/`remove` (pairs of task_id + depends_on_task_id), `chain` (ordered task_ids), `fan` (source_task_id + dependent_task_ids), `clear` (task_id). Returns succeeded/failed/summary.
 
+**Note:** `tasks_apply_event` and `tasks_close` automatically generate and embed searchable capsules into LanceDB on every task create, update, or completion. Tasks become discoverable via `memory_search_minimal` without any extra steps.
+
+**Brain tools:**
+- `brains.list` — List all brain projects registered in `~/.brain/config.toml`. Returns `name`, `id`, `root` (filesystem path), and `prefix` (task ID prefix) for each brain. Also callable as `brains_list`.
+
 **Memory tools:**
-- `memory_search_minimal` — Semantic search across indexed notes. Returns compact stubs (title, summary, score). Use `intent` parameter to control ranking: `lookup` (keyword-heavy), `planning` (recency + links), `reflection` (recency-heavy), `synthesis` (vector-heavy). Optional `tags` array boosts results matching the given tags via Jaccard similarity (e.g. `["rust", "memory"]`).
+- `memory_search_minimal` — Semantic search across indexed notes and tasks. Returns compact stubs (title, summary, score, kind). The `kind` field is `"note"` for indexed documents, `"task"` for active task capsules, or `"task-outcome"` for completed task outcomes. Use `intent` parameter to control ranking: `lookup` (keyword-heavy), `planning` (recency + links), `reflection` (recency-heavy), `synthesis` (vector-heavy). Optional `tags` array boosts results matching the given tags via Jaccard similarity (e.g. `["rust", "memory"]`).
 - `memory_expand` — Expand stubs from `search_minimal` to full content by chunk ID. Use `budget` to control token limit. Returns `byte_start`/`byte_end` offsets within the source file for each chunk.
 - `memory_write_episode` — Record structured episodes (goal, actions, outcome) with tags and importance score.
 - `memory_reflect` — Retrieve source material for a topic, suitable for reflection and synthesis.
+
+**Records tools:**
+- `records.create_artifact` — Create a new artifact record with base64-encoded content.
+- `records.save_snapshot` — Save an opaque state bundle as a snapshot record.
+- `records.get` — Get a record by ID with full metadata, tags, and links (supports prefix resolution).
+- `records.list` — List records with optional filters (kind, status, tag, task_id).
+- `records.fetch_content` — Fetch raw content of a record. Text content (text/*, application/json, application/toml, application/yaml) is auto-decoded as UTF-8 and returned in a `text` field; binary content is returned as base64 in `data`. Response includes `encoding` ('utf-8' or 'base64'), `title`, and `kind` metadata.
+- `records.archive` — Archive a record (metadata-only, payload preserved).
+- `records.tag_add` — Add a tag to a record (idempotent).
+- `records.tag_remove` — Remove a tag from a record (idempotent).
+- `records.link_add` — Link a record to a task or note chunk.
+- `records.link_remove` — Remove a link from a record.
+
+**Other tools:**
+- `status` — Health/status probe. Returns project name, brain ID, task counts, and index stats.
 
 ### CLI Commands (for human terminal use)
 
@@ -395,9 +424,17 @@ brain tasks list --priority 1 --label urgent # Combined filters
 brain tasks show <id>          # Detailed task view
 
 # Creating & updating
-brain tasks create --title="..." --description="..." --type=task --priority=2
+brain tasks create --title="..." --description="..." --task-type=task --priority=2
 brain tasks update <id> --status=in_progress
 brain tasks comment <id> "comment text"
+
+# Cross-brain task creation
+brain tasks create --title="..." --brain=<NAME_OR_ID>          # Create in another brain
+brain tasks create --title="..." --brain=infra --link-from=BRN-01X --link-type=related  # Create + auto-link
+
+# Registry
+brain list                     # List registered brains
+brain list --json              # List as JSON (name, id, root, prefix)
 
 # Dependencies
 brain tasks dep add <task> <depends-on>
@@ -438,8 +475,6 @@ When working on tasks:
 1. **Before starting**: Mark the task `in_progress` via `tasks_apply_event` (status_changed)
 2. **While working**: Add comments via `tasks_apply_event` (comment_added) for significant decisions or blockers
 3. **On completion**: Close the task via `tasks_close` (or `tasks_apply_event` with status_changed to `done`)
-
-**Assignee**: Borg agents (Queen, Drone, Vinculum, Subroutine) use their agent name as the assignee — this is defined in their agent definitions. If you are the lead session (not a named Borg agent), set the assignee to the current Git user name (`git config user.name`).
 
 **Cross-task insights**: If you discover during work on one task that something affects or should be captured on a different task, immediately add a comment to that task with the relevant context. Don't defer — the insight is freshest now and costs seconds to capture vs. minutes to reconstruct later.
 
