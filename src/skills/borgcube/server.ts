@@ -15,7 +15,7 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
-import { approvalSchema } from "./types.ts";
+import { approvalSchema, triageSchema } from "./types.ts";
 import {
   activateNodes,
   addEdge,
@@ -679,7 +679,7 @@ server.tool(
     nodeId: z.string().describe("Node ID to fail"),
     reason: z.string().describe("Human-readable failure reason"),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -716,16 +716,55 @@ server.tool(
       }
     }
 
+    const failureData = {
+      ok: true,
+      nodeId: params.nodeId,
+      status: checkpoint.graph.nodes[params.nodeId]?.status,
+      machineState: checkpoint.machineState,
+    };
+
+    // Elicit triage decision from the user
+    const node = checkpoint.graph.nodes[params.nodeId];
+    const nodeLabel = node?.label ?? params.nodeId;
+    const nodeRepo = node?.repo ?? "unknown";
+    const message =
+      `Node "${nodeLabel}" (id: ${params.nodeId}, repo: ${nodeRepo}) has failed.\n` +
+      `Reason: ${params.reason}\n\n` +
+      `Choose how to proceed with this failure.`;
+
+    const elicitResult = await elicitForm(message, triageSchema({
+      decisionTitle: "Triage decision",
+      contextTitle: "Additional context (optional)",
+    }));
+
+    if (elicitResult.action === "accept") {
+      const decision = elicitResult.content.decision as string;
+      const context = typeof elicitResult.content.context === "string" &&
+          elicitResult.content.context.length > 0
+        ? elicitResult.content.context
+        : undefined;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ...failureData,
+              triage: {
+                decision,
+                ...(context !== undefined ? { context } : {}),
+              },
+            }),
+          },
+        ],
+      };
+    }
+
+    // decline (no elicitation capability) or cancel — return without triage
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            ok: true,
-            nodeId: params.nodeId,
-            status: checkpoint.graph.nodes[params.nodeId]?.status,
-            machineState: checkpoint.machineState,
-          }),
+          text: JSON.stringify(failureData),
         },
       ],
     };
