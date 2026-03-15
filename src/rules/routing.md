@@ -67,19 +67,20 @@ Rule of thumb: if the answer is a list of file paths, use reconnaissance. If the
 
 ### /scan vs /recon
 
-**`/scan`** is fast and independent: parallel subagents, no communication, each works in isolation.
-**`/recon`** is collaborative and deep: coordinated investigation where findings may alter another adjunct's path.
+**`/scan`** is fast and independent: parallel subagents, no communication, each works in isolation. Like a sensor sweep.
+**`/recon`** is collaborative and deep: coordinated investigation where findings may alter another adjunct's path. Like a coordinated away mission.
 
 Rule of thumb: if the questions are independent, use `/scan`. If one adjunct's findings would change another's investigation, use `/recon`.
 
 ## Route to `/recon` when:
-- The investigation has interconnected questions
+- The investigation has interconnected questions — one agent's findings affect another's
 - Agents must share discoveries and challenge each other's findings in real-time
 - The user wants recon results tracked as brain tasks with linked artifacts
-- Cross-codebase investigation is needed
-- A feature needs requirements gathering before implementation
-- The user wants interactive scoping with clarifying questions
-- The user wants a tactical-analysis-reviewed implementation plan before execution
+- Cross-codebase investigation is needed (use `--include` to target other brain repos)
+- A feature needs requirements gathering before implementation (use `--plan`)
+- The user wants interactive scoping with clarifying questions (use `--plan`)
+- The feature spans multiple codebases and needs cross-brain task creation (use `--plan --include`)
+- The user wants a tactical-analysis-reviewed implementation plan before execution (use `--plan`)
 - The user explicitly uses `/recon`
 
 ## Route to `/diagnose` when:
@@ -87,7 +88,7 @@ Rule of thumb: if the questions are independent, use `/scan`. If one adjunct's f
 - Multiple possible explanations exist and need to be tested in parallel
 - A single agent would likely anchor on the first plausible theory
 - The user wants competing hypotheses investigated adversarially
-- The user wants a fix implemented after diagnosis
+- The user wants a fix implemented after diagnosis (use `--fix`)
 - The user explicitly uses `/diagnose`
 
 ## Route to `/swarm` when:
@@ -96,15 +97,15 @@ Rule of thumb: if the questions are independent, use `/scan`. If one adjunct's f
 - The task is parallelizable by file group with no cross-group dependencies
 
 ## Route to `/harvest` when:
-- The session involved significant exploration
+- The session involved significant exploration (many file reads, searches, web fetches)
 - The user wants to preserve what was learned before the session ends
-- Knowledge was gathered that would be lost when context compacts
+- Knowledge was gathered that would be lost when conversation context compacts
 - The user explicitly uses `/harvest`
 
 ### /harvest vs /assimilate
-- `/assimilate` captures **what was done**
-- `/harvest` captures **what was learned**
-- Use both at end of exploratory sessions: `/harvest` first, then `/assimilate`
+- `/assimilate` captures *what was done* — git changes, task progress, session summary
+- `/harvest` captures *what was learned* — file locations, API behaviors, gotchas, architectural insights
+- Use both at end of exploratory sessions: `/harvest` first (extract knowledge), then `/assimilate` (summarize work)
 
 ## Route to `/bisect` when:
 - The user needs to find which commit introduced a bug or regression
