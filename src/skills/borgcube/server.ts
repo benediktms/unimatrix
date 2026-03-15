@@ -9,7 +9,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import type { Checkpoint, RepoMetadata } from "./types.ts";
+import type {
+  Checkpoint,
+  ElicitationRequestedSchema,
+  ElicitResult,
+  RepoMetadata,
+} from "./types.ts";
 import {
   activateNodes,
   clearGate,
@@ -55,6 +60,39 @@ const server = new McpServer({
   name: "borgcube",
   version: "1.0.0",
 });
+
+// ---------------------------------------------------------------------------
+// Elicitation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Request user input via MCP elicitation (form mode).
+ *
+ * Checks whether the connected client advertises elicitation capability.
+ * If capable, sends an elicitation/create request and returns the result.
+ * If the client lacks elicitation capability, returns `{ action: 'decline' }`
+ * so callers can treat it as a graceful opt-out.
+ */
+export async function elicitForm(
+  message: string,
+  requestedSchema: ElicitationRequestedSchema,
+): Promise<ElicitResult> {
+  const capabilities = server.server.getClientCapabilities();
+  if (!capabilities?.elicitation) {
+    return { action: "decline" };
+  }
+  // Our ElicitationRequestedSchema is a structural subset of the SDK's
+  // requestedSchema. Cast to the parameter type via Parameters<> to avoid
+  // importing the SDK types.js entry directly.
+  type ElicitInputParams = Parameters<typeof server.server.elicitInput>[0];
+  const raw = await server.server.elicitInput(
+    { message, requestedSchema } as ElicitInputParams,
+  );
+  if (raw.action === "accept") {
+    return { action: "accept", content: raw.content ?? {} };
+  }
+  return { action: raw.action };
+}
 
 // ---------------------------------------------------------------------------
 // Tool: init
