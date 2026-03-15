@@ -121,7 +121,7 @@ sequenceDiagram
     participant Server as UNIMATRIX Server
     participant User
 
-    rect rgba(100, 150, 200, 0.3)
+    rect rgb(100, 150, 200)
         Note over Lead,User: Wave Approval Flow
         Lead->>Server: next_wave()
         Server-->>Lead: Wave object
@@ -139,7 +139,7 @@ sequenceDiagram
         end
     end
 
-    rect rgba(150, 200, 150, 0.3)
+    rect rgb(150, 200, 150)
         Note over Lead,User: Failure Triage Flow
         Lead->>Server: status()
         Server-->>Lead: Enumerate failed nodes
@@ -159,7 +159,7 @@ sequenceDiagram
         end
     end
 
-    rect rgba(200, 150, 150, 0.3)
+    rect rgb(200, 150, 150)
         Note over Lead,User: Refinement Approval Flow
         Lead->>Lead: Detect new repos via --resume --include
         Lead->>User: Present graph + plan, elicit modifications
