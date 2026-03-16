@@ -64,7 +64,7 @@ compile_binaries() {
   if [ ! -f "$bin_dir/unimatrix" ] || [ "$server_src" -nt "$bin_dir/unimatrix" ]; then
     echo "Compiling unimatrix..."
     mkdir -p "$bin_dir"
-    (cd "$UNIMATRIX_DIR" && deno compile --allow-read --allow-env --output bin/unimatrix src/skills/borgcube/server.ts)
+    (cd "$UNIMATRIX_DIR" && deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/borgcube/server.ts)
     echo ""
   fi
 }

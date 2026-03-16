@@ -11,7 +11,7 @@
     "lint:borgcube": "deno lint src/skills/borgcube/",
     "fmt:borgcube": "deno fmt src/skills/borgcube/",
     "check:borgcube": "deno check src/skills/borgcube/server.ts",
-    "compile:borgcube": "deno compile --allow-read --allow-env --output bin/unimatrix src/skills/borgcube/server.ts"
+    "compile:borgcube": "deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/borgcube/server.ts"
   },
   "compilerOptions": {
     "strict": true
