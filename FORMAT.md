@@ -100,8 +100,8 @@ hidden: true
 ---
 ```
 
-> **Note**: OpenCode derives the agent name from the filename (e.g., `drone.md`
-> → agent name "drone"). The `name` field in `claude:` is not carried over.
+> **Note**: OpenCode derives the agent name from the filename (e.g., `adjunct-assimilation-protocol.md`
+> → agent name "adjunct-assimilation-protocol"). The `name` field in `claude:` is not carried over.
 
 ### 1.2 Merge Rules
 
@@ -265,7 +265,7 @@ task(subagent_type="adjunct-validation-protocol", ...)
 
 | Claude Code Field | OpenCode Equivalent | Notes |
 |-------------------|---------------------|-------|
-| `name: Drone` | (filename: `drone.md`) | OpenCode derives name from filename |
+| `name: Drone` | (filename: `adjunct-assimilation-protocol.md`) | OpenCode derives name from filename |
 | `model: sonnet` | `model: sonnet` | Shared — identical semantics |
 | `description: "..."` | `description: "..."` | Shared — required on both platforms |
 | `permissionMode: bypassPermissions` | `permission: { "*": allow }` | Grant all tool permissions |
@@ -318,13 +318,12 @@ task(subagent_type="adjunct-validation-protocol", ...)
 ```
 src/
 ├── agents/                    # Combined agent definitions
-│   ├── queen.md               # platforms: [claude]
-│   ├── borgqueen.md           # platforms: [opencode]
-│   ├── drone.md
-│   ├── vinculum.md
-│   ├── probe.md
-│   ├── cortex.md
-│   └── subroutine.md
+│   ├── queen-coordination-protocol.md
+│   ├── adjunct-assimilation-protocol.md
+│   ├── adjunct-validation-protocol.md
+│   ├── adjunct-reconnaissance-protocol.md
+│   ├── adjunct-tactical-analysis-protocol.md
+│   └── adjunct-closure-protocol.md
 ├── skills/                    # Skill definitions (shared body + conditionals)
 │   ├── assemble/SKILL.md
 │   ├── adapt/SKILL.md

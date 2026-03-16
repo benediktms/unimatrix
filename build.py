@@ -353,7 +353,7 @@ def build_file(src_path: Path, target: str) -> None:
     # Determine output path
     base_dir = OUTPUT_MAP[category][target]
     # For skills: preserve subdirectory structure (e.g. skills/assemble/SKILL.md)
-    # For agents/rules: flat file (e.g. agents/drone.md)
+    # For agents/rules: flat file (e.g. agents/adjunct-assimilation-protocol.md)
     rel_within_category = Path(*rel.parts[1:])  # Strip category prefix
     out_path = base_dir / rel_within_category
 

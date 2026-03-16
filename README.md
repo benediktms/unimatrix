@@ -402,12 +402,12 @@ flowchart TD
 unimatrix/
 ├── src/                          # Combined source (human-authored)
 │   ├── agents/                   # Agent definitions (combined frontmatter)
-│   │   ├── borgqueen.md          #   Lead agent — OpenCode only
-│   │   ├── drone.md              #   Implementation worker
-│   │   ├── vinculum.md           #   Code reviewer
-│   │   ├── probe.md              #   Codebase scout
-│   │   ├── cortex.md             #   Deep analyst
-│   │   └── subroutine.md         #   Cleanup worker
+│   │   ├── queen-coordination-protocol.md  #   Lead agent coordination
+│   │   ├── adjunct-assimilation-protocol.md #   Implementation worker
+│   │   ├── adjunct-validation-protocol.md   #   Code reviewer
+│   │   ├── adjunct-reconnaissance-protocol.md #  Codebase scout
+│   │   ├── adjunct-tactical-analysis-protocol.md # Deep analyst
+│   │   └── adjunct-closure-protocol.md      #   Cleanup worker
 │   ├── skills/                   # Slash command skills
 │   │   ├── assemble/SKILL.md     #   End-to-end orchestration
 │   │   ├── adapt/SKILL.md        #   Iterative refinement
