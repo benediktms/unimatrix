@@ -17,18 +17,18 @@ export const ORDINALS = [
 ];
 
 export const ROLE_TITLES: Record<string, string> = {
-  Drone: "Tactical Adjunct",
-  Vinculum: "Auxiliary Processor",
-  Probe: "Adjunct",
-  Cortex: "Cortical Processing Adjunct",
-  Subroutine: "Adjunct",
+  Assimilation: "Tactical Adjunct",
+  Validation: "Auxiliary Processor",
+  Reconnaissance: "Adjunct",
+  TacticalAnalysis: "Cortical Processing Adjunct",
+  Closure: "Adjunct",
 };
 
 // Roles where each agent gets its own unique ordinal (== its position).
 // All other roles share one randomly chosen ordinal across the batch.
-export const UNIQUE_ORDINAL_ROLES = new Set(["Cortex", "Vinculum"]);
+export const UNIQUE_ORDINAL_ROLES = new Set(["TacticalAnalysis", "Validation"]);
 
-export type Role = "Drone" | "Vinculum" | "Probe" | "Cortex" | "Subroutine";
+export type Role = "Assimilation" | "Validation" | "Reconnaissance" | "TacticalAnalysis" | "Closure";
 
 export interface DesignateResult {
   designations: string[];
@@ -38,24 +38,28 @@ export interface DesignateResult {
 /**
  * Generate Borg-style designations.
  *
- * @param count   Number of agents (1–12).
- * @param role    Agent role (determines functional title). Defaults to "Adjunct".
- * @param trimatrix  If true, use "Trimatrix <random 1-999>" as unit.
+ * @param count        Number of agents (1–12).
+ * @param role         Agent role (determines functional title). Defaults to "Adjunct".
+ * @param trimatrix    If true, use "Trimatrix <random 1-999>" as unit.
+ * @param trimatrix_id If provided and trimatrix is true, pin this ID instead of generating a random one.
  */
 export function designate(
   count: number,
   role?: Role,
   trimatrix?: boolean,
+  trimatrix_id?: number,
 ): DesignateResult {
   const titleBase = role ? (ROLE_TITLES[role] ?? "Adjunct") : "Adjunct";
   const uniqueOrdinals = role !== undefined && UNIQUE_ORDINAL_ROLES.has(role);
 
   let unit: string;
-  let trimatrix_id: number | undefined;
+  let resolved_trimatrix_id: number | undefined;
 
   if (trimatrix) {
-    trimatrix_id = Math.floor(Math.random() * 999) + 1;
-    unit = `Trimatrix ${trimatrix_id}`;
+    resolved_trimatrix_id = trimatrix_id !== undefined
+      ? trimatrix_id
+      : Math.floor(Math.random() * 999) + 1;
+    unit = `Trimatrix ${resolved_trimatrix_id}`;
   } else {
     unit = "Unimatrix Zero";
   }
@@ -68,7 +72,7 @@ export function designate(
       designations: [
         `${NUMBERS[position]} of ${NUMBERS[total]}, ${ORDINALS[ordinal]} ${titleBase} of ${unit}`,
       ],
-      trimatrix_id,
+      trimatrix_id: resolved_trimatrix_id,
     };
   }
 
@@ -85,7 +89,7 @@ export function designate(
         (p) =>
           `${NUMBERS[p]} of ${NUMBERS[count]}, ${ORDINALS[p]} ${titleBase} of ${unit}`,
       ),
-      trimatrix_id,
+      trimatrix_id: resolved_trimatrix_id,
     };
   }
 
@@ -95,6 +99,6 @@ export function designate(
       (p) =>
         `${NUMBERS[p]} of ${NUMBERS[count]}, ${ORDINALS[sharedOrdinal]} ${titleBase} of ${unit}`,
     ),
-    trimatrix_id,
+    trimatrix_id: resolved_trimatrix_id,
   };
 }

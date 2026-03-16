@@ -14,17 +14,18 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 1. **Count subtasks** — Determine how many agents will be dispatched.
 2. **Generate designations** — Call the `mcp__unimatrix__designate` MCP tool with:
    - `count` (number, 1–12) — number of designations to generate
-   - `role` (optional string) — one of `Drone`, `Vinculum`, `Probe`, `Cortex`, `Subroutine`
+   - `role` (optional string) — one of `Assimilation`, `Validation`, `Reconnaissance`, `TacticalAnalysis`, `Closure`
    - `trimatrix` (optional boolean) — set `true` for all spawned agents (uses "Trimatrix \<N\>" instead of "Unimatrix Zero")
+   - `trimatrix_id` (optional number) — pin a specific Trimatrix ID (1-999) instead of generating a random one
 
    The tool returns `{ designations: string[], trimatrix_id?: number }`. Each element of `designations` is one full designation string.
 
    Role determines the Borg functional title:
-   - `Drone` → Tactical Adjunct
-   - `Vinculum` → Auxiliary Processor
-   - `Probe` → Adjunct
-   - `Cortex` → Cortical Processing Adjunct
-   - `Subroutine` → Adjunct
+   - `Assimilation` → Tactical Adjunct
+   - `Validation` → Auxiliary Processor
+   - `Reconnaissance` → Adjunct
+   - `TacticalAnalysis` → Cortical Processing Adjunct
+   - `Closure` → Adjunct
    - (default / no role) → Adjunct
 
 3. **Assign to agents** — When spawning each agent:
@@ -43,11 +44,11 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 Invoked by the Queen during `/assemble` Step 2 before dispatching drones. Can also be called manually:
 
 ```
-/designate <N>                              # Generic Adjunct titles (Unimatrix Zero)
-/designate <N> --role Drone                 # Tactical Adjunct titles
-/designate <N> --role Vinculum              # Auxiliary Processor titles
-/designate <N> --role Probe                 # Adjunct titles
-/designate <N> --role Cortex                # Cortical Processing Adjunct titles
-/designate <N> --role Subroutine            # Adjunct titles
-/designate <N> --role Drone --trimatrix     # Trimatrix instead of Unimatrix Zero
+/designate <N>                                      # Generic Adjunct titles (Unimatrix Zero)
+/designate <N> --role Assimilation                  # Tactical Adjunct titles
+/designate <N> --role Validation                    # Auxiliary Processor titles
+/designate <N> --role Reconnaissance                # Adjunct titles
+/designate <N> --role TacticalAnalysis              # Cortical Processing Adjunct titles
+/designate <N> --role Closure                       # Adjunct titles
+/designate <N> --role Assimilation --trimatrix      # Trimatrix instead of Unimatrix Zero
 ```

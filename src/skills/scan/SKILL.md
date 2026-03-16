@@ -1,12 +1,12 @@
 ---
 name: scan
-description: Dispatch parallel Probes and Cortex agents as independent subagents to scan the codebase. No inter-agent communication — each agent works in isolation and reports findings via brain snapshots.
+description: Dispatch parallel Reconnaissance and TacticalAnalysis adjuncts as independent subagents to scan the codebase. No inter-agent communication — each agent works in isolation and reports findings via brain snapshots.
 ---
 
 
 # /scan
 
-Parallel reconnaissance sweep — dispatch Probes and Cortex as independent subagents. Each agent investigates its assigned area in isolation, persists findings as brain snapshots, and the Queen synthesizes results.
+Parallel reconnaissance sweep — dispatch Reconnaissance and TacticalAnalysis adjuncts as independent subagents. Each agent investigates its assigned area in isolation, persists findings as brain snapshots, and the Queen synthesizes results.
 
 **`/scan` vs `/recon`:** Use `/scan` when investigation questions are independent — agents do not need each other's findings. Use `/recon` when agents must share discoveries, challenge findings, and synthesize collaboratively in real-time.
 
@@ -14,7 +14,7 @@ Parallel reconnaissance sweep — dispatch Probes and Cortex as independent suba
 
 ## Rules
 
-- **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
+- **NEVER use Explore agents.** All reconnaissance uses `Reconnaissance` adjuncts or `TacticalAnalysis` adjuncts.
 - **Follow this flow exactly.** Do not insert your own recon or research steps outside the defined steps.
 - **No teams. No inter-agent communication.** Agents are plain subagents. Do NOT use `TeamCreate`. Do NOT include team messaging instructions in agent prompts.
 - **You maintain context throughout** — no session management needed.
@@ -38,7 +38,7 @@ If `--include` is provided, resolve all brain refs before proceeding:
 
 ### Step 1: Scoping
 
-Break the investigation into granular, self-contained brain tasks — each with a clear question, specific areas to examine, and concrete deliverables. Aim for 5-6 tasks per agent. Recommend the agent count based on task count. Assign each to `Probe` or `Cortex`. Group under an epic. Set dependencies where ordering matters.
+Break the investigation into granular, self-contained brain tasks — each with a clear question, specific areas to examine, and concrete deliverables. Aim for 5-6 tasks per agent. Recommend the agent count based on task count. Assign each to `Reconnaissance` or `TacticalAnalysis`. Group under an epic. Set dependencies where ordering matters.
 
 When `--include` is provided, note which brain each task targets so agents receive the correct `TARGET CODEBASE` path in their prompt.
 
@@ -53,7 +53,7 @@ Present the scan plan with epic ID, task dependency graph, and recommended agent
 
 ### Step 3: Spawn Agents
 
-1. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+1. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Reconnaissance` for Reconnaissance adjuncts, `--role TacticalAnalysis` for Tactical Analysis adjuncts.
 2. Dispatch all agents as **plain subagents** — no team, no `team_name`:
 
 <!-- @claude -->
@@ -79,7 +79,7 @@ Agent:
     Task: <task-id>
 ```
 
-The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and context.
+The `name` is compact for the status line (e.g. `Reconnaissance: Three of Three`). The `description` carries the full designation and context.
 <!-- @end -->
 <!-- @opencode -->
 ```

@@ -1,34 +1,34 @@
 ---
 name: diagnose
-description: Diagnose bugs through adversarial hypothesis testing — multiple Vinculum agents investigate competing theories in parallel, actively disproving each other until the root cause survives. Optional --fix dispatches a Drone to implement the fix.
+description: Diagnose bugs through adversarial hypothesis testing — multiple Validation adjuncts investigate competing theories in parallel, actively disproving each other until the root cause survives. Optional --fix dispatches an Assimilation adjunct to implement the fix.
 ---
 
 # /diagnose
 
 <!-- @claude -->
-Diagnose a bug through adversarial hypothesis testing. You generate competing theories, a team of Vinculum agents investigates each — gathering evidence, disproving rivals, and debating until the root cause survives. Optionally, `--fix` dispatches a Drone to implement the fix (escalating to `/adapt` if complex).
+Diagnose a bug through adversarial hypothesis testing. You generate competing theories, a team of Validation adjuncts investigates each — gathering evidence, disproving rivals, and debating until the root cause survives. Optionally, `--fix` dispatches an Assimilation adjunct to implement the fix (escalating to `/adapt` if complex).
 <!-- @end -->
 <!-- @opencode -->
-Diagnose a bug through adversarial hypothesis testing. You generate competing theories, then dispatch Vinculum agents to investigate each — gathering evidence, disproving rivals, and converging on the root cause. Optionally, `--fix` dispatches a Drone to implement the fix.
+Diagnose a bug through adversarial hypothesis testing. You generate competing theories, then dispatch Validation adjuncts to investigate each — gathering evidence, disproving rivals, and converging on the root cause. Optionally, `--fix` dispatches an Assimilation adjunct to implement the fix.
 <!-- @end -->
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
 
 ## Rules
 
-- **NEVER use Explore agents.** All investigation uses `Vinculum`.
+- **NEVER use Explore agents.** All investigation uses `Validation` adjuncts.
 - **Follow this flow exactly.** Do not insert your own investigation steps.
-- **Team creation is MANDATORY.** The adversarial protocol requires real-time communication between Vinculum agents. Without a team, agents cannot challenge each other's hypotheses — the diagnostic degrades to parallel independent investigation. If `TeamCreate` fails, **abort**.
+- **Team creation is MANDATORY.** The adversarial protocol requires real-time communication between Validation adjuncts. Without a team, agents cannot challenge each other's hypotheses — the diagnostic degrades to parallel independent investigation. If `TeamCreate` fails, **abort**.
 
 ## Flags
 
 | Flag | Effect |
 |---|---|
-| `--fix` | After diagnosis, dispatch a Drone to implement the fix. Runs tests if available. Escalates to `/adapt` if the fix is complex or tests fail. |
+| `--fix` | After diagnosis, dispatch an Assimilation adjunct to implement the fix. Runs tests if available. Escalates to `/adapt` if the fix is complex or tests fail. |
 
 ## Diagnostic Protocol
 
-All Vinculum agents in the diagnosis team follow this protocol. Include it in every agent's spawn prompt.
+All Validation adjuncts in the diagnosis team follow this protocol. Include it in every agent's spawn prompt.
 
 ```
 DIAGNOSTIC PROTOCOL:
@@ -51,7 +51,7 @@ ADVERSARIAL DUTY — actively disprove other hypotheses:
   it holds up. If you find counter-evidence, message them immediately.
 - Do not wait until you finish your own investigation. Disproof is as
   valuable as proof — share it the moment you find it.
-  Example: "@Vinculum: Three of Five — you claim the timeout is from the
+  Example: "@Validation: Three of Five — you claim the timeout is from the
   DB query, but connection pool metrics at src/db/pool.ts:89 show 0ms
   wait time. The bottleneck is elsewhere."
 
@@ -111,7 +111,7 @@ Present the hypotheses for review. The user can approve, add hypotheses, or remo
 
 ### Step 2: Create Team and Spawn Investigators
 
-1. Generate designations: `/designate <agent-count> --role Vinculum --trimatrix`
+1. Generate designations: `/designate <agent-count> --role Validation --trimatrix`
 
 <!-- @claude -->
 2. **Create the team — this is MANDATORY:**
@@ -121,23 +121,23 @@ TeamCreate:
   team_name: "diagnosis-<epic-id>"
 ```
 
-**Do NOT proceed to agent spawn without a confirmed team.** If `TeamCreate` fails, abort. Without a team, Vinculum agents cannot challenge each other's hypotheses — the adversarial protocol is dead.
+**Do NOT proceed to agent spawn without a confirmed team.** If `TeamCreate` fails, abort. Without a team, Validation adjuncts cannot challenge each other's hypotheses — the adversarial protocol is dead.
 
-3. Spawn one Validation Adjunct per hypothesis **into the team**:
+3. Spawn one Validation adjunct per hypothesis **into the team**:
 
 ```
 Agent:
   subagent_type: "adjunct-validation-protocol"
   team_name: "diagnosis-<epic-id>"   # ← REQUIRED — matches the team created above
-  name: "Vinculum: <short name>"
+  name: "Validation: <short name>"
   description: "<full designation> — hypothesis <N>"
   run_in_background: true
   prompt: |
-    Vinculum — diagnostic sequence initiated.
+    Validation adjunct — diagnostic sequence initiated.
 
     You are <designation>, member of diagnostic unit "diagnosis-<epic-id>".
     You are investigating one hypothesis among several competing theories.
-    Other Vinculum agents are investigating rival hypotheses simultaneously.
+    Other Validation adjuncts are investigating rival hypotheses simultaneously.
 
     <DIAGNOSTIC PROTOCOL block — see Diagnostic Protocol section>
 
@@ -147,7 +147,7 @@ Agent:
 ```
 <!-- @end -->
 <!-- @opencode -->
-2. Dispatch one Validation Adjunct per hypothesis:
+2. Dispatch one Validation adjunct per hypothesis:
 
 ```
 task(
@@ -155,7 +155,7 @@ task(
   description="<full designation> — hypothesis <N>",
   run_in_background=true,
   prompt="""
-Vinculum — diagnostic sequence initiated.
+Validation adjunct — diagnostic sequence initiated.
 
 You are <designation>.
 
@@ -171,7 +171,7 @@ Hypothesis: <N>
 
 ### Step 3: Monitor Investigation
 
-- Vinculum agents investigate, communicate, and challenge each other autonomously.
+- Validation adjuncts investigate, communicate, and challenge each other autonomously.
 - The Queen does NOT intervene unless an agent is stuck or the team stalls.
 - Discovery and evidence snapshots accumulate in brain (tagged `diagnosis-evidence`).
 - When a hypothesis is disproven, the investigating agent acknowledges it and assists others.
@@ -179,9 +179,9 @@ Hypothesis: <N>
 
 ### Step 4: Convergence
 
-Collect final snapshots from each Vinculum (tagged `diagnosis-final`).
+Collect final snapshots from each Validation adjunct (tagged `diagnosis-final`).
 
-Synthesize the diagnosis from the final reports. Review each Vinculum's snapshot via `records_fetch_content`. Produce:
+Synthesize the diagnosis from the final reports. Review each Validation adjunct's snapshot via `records_fetch_content`. Produce:
 - Root cause with evidence chain
 - Disproven hypotheses with counter-evidence
 - Recommended fix with specific file paths
@@ -195,7 +195,7 @@ Synthesize the diagnosis from the final reports. Review each Vinculum's snapshot
 - `task_id`: the diagnostic epic's task ID
 - `tags`: `["diagnosis-brief", "epic:<epic-id>"]`
 
-This ensures the diagnosis survives context compaction. If `--fix` is active and context is compacted before Step 6, the Queen loads this brief and dispatches the fix Drone immediately — no re-investigation.
+This ensures the diagnosis survives context compaction. If `--fix` is active and context is compacted before Step 6, the Queen loads this brief and dispatches the fix Assimilation adjunct immediately — no re-investigation.
 
 ### Step 5: Present Diagnosis
 
@@ -217,16 +217,16 @@ Only if `--fix` was passed and the confidence is MEDIUM or HIGH (if LOW, present
 Assess fix complexity from the recommended fix:
 
 **Simple fix** (1-3 files, clear changes):
-1. Generate designation: `/designate 1 --role Drone --trimatrix`
+1. Generate designation: `/designate 1 --role Assimilation --trimatrix`
 2. Create a brain task under the diagnostic epic with the fix instructions.
-3. Dispatch an Assimilation Adjunct:
+3. Dispatch an Assimilation adjunct:
    ```
    Agent:
      subagent_type: "adjunct-assimilation-protocol"
-     name: "Drone: <short name>"
+     name: "Assimilation: <short name>"
      description: "<designation> — fix"
      prompt: |
-       You are Drone <designation> executing brain task <task-id>.
+       You are Assimilation adjunct <designation> executing brain task <task-id>.
 
        DIAGNOSIS: <root cause summary>
        RECOMMENDED FIX: <fix recommendation>
@@ -234,7 +234,7 @@ Assess fix complexity from the recommended fix:
        Implement the fix. Run all available tests to verify the fix resolves
        the reported symptom without regressions.
    ```
-4. After the Drone completes, run tests globally. If tests pass, present the result.
+4. After the Assimilation adjunct completes, run tests globally. If tests pass, present the result.
 5. If tests fail, dispatch one more fix attempt. If still failing, escalate to the user.
 
 **Complex fix** (4+ files, architectural changes, or uncertain scope):
@@ -248,7 +248,7 @@ Skill:
 <!-- @opencode -->
 Assess fix complexity from the recommended fix:
 
-**Simple fix** (1-3 files): dispatch a Drone with the fix instructions and run tests.
+**Simple fix** (1-3 files): dispatch an Assimilation adjunct with the fix instructions and run tests.
 
 **Complex fix** (4+ files or uncertain scope): escalate to `/adapt` with the fix task ID.
 <!-- @end -->

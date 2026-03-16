@@ -13,11 +13,11 @@ import tempfile
 import time
 
 STATE_DIR = "/tmp"
-KNOWN_TYPES = {"Drone", "Probe", "Vinculum", "Cortex", "Subroutine"}
+KNOWN_TYPES = {"Assimilation", "Reconnaissance", "Validation", "TacticalAnalysis", "Closure"}
 
 
 def normalize_agent_type(raw_type):
-    """Extract base agent type from prefixed names like 'Probe: Four of Four'."""
+    """Extract base agent type from prefixed names like 'Reconnaissance: Four of Four'."""
     if ": " in raw_type:
         prefix = raw_type.split(": ", 1)[0]
         if prefix in KNOWN_TYPES:

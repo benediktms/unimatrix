@@ -1,6 +1,6 @@
 ---
 name: reengage
-description: Resume execution of a previously planned brain task by dispatching Drones to ready subtasks.
+description: Resume execution of a previously planned brain task by dispatching Assimilation adjuncts to ready subtasks.
 ---
 
 # /reengage
@@ -30,24 +30,24 @@ Re-engage the collective on a previously planned brain task. Use this when execu
    - All subsequent dispatch, verification, and review happens inside this worktree.
    - **If the worktree was newly created**, link it to the brain via `mcp__unimatrix__brain_link` with `name` set to the brain name (from the parent repo's `.brain/brain.toml` or the epic's brain) and `cwd` set to the worktree directory. Skip this if re-entering an existing worktree — it is already linked.
 4. Check for stale `in_progress` subtasks from a prior crashed session. If found, present them to the user — they may need to be reset to `open` (if incomplete) or closed (if actually done). Do not auto-reset.
-5. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Drone snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Drones via `PRIOR CHECKPOINTS:` in the prompt.
+5. **Check for prior checkpoints** — Query `records_list` with tags `drone-checkpoint` and `parent:<task-id>` to find completed Assimilation adjunct snapshots from a prior session. If found, extract snapshot IDs to pass as context to the next wave's Assimilation adjuncts via `PRIOR CHECKPOINTS:` in the prompt.
 6. Use `tasks_next` to find ready (unblocked) subtasks.
 7. Dispatch agents for each ready subtask based on the task's **assignee** field:
 <!-- @claude -->
-   - `Drone` → spawn as `subagent_type: "adjunct-assimilation-protocol"` with full prompt (designation, task ID, mode blocks, prior checkpoints)
-   - `Probe` → spawn as `subagent_type: "adjunct-reconnaissance-protocol"` with the task ID as prompt
-   - `Cortex` → spawn as `subagent_type: "adjunct-tactical-analysis-protocol"` with the task ID as prompt
+   - `Assimilation` → spawn as `subagent_type: "adjunct-assimilation-protocol"` with full prompt (designation, task ID, mode blocks, prior checkpoints)
+   - `Reconnaissance` → spawn as `subagent_type: "adjunct-reconnaissance-protocol"` with the task ID as prompt
+   - `TacticalAnalysis` → spawn as `subagent_type: "adjunct-tactical-analysis-protocol"` with the task ID as prompt
 <!-- @end -->
 <!-- @opencode -->
-   - `Drone` → spawn as `task(subagent_type="adjunct-assimilation-protocol", description="<designation>", ...)` with full prompt (designation, task ID, mode blocks, prior checkpoints)
-   - `Probe` → spawn as `task(subagent_type="adjunct-reconnaissance-protocol", description="reconnaissance adjunct dispatch", ...)` with the task ID as prompt
-   - `Cortex` → spawn as `task(subagent_type="adjunct-tactical-analysis-protocol", description="tactical analysis adjunct dispatch", ...)` with the task ID as prompt
+   - `Assimilation` → spawn as `task(subagent_type="adjunct-assimilation-protocol", description="<designation>", ...)` with full prompt (designation, task ID, mode blocks, prior checkpoints)
+   - `Reconnaissance` → spawn as `task(subagent_type="adjunct-reconnaissance-protocol", description="reconnaissance adjunct dispatch", ...)` with the task ID as prompt
+   - `TacticalAnalysis` → spawn as `task(subagent_type="adjunct-tactical-analysis-protocol", description="tactical analysis adjunct dispatch", ...)` with the task ID as prompt
 <!-- @end -->
    - **Parallel waves** (independent tasks): spawn all agents with `run_in_background: true`
    - **Sequential waves** (dependent tasks): spawn one at a time, passing prior checkpoint IDs via `PRIOR CHECKPOINTS:` and recon snapshot IDs via `RECON SNAPSHOTS:` in the prompt
    - Extract snapshot IDs from each agent's completion comment for subsequent waves.
 8. Monitor progress, dispatch next waves as subtasks unblock
-9. When all subtasks complete, invoke **Vinculum** for review
+9. When all subtasks complete, invoke **Validation adjunct** for review
 10. Handle verdict (PASS → close all subtasks and the parent task via `tasks_close`, then call `memory_write_episode` to record what was accomplished and decisions made; NEEDS_CHANGES → fix; BLOCK → escalate)
 11. **Worktree merge** — After PASS, follow the same merge flow as `/assemble` Step 9b: exit worktree, present changes, ask user to merge/keep/discard, clean up worktree on merge.
 

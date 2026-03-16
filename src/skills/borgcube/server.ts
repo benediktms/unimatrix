@@ -1079,11 +1079,14 @@ server.tool(
     count: z.number().int().min(1).max(12).describe(
       "Number of agents to generate designations for (1–12)",
     ),
-    role: z.enum(["Drone", "Vinculum", "Probe", "Cortex", "Subroutine"])
+    role: z.enum(["Assimilation", "Validation", "Reconnaissance", "TacticalAnalysis", "Closure"])
       .optional()
       .describe("Agent role (determines Borg functional title)"),
     trimatrix: z.boolean().optional().describe(
       "If true, use 'Trimatrix <random>' as unit instead of 'Unimatrix Zero'",
+    ),
+    trimatrix_id: z.number().int().min(1).max(999).optional().describe(
+      "Pin a specific Trimatrix ID instead of generating a random one",
     ),
   },
   (params) => {
@@ -1091,6 +1094,7 @@ server.tool(
       params.count,
       params.role as Role | undefined,
       params.trimatrix,
+      params.trimatrix_id,
     );
     return {
       content: [{ type: "text", text: JSON.stringify(result) }],

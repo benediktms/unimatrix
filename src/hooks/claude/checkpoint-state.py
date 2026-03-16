@@ -248,7 +248,7 @@ def build_plan_checkpoint(epic, tasks_open, tasks_in_progress):
 
     sections.append(
         "\n## Recommended Action\n"
-        f"Use `/reengage` or dispatch Drones for epic **{epic_id}**."
+        f"Use `/reengage` or dispatch Assimilation adjuncts for epic **{epic_id}**."
     )
 
     return "\n".join(sections)

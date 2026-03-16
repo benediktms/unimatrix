@@ -1,11 +1,11 @@
 ---
 name: bisect
-description: Guided binary search through commits to find which commit introduced a bug or regression — supports automated mode (--test) and AI-guided mode with Probe analysis.
+description: Guided binary search through commits to find which commit introduced a bug or regression — supports automated mode (--test) and AI-guided mode with Reconnaissance adjunct analysis.
 ---
 
 # /bisect
 
-Find which commit introduced a bug or regression using `git bisect`. Runs in an isolated worktree to avoid disturbing the user's working tree. Supports automated mode with a test command or AI-guided mode where a Probe agent analyzes each commit's diff.
+Find which commit introduced a bug or regression using `git bisect`. Runs in an isolated worktree to avoid disturbing the user's working tree. Supports automated mode with a test command or AI-guided mode where a Reconnaissance adjunct analyzes each commit's diff.
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
 
@@ -82,7 +82,7 @@ Loop up to 20 iterations:
    git show HEAD        # or: git show HEAD -- <paths> if --path is set
    ```
 
-3. Dispatch a Probe agent with the commit diff and symptom description.
+3. Dispatch a Reconnaissance adjunct with the commit diff and symptom description.
 
 <!-- @claude -->
    Use `Agent(subagent_type="adjunct-reconnaissance-protocol", ...)` for dispatch.
@@ -91,7 +91,7 @@ Loop up to 20 iterations:
    Use `task(subagent_type="adjunct-reconnaissance-protocol", ...)` for dispatch.
 <!-- @end -->
 
-   Probe prompt template:
+   Reconnaissance adjunct prompt template:
 
    ```
    You are analyzing a commit during a git bisect to find which commit introduced a regression.
@@ -113,7 +113,7 @@ Loop up to 20 iterations:
    Then briefly explain your reasoning (2-3 sentences max).
    ```
 
-4. Parse the Probe verdict and advance bisect:
+4. Parse the Reconnaissance adjunct verdict and advance bisect:
    - `LIKELY_BAD` → `git bisect bad`
    - `LIKELY_GOOD` → `git bisect good`
    - `UNCERTAIN` → `git bisect skip`

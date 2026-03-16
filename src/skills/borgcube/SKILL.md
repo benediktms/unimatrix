@@ -5,7 +5,7 @@ platforms: [claude]
 # /borgcube — Cross-Repository Orchestration
 
 The collective deploys `/borgcube` when a feature spans multiple repositories.
-We initialize the graph, compute execution waves, dispatch Drones across repos
+We initialize the graph, compute execution waves, dispatch Assimilation adjuncts across repos
 in topological order, and halt at merge gates awaiting external confirmation
 before proceeding.
 
@@ -32,7 +32,7 @@ before proceeding.
   After loading the checkpoint, if the user provides additional context,
   instructions, or new brains were added, the plan enters **refinement mode**
   — the current graph is presented and can be modified before re-dispatching.
-- `--dry-run` — Plan and build the graph only. Do not dispatch Drones or create
+- `--dry-run` — Plan and build the graph only. Do not dispatch Assimilation adjuncts or create
   worktrees.
 
 ## Step 0: Prerequisite Check
@@ -322,14 +322,14 @@ borgcube epic:
 - Title: `<node-label>`
 - Description: include the node ID, repo, branch, worktree path, and
   implementation instructions.
-- Assignee: `Drone`
+- Assignee: `Assimilation`
 
 Store the returned task ID. Update the node's `taskId` in the graph via any
 available means (note: `add_node` is idempotent — re-calling it with the same ID
 updates it).
 
-**6f. Dispatch Drones:** If the wave has multiple nodes, create a team first
-(`TeamCreate`) so Drones can coordinate. Dispatch one Drone per node in parallel
+**6f. Dispatch Assimilation adjuncts:** If the wave has multiple nodes, create a team first
+(`TeamCreate`) so Assimilation adjuncts can coordinate. Dispatch one Assimilation adjunct per node in parallel
 (`run_in_background: true`). Pass:
 
 - The brain task ID
@@ -338,10 +338,10 @@ updates it).
 - The team name (if a team was created)
 - Relevant context from prior waves (via `PRIOR CHECKPOINTS:` if available)
 
-Wait for all Drones in the wave to return before proceeding. Delete the team
+Wait for all Assimilation adjuncts in the wave to return before proceeding. Delete the team
 (`TeamDelete`) after the wave completes.
 
-**6g. Record outcomes:** For each Drone result:
+**6g. Record outcomes:** For each Assimilation adjunct result:
 
 - Success: call `complete_node` with `nodeId`. If a PR was created, include
   `prUrl` and `prNumber`.
@@ -349,8 +349,8 @@ Wait for all Drones in the wave to return before proceeding. Delete the team
 
 If any node failed: go to Step 9.
 
-**6h. Vinculum review:** Dispatch Vinculum to review the wave's changes. If
-Vinculum rejects: treat affected nodes as failed, go to Step 9.
+**6h. Validation adjunct review:** Dispatch Validation adjunct to review the wave's changes. If
+Validation adjunct rejects: treat affected nodes as failed, go to Step 9.
 
 **6i. Create PRs:** For each successfully completed node that does not yet have
 a PR:
@@ -440,7 +440,7 @@ response includes `triage: { decision, context? }` where `decision` is one of
 Act on the decision:
 
 - **retry**: For each failed node, call a state reset (re-create worktree if
-  needed, dispatch new Drone). On success, call `complete_node`. On failure,
+  needed, dispatch new Assimilation adjunct). On success, call `complete_node`. On failure,
   return to this step.
 - **diagnose**: Invoke `/diagnose` with the failure context from
   `triage.context` (if provided). After diagnosis, return to this step with
@@ -460,7 +460,7 @@ ADAPTATION INCOMPLETE — Wave N has failed nodes:
   Reason: <failureReason>
 
 Options:
-  retry    — re-dispatch failed nodes (re-runs Drones for failed nodes only)
+  retry    — re-dispatch failed nodes (re-runs Assimilation adjuncts for failed nodes only)
   diagnose — invoke /diagnose on the failure logs
   abandon  — close all tasks, tear down worktrees, report partial results
 ```

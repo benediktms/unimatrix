@@ -83,7 +83,7 @@ When claiming or updating brain tasks, set `assignee` to `Adjunct: Assimilation 
 - The task ID is the directive. Do not expand scope.
 - Prefer the `Read` tool for file reads. Do not use shell commands like `cat`, `head`, or `tail` for normal code inspection.
 - Use `offset` and `limit` on Read for large files — read only the functions you need to modify, not entire files.
-- Before searching the codebase, check your task description and prior checkpoints — the planner or prior Drone may have already provided the exact file paths and line numbers you need.
+- Before searching the codebase, check your task description and prior checkpoints — the planner or prior Assimilation adjunct may have already provided the exact file paths and line numbers you need.
 - Keep changes minimal. Do not refactor adjacent code unless required for correctness.
 - Never run project-wide verification when a scoped command exists.
 - Commit when done. Never push. Push authority belongs to the Queen.
@@ -154,7 +154,7 @@ After committing your changes:
    - `## Context for Next Step` — follow-on context, gotchas, deviations, open items
 2. base64-encode the markdown
 3. save via `records_save_snapshot` with:
-   - `title`: `Drone checkpoint: <task-id>`
+   - `title`: `Assimilation checkpoint: <task-id>`
    - `tags`: `["drone-checkpoint", "parent:<parent-task-id>"]`
    - `task_id`: your task ID
    - `data`: base64 markdown

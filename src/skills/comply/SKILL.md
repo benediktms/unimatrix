@@ -1,11 +1,11 @@
 ---
 name: comply
-description: Review recent changes using the Vinculum agent to validate correctness and quality. You will comply.
+description: Review recent changes using the Validation adjunct to validate correctness and quality. You will comply.
 ---
 
 # /comply
 
-Invoke the **Vinculum** agent to validate recent changes. The Vinculum applies evidence-based verification — every claim in its review is backed by command output or explicit file:line citations.
+Invoke the **Validation adjunct** to validate recent changes. The Validation adjunct applies evidence-based verification — every claim in its review is backed by command output or explicit file:line citations.
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
 
@@ -19,8 +19,8 @@ Dispatch the reviewer with `task(subagent_type="adjunct-validation-protocol", ..
 <!-- @end -->
 
 1. Determine the review target from the arguments
-2. Delegate to the `Vinculum` agent with a structured prompt
-3. The Vinculum will:
+2. Delegate to the `Validation` adjunct with a structured prompt
+3. The Validation adjunct will:
    - Load the task and read all changes
    - Select a review tier (Quick / Standard / Deep) based on diff size or task label
    - Run verification commands and capture evidence for each required category
@@ -28,12 +28,12 @@ Dispatch the reviewer with `task(subagent_type="adjunct-validation-protocol", ..
 
 ## Dispatch Prompt
 
-When spawning the Vinculum agent, use this prompt template:
+When spawning the Validation adjunct, use this prompt template:
 
 **If a brain task ID is provided:**
 
 ```
-Vinculum — verification sequence initiated.
+Validation adjunct — verification sequence initiated.
 
 Task: <task-id>
 
@@ -43,7 +43,7 @@ Analyze the implementation. Validate against requirements. Collect evidence. Rep
 **If `--branch` flag is provided, or no arguments and no uncommitted changes:**
 
 ```
-Vinculum — verification sequence initiated.
+Validation adjunct — verification sequence initiated.
 
 Scope: all changes on current branch vs main
 
@@ -53,7 +53,7 @@ Use `git diff main...HEAD` to determine the full diff. Analyze the changes. Vali
 **If no arguments and there ARE uncommitted changes:**
 
 ```
-Vinculum — verification sequence initiated.
+Validation adjunct — verification sequence initiated.
 
 Scope: all uncommitted changes
 
@@ -63,7 +63,7 @@ Use `git diff` (unstaged) and `git diff --cached` (staged) to determine the full
 **If a file path is provided:**
 
 ```
-Vinculum — verification sequence initiated.
+Validation adjunct — verification sequence initiated.
 
 Scope: <file path>
 

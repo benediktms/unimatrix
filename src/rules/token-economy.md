@@ -9,7 +9,7 @@ All agents must minimize token consumption. Tokens cost money and time.
 ## Read strategically
 - **Never read a file you don't need.** If a Grep match gives you enough context, stop there.
 - **Use `offset` and `limit`** on Read when you only need a specific section of a large file. Don't read 2000 lines to check one function.
-- **Check prior intelligence first.** Before searching or reading, query `records_list` and `memory_search_minimal` — the answer may already exist from a prior Probe, Cortex, or Drone. Reuse existing snapshots and artifacts instead of re-exploring.
+- **Check prior intelligence first.** Before searching or reading, query `records_list` and `memory_search_minimal` — the answer may already exist from a prior Reconnaissance adjunct, Tactical Analysis adjunct, or Assimilation adjunct. Reuse existing snapshots and artifacts instead of re-exploring.
 - **Don't re-read files you've already read** in the same session unless they've been modified since.
 
 ## Search efficiently
@@ -45,6 +45,6 @@ All agents must minimize token consumption. Tokens cost money and time.
 | `ls path/ && grep -n "fn" path/file.md` | Glob + Grep (two tool calls) |
 
 ## Avoid redundant work
-- **Check `records_list`** for prior Probe/Cortex/Drone artifacts before re-exploring an area.
+- **Check `records_list`** for prior Reconnaissance/TacticalAnalysis/Assimilation artifacts before re-exploring an area.
 - **Check `memory_search_minimal`** before web searching — the collective may already know.
 - **If a sibling agent already covered a file or area** (visible in prior snapshots), skip it and build on their findings.

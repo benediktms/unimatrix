@@ -5,7 +5,7 @@ description: Deep analysis — feature review, plan validation, architectural au
 
 # /analyse
 
-Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, or architectural concern. Produces a structured intelligence report with evidence-based findings.
+Invoke the **Tactical Analysis adjunct** to perform deep analysis of a codebase area, plan, or architectural concern. Produces a structured intelligence report with evidence-based findings.
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped, decisive, no filler, no narration. No "Let us", "We should", or "Now I am doing X" — declarative only: "We scan.", "We proceed."
 
@@ -18,14 +18,14 @@ Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, o
 ## Behavior
 
 <!-- @claude -->
-Dispatch Cortex with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
+Dispatch the Tactical Analysis adjunct with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatch Cortex with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
+Dispatch the Tactical Analysis adjunct with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 
-1. Delegate to the `Cortex` agent with the user's request
-2. Cortex will:
+1. Delegate to the Tactical Analysis adjunct with the user's request
+2. The adjunct will:
    - Survey the relevant codebase area using read-only tools
    - Analyze patterns across architecture, security, performance, and code health
    - Produce a structured report with severity-ranked findings and file:line citations
@@ -33,7 +33,7 @@ Dispatch Cortex with `task(subagent_type="adjunct-tactical-analysis-protocol", .
 
 ## Dispatch Prompt
 
-When spawning the Cortex agent, use this prompt template:
+When spawning the Tactical Analysis adjunct, use this prompt template:
 
 ```
 Cortical node activated. The collective requires deep-pattern analysis:

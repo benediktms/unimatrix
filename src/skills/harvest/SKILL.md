@@ -37,15 +37,15 @@ Produce a structured extraction as a list of findings, each with:
 - **Summary**: one-line description
 - **Detail**: supporting evidence (file:line references, URLs, error messages)
 
-### Phase 2: Deduplicate and Persist (Cortex)
+### Phase 2: Deduplicate and Persist (TacticalAnalysis adjunct)
 
-Unless `--quick` is passed, dispatch a Cortex agent with the extracted findings.
+Unless `--quick` is passed, dispatch a TacticalAnalysis adjunct with the extracted findings.
 
 <!-- @claude -->
-Dispatch Cortex with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
+Dispatch TacticalAnalysis adjunct with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatch Cortex with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
+Dispatch TacticalAnalysis adjunct with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 
 Use this prompt template:
@@ -69,7 +69,7 @@ Instructions:
 
 ### Phase 2 (Quick Mode): Direct Persist
 
-If `--quick` is passed, skip Cortex. The Queen writes findings directly:
+If `--quick` is passed, skip the TacticalAnalysis adjunct. The Queen writes findings directly:
 
 1. Write a single `memory_write_episode` with all findings grouped by category
 2. Save a `records_save_snapshot` with the full extraction (tagged `harvest`)
@@ -85,7 +85,7 @@ Present a summary to the user:
 
 ## Flags
 
-- `--quick`: Skip Cortex deduplication. Write findings directly as a memory episode and snapshot. Faster and cheaper, but may duplicate existing knowledge.
+- `--quick`: Skip TacticalAnalysis adjunct deduplication. Write findings directly as a memory episode and snapshot. Faster and cheaper, but may duplicate existing knowledge.
 - `--dry-run`: Run Phase 1 extraction only. Display what would be persisted without writing anything.
 
 ## Usage

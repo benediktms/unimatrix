@@ -29,9 +29,9 @@ Produce a structured summary covering:
 - **Open items**, blockers, and suggested next steps
 - **Uncommitted changes** — warn about these, do NOT auto-commit
 
-### 3. Dispatch Subroutine
+### 3. Dispatch Closure adjunct
 
-Spawn a `Subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
+Spawn a `Closure` adjunct with an explicit instruction prompt, not a prose summary. The prompt must include:
 
 <!-- @claude -->
 Use `Agent(subagent_type="adjunct-closure-protocol", ...)` for dispatch.

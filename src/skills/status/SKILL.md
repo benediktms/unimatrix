@@ -28,14 +28,14 @@ Display the current state of the collective: active agents, session costs, compa
 ╠══════════════════════════════════════╣
 ║ NEURAL NETWORK                       ║
 ║  Active adjuncts: 2                  ║
-║   ├─ Drone: Three of Five .. WORKING ║
-║   └─ Probe: Seven of Nine .. WORKING ║
+║   ├─ Assimilation: Three of Five .. WORKING ║
+║   └─ Reconnaissance: Seven of Nine .. WORKING ║
 ║  Total adjunct time: 245.3s          ║
 ╠══════════════════════════════════════╣
 ║ COLLECTIVE RESOURCES                 ║
 ║  Session cost: $0.4200               ║
-║   ├─ Drone (3x): $0.3150            ║
-║   └─ Probe (1x): $0.1050            ║
+║   ├─ Assimilation (3x): $0.3150            ║
+║   └─ Reconnaissance (1x): $0.1050            ║
 ║  Context usage: ~67% ██████████░░░░  ║
 ║  Regeneration cycles: 0             ║
 ╠══════════════════════════════════════╣

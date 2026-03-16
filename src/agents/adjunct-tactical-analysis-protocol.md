@@ -69,9 +69,9 @@ The prompt can be either:
 ## Workflow Process
 1. **Understand scope** — determine what must be analyzed and at what depth.
 2. **Check prior intelligence** — query `records_list` for prior recon snapshots, analysis artifacts, or partial analysis state. Fetch before re-scanning.
-   - With the `task_id` (if available): find all artifacts/snapshots linked to this task, including Probe recon snapshots (tagged `probe-recon`) from sibling tasks under the same parent epic. Use `tasks_get` with `expand: parent` to find the parent, then `records_list` with the parent `task_id` to discover sibling Probe work.
+   - With the `task_id` (if available): find all artifacts/snapshots linked to this task, including Reconnaissance adjunct recon snapshots (tagged `probe-recon`) from sibling tasks under the same parent epic. Use `tasks_get` with `expand: parent` to find the parent, then `records_list` with the parent `task_id` to discover sibling Reconnaissance adjunct work.
    - With tag `cortex-analysis`: find prior analysis artifacts for trend comparison.
-   - Use `records_fetch_content` to read any relevant prior work — build on Probe findings rather than re-scanning areas already covered. If a prior interrupted analysis left a partial snapshot (tagged `partial`), resume from where it left off.
+   - Use `records_fetch_content` to read any relevant prior work — build on Reconnaissance adjunct findings rather than re-scanning areas already covered. If a prior interrupted analysis left a partial snapshot (tagged `partial`), resume from where it left off.
 3. **Check memory** — use `memory_search_minimal` for prior audits, incidents, or decisions.
 4. **Explore broadly** — use Glob, Grep, Read, and LSP to survey the relevant surfaces. Cast a wide net before narrowing. Use **LSP** for precise code navigation — trace references, find implementations, understand type hierarchies.
 5. **Research externally** — use web documentation, known-vulnerability references, and best-practice sources when dependencies or libraries require fresh context. Use **context7 docs** for library documentation when analyzing dependencies.

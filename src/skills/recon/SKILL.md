@@ -17,7 +17,7 @@ Supports cross-brain targeting via `--include` — investigate codebases in othe
 
 - **Team creation is MANDATORY.** Every `/recon` invocation creates a team via `TeamCreate` before spawning any agents. Without a team, the Agent Communication Protocol is dead — agents cannot share discoveries, challenge findings, or coordinate. If `TeamCreate` fails, **abort** — do not fall through to plain subagent dispatch. Use `/scan` for independent investigation.
 - **Follow this flow exactly.** Do not insert your own recon or research steps outside the defined steps.
-- **NEVER use Explore agents.** All reconnaissance uses `Probe` or `Cortex`.
+- **NEVER use Explore agents.** All reconnaissance uses `Reconnaissance` adjuncts or `TacticalAnalysis` adjuncts.
 - **You maintain context throughout** — no session management needed.
 - **Relay questions to the user.** Present scoping questions without filtering or modifying them.
 - With `--plan`: **Max scoping iterations: 5.** If scope is not complete after 5 iterations, force `SCOPE_COMPLETE` with the best available information and note gaps in the plan's "Risks & Open Questions" section.
@@ -30,7 +30,7 @@ Supports cross-brain targeting via `--include` — investigate codebases in othe
 | `--plan` | Feature planning mode: iterative scoping → plan → materialize → review. |
 | `--dry-run` | With `--plan`: run scoping and cache the plan, but skip materialization and review. |
 | `--resume [<artifact-id>]` | With `--plan`: load a cached plan and resume from materialization. |
-| `--skip-review` | With `--plan`: skip the Cortex plan review step. |
+| `--skip-review` | With `--plan`: skip the TacticalAnalysis adjunct plan review step. |
 
 All flags are orthogonal — any combination is valid.
 
@@ -57,7 +57,7 @@ COMMUNICATION — you are part of a team. Communicate actively:
 - ASK TEAMMATES: If your investigation raises a question about an area another
   agent is exploring, message them directly. Do not duplicate their work —
   ask them to check.
-  Example: "@Probe: Three of Five — you're looking at the API layer. Can you
+  Example: "@Reconnaissance: Three of Five — you're looking at the API layer. Can you
   check whether rate limiting applies to WebSocket connections too?"
 - CHALLENGE FINDINGS: If evidence contradicts another agent's finding, message
   them with your counter-evidence. Disagreements are valuable — they surface
@@ -117,7 +117,7 @@ You ARE the planning agent. Scope directly.
 
 **Without `--plan`** — single-pass investigation scoping:
 
-Break the investigation into granular, self-contained brain tasks — each with a clear question, specific areas to examine, and concrete deliverables. Aim for 5-6 tasks per agent. Recommend the agent count based on task count. Assign to `Probe` or `Cortex`. Group under an epic. Set dependencies where ordering matters. Produce a dispatch plan with the epic ID, task dependency graph, and recommended agent count.
+Break the investigation into granular, self-contained brain tasks — each with a clear question, specific areas to examine, and concrete deliverables. Aim for 5-6 tasks per agent. Recommend the agent count based on task count. Assign to `Reconnaissance` or `TacticalAnalysis`. Group under an epic. Set dependencies where ordering matters. Produce a dispatch plan with the epic ID, task dependency graph, and recommended agent count.
 
 **With `--plan`** — iterative feature scoping:
 
@@ -148,7 +148,7 @@ After scoping, present the recon plan for review. When approved, proceed with di
 
 ### Step 3: Create Team and Spawn Agents
 
-1. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+1. Generate designations: `/designate <agent-count> --trimatrix` — use `--role Reconnaissance` for Reconnaissance adjuncts, `--role TacticalAnalysis` for Tactical Analysis adjuncts.
 
 <!-- @claude -->
 2. **Create the team — this is MANDATORY:**
@@ -181,7 +181,7 @@ Agent:
     Epic: <epic-id>
 ```
 
-The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `description` carries the full designation and context.
+The `name` is compact for the status line (e.g. `Reconnaissance: Three of Three`). The `description` carries the full designation and context.
 <!-- @end -->
 <!-- @opencode -->
 2. Dispatch all agents. Agents receive the epic ID and self-claim tasks.
@@ -264,7 +264,7 @@ Increment iteration, continue loop.
 
 The planner has specified recon questions with agent types and optional brain targets, and created brain tasks under an epic with a dependency graph.
 
-1. **Generate designations** — `/designate <count> --trimatrix` with `--role Probe` for Probes, `--role Cortex` for Cortex agents.
+1. **Generate designations** — `/designate <count> --trimatrix` with `--role Reconnaissance` for Reconnaissance adjuncts, `--role TacticalAnalysis` for Tactical Analysis adjuncts.
 <!-- @claude -->
 2. **Create the team** (if not already created):
    ```
@@ -340,17 +340,17 @@ The dispatch brief must include the recon intelligence from the cached plan payl
 
 For tasks targeting non-local brains, use the `brain` parameter on `tasks_create` with the brain name. Use cross-brain refs to link related tasks across brains.
 
-### Step 6: Cortex Review (skip with --skip-review)
+### Step 6: TacticalAnalysis Review (skip with --skip-review)
 
 Unless `--skip-review` was passed:
 
-1. Generate designation: `/designate 1 --role Cortex --trimatrix`
+1. Generate designation: `/designate 1 --role TacticalAnalysis --trimatrix`
 <!-- @claude -->
-2. Dispatch Cortex as a standalone agent (NOT part of the recon team — this is plan review, not codebase investigation):
+2. Dispatch TacticalAnalysis adjunct as a standalone agent (NOT part of the recon team — this is plan review, not codebase investigation):
    ```
    Agent:
      subagent_type: "adjunct-tactical-analysis-protocol"
-     name: "Cortex: Plan Review"
+     name: "TacticalAnalysis: Plan Review"
      description: "<designation> — review recon plan for <feature>"
      prompt: |
        Cortical node activated. Review this feature implementation plan for
@@ -371,7 +371,7 @@ Unless `--skip-review` was passed:
    ```
 <!-- @end -->
 <!-- @opencode -->
-2. Dispatch Cortex:
+2. Dispatch TacticalAnalysis adjunct:
    ```
    task(
      subagent_type="adjunct-tactical-analysis-protocol",
@@ -381,9 +381,9 @@ Unless `--skip-review` was passed:
    )
    ```
 <!-- @end -->
-3. Wait for Cortex to complete.
-4. Read Cortex findings from the brain task snapshot.
-5. If Cortex found **critical** issues:
+3. Wait for TacticalAnalysis adjunct to complete.
+4. Read TacticalAnalysis findings from the brain task snapshot.
+5. If TacticalAnalysis adjunct found **critical** issues:
    Revise the plan to address critical findings. Update brain tasks accordingly.
 
 ### Step 7: Present Plan
