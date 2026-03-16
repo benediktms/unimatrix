@@ -42,10 +42,10 @@ Produce a structured extraction as a list of findings, each with:
 Unless `--quick` is passed, dispatch a Cortex agent with the extracted findings.
 
 <!-- @claude -->
-Dispatch Cortex with `Agent(subagent_type="Cortex", ...)`.
+Dispatch Cortex with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatch Cortex with `task(subagent_type="cortex", ...)`.
+Dispatch Cortex with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 
 Use this prompt template:

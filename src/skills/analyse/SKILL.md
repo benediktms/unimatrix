@@ -18,10 +18,10 @@ Invoke the **Cortex** agent to perform deep analysis of a codebase area, plan, o
 ## Behavior
 
 <!-- @claude -->
-Dispatch Cortex with `Agent(subagent_type="Cortex", ...)`.
+Dispatch Cortex with `Agent(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatch Cortex with `task(subagent_type="cortex", ...)`.
+Dispatch Cortex with `task(subagent_type="adjunct-tactical-analysis-protocol", ...)`.
 <!-- @end -->
 
 1. Delegate to the `Cortex` agent with the user's request

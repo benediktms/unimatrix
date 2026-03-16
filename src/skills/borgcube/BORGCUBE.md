@@ -25,19 +25,26 @@ All borgcube executions follow this state machine:
 ```mermaid
 stateDiagram-v2
     [*] --> initializing: init()
-    initializing --> dispatching: compute_waves()
-    dispatching --> gate_halted: merge gate reached
-    dispatching --> completed: final wave done
-    dispatching --> failed: node or wave failed
-    dispatching --> refining: refine()
-    gate_halted --> dispatching: all gates cleared
-    gate_halted --> refining: refine()
-    gate_halted --> failed: abandon
+
+    initializing --> dispatching: compute_waves()\n(plan_approved)
+
+    dispatching --> dispatching: wave_dispatched\nnode_completed\nwave_completed
+
+    dispatching --> gate_halted: wave_completed\n(hasMergeGate=true,\nnot final wave)
+
+    dispatching --> completed: wave_completed\n(final wave)
+
+    dispatching --> failed: wave_failed\nOR node_failed
+
+    gate_halted --> dispatching: clear_gate()\n(all gates cleared)
+
+    gate_halted --> failed: user triage\n(abandon)
+
     failed --> dispatching: retry_wave()
-    failed --> refining: refine()
-    refining --> dispatching: compute_waves()
-    completed --> [*]
+
     failed --> [*]
+
+    completed --> [*]
 ```
 
 **State descriptions:**
@@ -55,44 +62,44 @@ The wave execution loop drives progress through the topological graph:
 
 ```mermaid
 flowchart TD
-    Start([Get Next Wave]) --> HasWave{next_wave returned?}
+    Start([Get Next Wave]) --> HasWave{next_wave<br/>returned?}
 
-    HasWave -->|null: reason| CheckReason{Reason type?}
-    CheckReason -->|gate_halted| GateHalt[MERGE GATE - wait for PRs]
-    CheckReason -->|completed| Done[Execution Done - Clean up]
-    CheckReason -->|failed| FailHand[FAILURE HANDLING - User triage]
+    HasWave -->|null: reason| CheckReason{Reason<br/>type?}
+    CheckReason -->|gate_halted| GateHalt["MERGE GATE\nwait for PRs"]
+    CheckReason -->|completed| Done["Execution Done\nClean up"]
+    CheckReason -->|failed| FailHand["FAILURE HANDLING\nUser triage"]
 
-    HasWave -->|wave object| PresentPlan[Present Wave Plan - wait user approval]
+    HasWave -->|wave object| PresentPlan["Present Wave Plan\nwait user approval"]
     PresentPlan --> UserApproves{Approved?}
-    UserApproves -->|No| AbortWave[Abandon Wave]
-    UserApproves -->|Yes| DispatchWave[dispatch_wave - Create worktrees + tasks]
+    UserApproves -->|No| AbortWave["Abandon Wave"]
+    UserApproves -->|Yes| DispatchWave["dispatch_wave<br/>Create worktrees<br/>Create tasks"]
 
-    DispatchWave --> SpawnDrones[Spawn parallel Drones]
-    SpawnDrones --> MonitorDrones[Monitor completion - wait all Drones]
+    DispatchWave --> SpawnDrones["Spawn parallel Drones\nrun_in_background"]
+    SpawnDrones --> MonitorDrones["Monitor completion\nwait all Drones"]
 
-    MonitorDrones --> CheckOutcome{Wave outcome?}
+    MonitorDrones --> CheckOutcome{Wave<br/>outcome?}
 
-    CheckOutcome -->|all succeeded| VinculumReview[Dispatch Vinculum - review wave]
+    CheckOutcome -->|all succeeded| VinculumReview["Dispatch Vinculum\nreview wave changes"]
     CheckOutcome -->|failures| FailHand
 
-    VinculumReview --> VinCheck{Vinculum approves?}
-    VinCheck -->|Pass| RecordPRs[Create PRs - record prUrl/prNumber]
+    VinculumReview --> VinCheck{Vinculum<br/>approves?}
+    VinCheck -->|Pass| RecordPRs["Create PRs\nrecord prUrl/prNumber"]
     VinCheck -->|Fail| FailHand
 
-    RecordPRs --> PersistCP[Persist checkpoint]
-    PersistCP --> CheckGate{Wave has merge_gate?}
+    RecordPRs --> PersistCP["Persist checkpoint"]
+    PersistCP --> CheckGate{Wave has<br/>merge_gate?}
     CheckGate -->|Yes| GateHalt
     CheckGate -->|No| Start
 
-    GateHalt --> LoopGate[Persist - Halt - Wait user resume]
-    FailHand --> FailChoice{User action?}
+    GateHalt --> LoopGate["Persist. Halt.\nWait user resume."]
+    FailHand --> FailChoice{User<br/>action?}
     FailChoice -->|retry| MonitorDrones
-    FailChoice -->|diagnose| Diagnose[Invoke /diagnose]
+    FailChoice -->|diagnose| Diagnose["Invoke /diagnose"]
     FailChoice -->|abandon| Done
 
-    Done --> End([End])
-    LoopGate --> End
-    AbortWave --> End
+    Done --> [*]
+    LoopGate --> [*]
+    AbortWave --> [*]
     Diagnose --> FailHand
 ```
 
@@ -114,14 +121,15 @@ sequenceDiagram
     participant Server as UNIMATRIX Server
     participant User
 
-    Note over Lead,User: Wave Approval Flow
+    rect rgb(100, 150, 200)
+        Note over Lead,User: Wave Approval Flow
         Lead->>Server: next_wave()
         Server-->>Lead: Wave object
-        Lead->>User: Present wave plan, elicit approval
+        Lead->>User: Present wave plan + implementation details<br/>Elicit approval
         alt User has elicitation
             User->>Lead: Form submission (approved/rejected)
         else User lacks elicitation
-            Lead->>User: Fallback prompt, wait text response
+            Lead->>User: Fallback prompt<br/>Wait text response
         end
         Lead->>Lead: Parse user decision
         alt Approved
@@ -129,42 +137,47 @@ sequenceDiagram
         else Rejected
             Lead->>Server: Abort (no state change)
         end
+    end
 
-    Note over Lead,User: Failure Triage Flow
+    rect rgb(150, 200, 150)
+        Note over Lead,User: Failure Triage Flow
         Lead->>Server: status()
         Server-->>Lead: Enumerate failed nodes
-        Lead->>User: Present failures, elicit triage
+        Lead->>User: Present failures + options<br/>Elicit: retry / diagnose / abandon
         alt User has elicitation
             User->>Lead: Form submission (choice)
         else User lacks elicitation
-            Lead->>User: Fallback prompt, wait text response
+            Lead->>User: Fallback prompt<br/>Wait text response
         end
         Lead->>Lead: Parse user choice
         alt retry
-            Lead->>Server: dispatch_wave(waveId)
+            Lead->>Server: dispatch_wave(waveId)<br/>Spawn new Drones
         else diagnose
             Lead->>Lead: Invoke /diagnose
         else abandon
-            Lead->>Server: Mark tasks done, remove worktrees
+            Lead->>Server: Mark tasks done\nRemove worktrees
         end
+    end
 
-    Note over Lead,User: Refinement Approval Flow
+    rect rgb(200, 150, 150)
+        Note over Lead,User: Refinement Approval Flow
         Lead->>Lead: Detect new repos via --resume --include
-        Lead->>User: Present graph + plan, elicit modifications
+        Lead->>User: Present current graph + plan<br/>Elicit modifications
         alt User has elicitation
             User->>Lead: Form submission (graph updates)
         else User lacks elicitation
-            Lead->>User: Fallback text interface, wait directive
+            Lead->>User: Fallback text interface<br/>Wait directive
         end
         Lead->>Lead: Apply graph mutations
         Lead->>Server: validate() + compute_waves()
         Lead->>Server: save_checkpoint()
-        Lead->>User: Present updated wave plan, elicit approval
+        Lead->>User: Present updated wave plan<br/>Elicit approval
         alt Approved
             Lead->>Server: dispatch_wave()
         end
+    end
 
-    Note over Lead: Graceful degradation: if client has no elicitation capability, fallback to text prompts.
+    Note over Lead: Graceful degradation:<br/>If client has no elicitation capability,<br/>fallback to text prompts and parsing.
 ```
 
 **Three flows:**

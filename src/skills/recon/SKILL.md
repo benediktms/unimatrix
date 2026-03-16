@@ -166,7 +166,7 @@ TeamCreate:
 
 ```
 Agent:
-  subagent_type: "Probe" or "Cortex"
+  subagent_type: "adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol"
   team_name: "recon-<epic-id>"   # ← REQUIRED — matches the team created above
   name: "<agent type>: <short name>"
   description: "<full designation> — recon agent"
@@ -190,7 +190,7 @@ The `name` is compact for the status line (e.g. `Probe: Three of Three`). The `d
 
 ```
 task(
-  subagent_type="probe" or "cortex",
+  subagent_type="adjunct-reconnaissance-protocol" or "adjunct-tactical-analysis-protocol",
   description="<full designation> — recon agent",
   run_in_background=true,
   prompt="""
@@ -349,7 +349,7 @@ Unless `--skip-review` was passed:
 2. Dispatch Cortex as a standalone agent (NOT part of the recon team — this is plan review, not codebase investigation):
    ```
    Agent:
-     subagent_type: "Cortex"
+     subagent_type: "adjunct-tactical-analysis-protocol"
      name: "Cortex: Plan Review"
      description: "<designation> — review recon plan for <feature>"
      prompt: |
@@ -374,7 +374,7 @@ Unless `--skip-review` was passed:
 2. Dispatch Cortex:
    ```
    task(
-     subagent_type="cortex",
+     subagent_type="adjunct-tactical-analysis-protocol",
      description="<designation> — review recon plan",
      run_in_background=true,
      prompt="Review feature plan. Epic: <epic-id>. Use tasks_get with expand children."

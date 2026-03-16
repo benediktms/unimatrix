@@ -29,10 +29,10 @@ When invoked, you (the Queen agent) orchestrate the following loop:
 ### 2. Adaptation Cycle
 
 <!-- @claude -->
-Dispatches use Claude Code `Agent(...)` with `subagent_type: "Drone"` and `subagent_type: "Vinculum"`.
+Dispatches use Claude Code `Agent(...)` with `subagent_type: "adjunct-assimilation-protocol"` and `subagent_type: "adjunct-validation-protocol"`.
 <!-- @end -->
 <!-- @opencode -->
-Dispatches use OpenCode `task(...)` with `subagent_type="drone"` and `subagent_type="vinculum"`.
+Dispatches use OpenCode `task(...)` with `subagent_type="adjunct-assimilation-protocol"` and `subagent_type="adjunct-validation-protocol"`.
 <!-- @end -->
 
 ```

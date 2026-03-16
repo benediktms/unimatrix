@@ -29,7 +29,7 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
 <!-- @claude -->
    ```
    Agent:
-     subagent_type: "Drone"
+     subagent_type: "adjunct-assimilation-protocol"
      name: "<designation>"
      description: "<designation> — <task summary>"
      run_in_background: true
@@ -41,7 +41,7 @@ Partition a codebase into logical file groups and dispatch parallel Drones to ap
 <!-- @opencode -->
    ```
    task(
-     subagent_type="drone",
+     subagent_type="adjunct-assimilation-protocol",
      description="<designation> — <task summary>",
      run_in_background=true,
      prompt="""

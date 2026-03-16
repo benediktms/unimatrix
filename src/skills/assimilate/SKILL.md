@@ -34,10 +34,10 @@ Produce a structured summary covering:
 Spawn a `Subroutine` agent with an explicit instruction prompt, not a prose summary. The prompt must include:
 
 <!-- @claude -->
-Use `Agent(subagent_type="Subroutine", ...)` for dispatch.
+Use `Agent(subagent_type="adjunct-closure-protocol", ...)` for dispatch.
 <!-- @end -->
 <!-- @opencode -->
-Use `task(subagent_type="subroutine", ...)` for dispatch.
+Use `task(subagent_type="adjunct-closure-protocol", ...)` for dispatch.
 <!-- @end -->
 
 1. **Memory write instruction**: "Call `memory_write_episode` with title `'Session: <date> — <brief description>'` and the following body:" followed by the synthesized summary
