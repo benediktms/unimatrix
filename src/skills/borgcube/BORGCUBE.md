@@ -25,26 +25,20 @@ All borgcube executions follow this state machine:
 ```mermaid
 stateDiagram-v2
     [*] --> initializing: init()
-
-    initializing --> dispatching: compute_waves()\n(plan_approved)
-
-    dispatching --> dispatching: wave_dispatched\nnode_completed\nwave_completed
-
-    dispatching --> gate_halted: wave_completed\n(hasMergeGate=true,\nnot final wave)
-
-    dispatching --> completed: wave_completed\n(final wave)
-
-    dispatching --> failed: wave_failed\nOR node_failed
-
-    gate_halted --> dispatching: clear_gate()\n(all gates cleared)
-
-    gate_halted --> failed: user triage\n(abandon)
-
+    initializing --> dispatching: compute_waves()
+    dispatching --> dispatching: wave lifecycle events
+    dispatching --> gate_halted: merge gate reached
+    dispatching --> completed: final wave done
+    dispatching --> failed: node or wave failed
+    dispatching --> refining: refine()
+    gate_halted --> dispatching: all gates cleared
+    gate_halted --> refining: refine()
+    gate_halted --> failed: abandon
     failed --> dispatching: retry_wave()
-
-    failed --> [*]
-
+    failed --> refining: refine()
+    refining --> dispatching: compute_waves()
     completed --> [*]
+    failed --> [*]
 ```
 
 **State descriptions:**
