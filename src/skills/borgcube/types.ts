@@ -96,7 +96,8 @@ export type MachineState =
   | "gate_halted"
   | "refining"
   | "failed"
-  | "completed";
+  | "completed"
+  | "cancelled";
 
 /**
  * Persisted checkpoint capturing the full state of a borgcube execution.
@@ -134,6 +135,14 @@ export interface Checkpoint {
     /** Repository names added during this refinement. */
     addedRepos: string[];
   }>;
+  /** Brain session ID of the Claude session that owns this execution, if tracked. */
+  sessionId?: string;
+  /** Human-readable label for the owning session, if provided. */
+  sessionLabel?: string;
+  /** Human-readable reason this execution was cancelled, if applicable. */
+  cancellationReason?: string;
+  /** ISO 8601 timestamp when this execution was cancelled, if applicable. */
+  cancelledAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,4 +386,5 @@ export type Event =
   | { type: "execution_completed" }
   | { type: "retry_wave"; waveId: number }
   | { type: "refine" }
-  | { type: "refinement_approved" };
+  | { type: "refinement_approved" }
+  | { type: "cancel"; reason?: string };

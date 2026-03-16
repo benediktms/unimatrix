@@ -19,7 +19,7 @@ import {
   serialize,
   transition,
 } from "./state.ts";
-import type { Checkpoint, Graph, Node, Wave } from "./types.ts";
+import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -347,4 +347,186 @@ Deno.test("pendingGates: returns blocked node IDs in current wave", () => {
 Deno.test("pendingGates: returns empty array when no current wave", () => {
   const cp = makeCheckpoint({ currentWaveId: null });
   assertEquals(pendingGates(cp), []);
+});
+
+// ---------------------------------------------------------------------------
+// cancel transition tests
+// ---------------------------------------------------------------------------
+
+// Test 23: cancel allowed from initializing
+Deno.test("canTransition: cancel allowed from initializing", () => {
+  const cp = makeCheckpoint({ machineState: "initializing" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test 24: cancel allowed from dispatching
+Deno.test("canTransition: cancel allowed from dispatching", () => {
+  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test 25: cancel allowed from gate_halted
+Deno.test("canTransition: cancel allowed from gate_halted", () => {
+  const cp = makeCheckpoint({ machineState: "gate_halted" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test 26: cancel allowed from refining
+Deno.test("canTransition: cancel allowed from refining", () => {
+  const cp = makeCheckpoint({ machineState: "refining" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test 27: cancel allowed from failed
+Deno.test("canTransition: cancel allowed from failed", () => {
+  const cp = makeCheckpoint({ machineState: "failed" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test 28: cancel rejected from completed
+Deno.test("canTransition: cancel rejected from completed", () => {
+  const cp = makeCheckpoint({ machineState: "completed" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result.allowed, false);
+});
+
+// Test 29: cancel rejected from cancelled
+Deno.test("canTransition: cancel rejected from cancelled", () => {
+  const cp = makeCheckpoint({ machineState: "cancelled" });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result.allowed, false);
+});
+
+// Test 30: transition cancel from dispatching sets cancelled state and fields
+Deno.test("transition: cancel from dispatching sets machineState, cancellationReason, cancelledAt", () => {
+  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const result = transition(cp, {
+    type: "cancel",
+    reason: "user requested cancellation",
+  });
+  assertEquals(result.machineState, "cancelled");
+  assertEquals(result.cancellationReason, "user requested cancellation");
+  assertEquals(typeof result.cancelledAt, "string");
+});
+
+// Test 31: transition cancel without reason leaves cancellationReason undefined
+Deno.test("transition: cancel without reason — cancellationReason is undefined", () => {
+  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const result = transition(cp, { type: "cancel" });
+  assertEquals(result.machineState, "cancelled");
+  assertEquals(result.cancellationReason, undefined);
+});
+
+// Test 32: no transitions out of cancelled — all event types rejected
+Deno.test("canTransition: no transitions allowed out of cancelled state", () => {
+  const cp = makeCheckpoint({ machineState: "cancelled" });
+  const events: Event[] = [
+    { type: "plan_approved" },
+    { type: "wave_dispatched", waveId: 1 },
+    { type: "node_completed", nodeId: "n1" },
+    { type: "node_failed", nodeId: "n1", reason: "err" },
+    { type: "gate_cleared", nodeId: "n1" },
+    { type: "wave_completed", waveId: 1 },
+    { type: "wave_failed", waveId: 1 },
+    { type: "execution_completed" },
+    { type: "retry_wave", waveId: 1 },
+    { type: "refine" },
+    { type: "refinement_approved" },
+    { type: "cancel" },
+  ];
+  for (const event of events) {
+    const result = canTransition(cp, event);
+    assertEquals(
+      result.allowed,
+      false,
+      `Expected cancel to be rejected from cancelled for event "${event.type}"`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Session field tests
+// ---------------------------------------------------------------------------
+
+// Test 33: createCheckpoint with session opts — sessionId and sessionLabel present
+Deno.test("createCheckpoint: with session opts — sessionId and sessionLabel present", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph, {
+    sessionId: "borgcube-2026-01-01-abcd",
+    sessionLabel: "test session",
+  });
+  assertEquals(cp.sessionId, "borgcube-2026-01-01-abcd");
+  assertEquals(cp.sessionLabel, "test session");
+});
+
+// Test 34: createCheckpoint without session opts — sessionId and sessionLabel undefined
+Deno.test("createCheckpoint: without session opts — sessionId and sessionLabel undefined", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph);
+  assertEquals(cp.sessionId, undefined);
+  assertEquals(cp.sessionLabel, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Backward compat tests
+// ---------------------------------------------------------------------------
+
+// Test 35: deserialize 1.0.0 checkpoint without session fields
+Deno.test("deserialize: 1.0.0 checkpoint without session fields — sessionId undefined, refinementHistory []", () => {
+  const raw = {
+    version: "1.0.0",
+    machineState: "initializing",
+    graph: makeGraph([makeNode("n1")]),
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.sessionId, undefined);
+  assertEquals(cp.refinementHistory, []);
+});
+
+// Test 36: deserialize 1.1.0 checkpoint without session fields
+Deno.test("deserialize: 1.1.0 checkpoint without session fields — sessionId undefined", () => {
+  const raw = {
+    version: "1.1.0",
+    machineState: "initializing",
+    graph: makeGraph([makeNode("n1")]),
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.sessionId, undefined);
+});
+
+// Test 37: serialize/deserialize round trip with 1.2.0 session + cancel fields
+Deno.test("serialize/deserialize: round trip with session and cancel fields survives", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph, {
+    sessionId: "borgcube-2026-01-01-abcd",
+    sessionLabel: "test session",
+  });
+  cp = transition(cp, { type: "plan_approved" });
+  cp = transition(cp, { type: "cancel", reason: "operator override" });
+
+  const json = serialize(cp);
+  const restored = deserialize(json);
+
+  assertEquals(restored.sessionId, "borgcube-2026-01-01-abcd");
+  assertEquals(restored.sessionLabel, "test session");
+  assertEquals(restored.cancellationReason, "operator override");
+  assertEquals(restored.machineState, "cancelled");
 });

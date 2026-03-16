@@ -53,6 +53,20 @@ import {
 let checkpoint: Checkpoint | null = null;
 
 // ---------------------------------------------------------------------------
+// Session helpers
+// ---------------------------------------------------------------------------
+
+function generateSessionId(): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const hash = Math.random().toString(36).slice(2, 6);
+  return `borgcube-${date}-${hash}`;
+}
+
+function generateSessionLabel(repos: RepoMetadata[]): string {
+  return repos.map((r) => r.name).join(", ");
+}
+
+// ---------------------------------------------------------------------------
 // Guard helpers
 // ---------------------------------------------------------------------------
 
@@ -129,11 +143,16 @@ server.tool(
         ),
       }),
     ).describe("Repository metadata for this execution"),
+    sessionLabel: z.string().optional().describe(
+      "Human-readable session label. Auto-generated if omitted.",
+    ),
   },
   (params) => {
     const repos = params.repos as RepoMetadata[];
     const emptyGraph = { nodes: {}, edges: [] };
-    checkpoint = createCheckpoint(repos, emptyGraph);
+    const sessionId = generateSessionId();
+    const sessionLabel = params.sessionLabel ?? generateSessionLabel(repos);
+    checkpoint = createCheckpoint(repos, emptyGraph, { sessionId, sessionLabel });
     return {
       content: [
         {
@@ -142,6 +161,8 @@ server.tool(
             ok: true,
             machineState: checkpoint.machineState,
             repos: checkpoint.repos.map((r) => r.name),
+            sessionId,
+            sessionLabel,
           }),
         },
       ],
@@ -828,6 +849,81 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: cancel
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "cancel",
+  "Cancel the current borgcube execution. Transitions to cancelled state.",
+  {
+    reason: z.string().optional().describe("Human-readable cancellation reason"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const check = canTransition(cp, { type: "cancel", reason: params.reason });
+    if (!check.allowed) throw new Error(`Cannot cancel: ${check.reason}`);
+    checkpoint = transition(cp, { type: "cancel", reason: params.reason });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            cancellationReason: checkpoint.cancellationReason,
+            cancelledAt: checkpoint.cancelledAt,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: archive
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "archive",
+  "Archive a borgcube checkpoint artifact. Requires completed or cancelled state.",
+  {
+    artifactId: z.string().describe("Brain artifact ID of the checkpoint to archive"),
+    reason: z.string().optional().describe("Archival reason"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    if (cp.machineState !== "completed" && cp.machineState !== "cancelled") {
+      throw new Error(
+        `archive requires completed or cancelled state, got ${cp.machineState}`,
+      );
+    }
+    const args = ["artifacts", "archive", params.artifactId];
+    if (params.reason) {
+      args.push("--reason", params.reason);
+    }
+    try {
+      await execFileAsync("brain", args);
+    } catch (err) {
+      throw new Error(
+        `Failed to archive artifact: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            archived: params.artifactId,
+            machineState: cp.machineState,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: next_wave
 // ---------------------------------------------------------------------------
 
@@ -861,6 +957,20 @@ server.tool(
             text: JSON.stringify({
               wave: null,
               reason: "Execution completed.",
+            }),
+          },
+        ],
+      };
+    }
+
+    if (cp.machineState === "cancelled") {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              wave: null,
+              reason: "Execution cancelled.",
             }),
           },
         ],
@@ -1015,10 +1125,104 @@ server.tool(
             waveHistory: cp.waveHistory,
             createdAt: cp.createdAt,
             updatedAt: cp.updatedAt,
+            ...(cp.sessionId ? { sessionId: cp.sessionId } : {}),
+            ...(cp.sessionLabel ? { sessionLabel: cp.sessionLabel } : {}),
+            ...(cp.cancellationReason
+              ? { cancellationReason: cp.cancellationReason }
+              : {}),
+            ...(cp.cancelledAt ? { cancelledAt: cp.cancelledAt } : {}),
           }),
         },
       ],
     };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_sessions
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "list_sessions",
+  "List all borgcube sessions grouped by session ID.",
+  {},
+  async () => {
+    try {
+      const { stdout } = await execFileAsync("brain", [
+        "artifacts",
+        "list",
+        "--tag",
+        "borgcube-checkpoint",
+        "--json",
+      ]);
+      const records: Array<{
+        recordId: string;
+        title: string;
+        updatedAt: string;
+        tags: string[];
+      }> = JSON.parse(stdout);
+
+      // Group by borgcube-session:* tag
+      const sessionMap = new Map<
+        string,
+        { recordId: string; title: string; updatedAt: string }[]
+      >();
+
+      for (const record of records) {
+        const sessionTag = record.tags?.find((t) =>
+          t.startsWith("borgcube-session:")
+        );
+        const sessionKey = sessionTag
+          ? sessionTag.slice("borgcube-session:".length)
+          : "untagged";
+        if (!sessionMap.has(sessionKey)) {
+          sessionMap.set(sessionKey, []);
+        }
+        sessionMap.get(sessionKey)!.push({
+          recordId: record.recordId,
+          title: record.title,
+          updatedAt: record.updatedAt,
+        });
+      }
+
+      const sessions = Array.from(sessionMap.entries()).map(
+        ([sessionId, checkpoints]) => {
+          const dates = checkpoints.map((c) => c.updatedAt).sort();
+          return {
+            sessionId,
+            checkpoints,
+            createdAt: dates[0],
+            updatedAt: dates[dates.length - 1],
+          };
+        },
+      );
+
+      // Sort by most recent updatedAt descending
+      sessions.sort((a, b) =>
+        b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ ok: true, sessions }),
+          },
+        ],
+      };
+    } catch (_err) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "Failed to query brain records",
+            }),
+          },
+        ],
+      };
+    }
   },
 );
 
@@ -1034,7 +1238,16 @@ server.tool(
     const cp = requireCheckpoint();
     const json = serialize(cp);
     return {
-      content: [{ type: "text", text: JSON.stringify({ checkpoint: json }) }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            checkpoint: json,
+            ...(cp.sessionId ? { sessionId: cp.sessionId } : {}),
+            ...(cp.sessionLabel ? { sessionLabel: cp.sessionLabel } : {}),
+          }),
+        },
+      ],
     };
   },
 );

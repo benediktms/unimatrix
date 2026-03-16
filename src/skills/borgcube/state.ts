@@ -11,10 +11,10 @@ import { computeWaves } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0"]);
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -27,6 +27,7 @@ const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0"]);
 export function createCheckpoint(
   repos: RepoMetadata[],
   graph: Graph,
+  opts?: { sessionId?: string; sessionLabel?: string },
 ): Checkpoint {
   const now = new Date().toISOString();
   return {
@@ -40,6 +41,10 @@ export function createCheckpoint(
     refinementHistory: [],
     createdAt: now,
     updatedAt: now,
+    ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+    ...(opts?.sessionLabel !== undefined
+      ? { sessionLabel: opts.sessionLabel }
+      : {}),
   };
 }
 
@@ -132,6 +137,15 @@ export function canTransition(
           allowed: false,
           reason:
             `refinement_approved requires refining state, got ${machineState}`,
+        };
+      }
+      return { allowed: true };
+
+    case "cancel":
+      if (machineState === "completed" || machineState === "cancelled") {
+        return {
+          allowed: false,
+          reason: `cancel is not allowed in terminal state ${machineState}`,
         };
       }
       return { allowed: true };
@@ -312,6 +326,15 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         machineState: "dispatching",
         updatedAt: now,
       };
+
+    case "cancel":
+      return {
+        ...checkpoint,
+        machineState: "cancelled",
+        cancellationReason: event.reason,
+        cancelledAt: now,
+        updatedAt: now,
+      };
   }
 }
 
@@ -360,6 +383,10 @@ export function deserialize(json: string): Checkpoint {
   if (cp.version === "1.0.0") {
     cp.refinementHistory ??= [];
   }
+
+  // Backward compat: sessionId, sessionLabel, cancellationReason, and cancelledAt
+  // are optional fields introduced in 1.2.0. Older checkpoints simply omit them —
+  // no patching required since all four are typed as optional on Checkpoint.
 
   return cp;
 }

@@ -42,9 +42,14 @@ stateDiagram-v2
 
     failed --> dispatching: retry_wave()
 
-    failed --> [*]
+    initializing --> cancelled: cancel()
+    dispatching --> cancelled: cancel()
+    gate_halted --> cancelled: cancel()
+    refining --> cancelled: cancel()
+    failed --> cancelled: cancel()
 
     completed --> [*]
+    cancelled --> [*]
 ```
 
 **State descriptions:**
@@ -53,6 +58,7 @@ stateDiagram-v2
 - **`gate_halted`** — A wave with `hasMergeGate: true` completed. External PRs must be merged before proceeding. Machine waits for `clear_gate()` events.
 - **`failed`** — One or more nodes failed. User chooses: retry failed nodes, invoke `/diagnose`, or abandon.
 - **`completed`** — All waves executed, all nodes in terminal state. Clean up worktrees and report results.
+- **`cancelled`** — Execution cancelled from a non-terminal state. Terminal state — no further transitions allowed. User can optionally archive the checkpoint.
 
 ---
 
@@ -272,6 +278,65 @@ Waves:
 
 ---
 
+## Session Grouping
+
+Borgcube groups checkpoints and executions into **sessions**. Each session has a unique identifier and optional label, enabling discovery and management of multiple concurrent or historical borgcube executions.
+
+### Session Identity
+
+**Session ID:** Automatically generated in format `borgcube-YYYY-MM-DD-XXXX` (date + 4-digit random suffix).
+- Ensures uniqueness across sessions initiated on the same day.
+- Returned by `save_checkpoint` and stored in the checkpoint.
+
+**Session Label:** Optional user-provided label or auto-generated from repository names.
+- Example: `api-service-contracts-feature`
+- Aids human-readable checkpoint discovery.
+
+### Session Tagging
+
+All checkpoints within a session are tagged with `borgcube-session:<sessionId>` during artifact creation (Step 5 of SKILL.md). This enables:
+
+- **Checkpoint grouping:** All checkpoints for a session discoverable via `records_list` with the session tag.
+- **Session listing:** Call `list_sessions` to retrieve all sessions and their associated checkpoints.
+- **Organized discovery:** Users can explore concurrent or historical borgcube work without ambiguity.
+
+### Example
+
+```
+Session: borgcube-2026-03-16-a7k2
+Label: api-backend-grpc-feature
+
+Checkpoints:
+  - artifact-id-001 (checkpoint: graph computed, awaiting user approval)
+  - artifact-id-002 (checkpoint: Wave 1 dispatched, Drones active)
+  - artifact-id-003 (checkpoint: Wave 1 completed, gate_halted, PRs merged)
+```
+
+---
+
+## Cancellation
+
+Borgcube execution can be cancelled gracefully from any non-terminal state.
+
+### Cancel Event
+
+Trigger cancellation via the `cancel` MCP tool with an optional reason string. The machine transitions immediately to `cancelled` state.
+
+**Key differences from `failed` state:**
+- **`failed`** — Transient, recoverable. User can retry failed nodes or abandon.
+- **`cancelled`** — Terminal, final. No retry possible. Indicates deliberate shutdown.
+
+### Archive
+
+After cancellation, optionally call `archive` with the checkpoint artifact ID to archive the checkpoint via the brain CLI. Archived checkpoints are removed from active session listings but retained in the brain record for audit/recovery purposes.
+
+**Workflow:**
+1. Call `cancel` with optional reason → machine enters `cancelled` state.
+2. Optionally call `archive` with artifact ID → checkpoint archived.
+3. Remove worktrees manually or via cleanup script if desired.
+
+---
+
 ## Refinement Flow
 
 Borgcube supports **refinement** — adding repositories or modifying the graph mid-execution while preserving completed work.
@@ -335,16 +400,20 @@ Borgcube persists state via checkpoints. Checkpoints are saved as brain artifact
 
 ```typescript
 interface Checkpoint {
-  version: string              // e.g., "1.0.0"
+  version: string              // e.g., "1.2.0"
   machineState: MachineState   // current state
   graph: Graph                 // nodes and edges
   waves: Wave[]                // computed topological waves
   currentWaveId: number | null // active wave ID
   repos: RepoMetadata[]        // target repositories
   waveHistory: WaveResult[]    // completed/failed wave results
+  sessionId: string            // borgcube-YYYY-MM-DD-XXXX format
+  sessionLabel?: string        // user-provided or auto-generated label
   createdAt: string            // ISO 8601
   updatedAt: string            // ISO 8601
   epicTaskId?: string          // brain task ID if materialized
+  cancellationReason?: string  // reason for cancellation (if cancelled)
+  cancelledAt?: string         // ISO 8601 timestamp of cancellation
 }
 ```
 
@@ -358,9 +427,9 @@ Checkpoints are persisted after:
 
 ### Version Compatibility
 
-- Current version: `1.0.0`
+- Current version: `1.2.0`
 - Deserialization enforces version match — mismatched versions abort.
-- Future versions (1.1.0+) will implement forward-compatible migration logic.
+- Future versions (1.3.0+) will implement forward-compatible migration logic.
 
 ### Refinement History
 
@@ -465,6 +534,9 @@ The UNIMATRIX MCP server exposes the following tools. All require an initialized
 | `status` | Return full state dump: machineState, nodes, edges, waves, waveHistory. |
 | `save_checkpoint` | Serialize checkpoint to JSON string for persistence. |
 | `restore_checkpoint` | Deserialize JSON and load as current checkpoint. |
+| `cancel` | Cancel execution. Transitions to cancelled state. Accepts optional reason. |
+| `archive` | Archive a checkpoint artifact. Requires completed or cancelled state. |
+| `list_sessions` | List all borgcube sessions grouped by session ID. |
 
 ---
 
