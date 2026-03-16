@@ -8,6 +8,16 @@
 import type { Edge, Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
+// Refinement mutation result
+// ---------------------------------------------------------------------------
+
+export interface MutationResult<T> {
+  ok: boolean;
+  value?: T;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Public result types
 // ---------------------------------------------------------------------------
 
@@ -359,6 +369,218 @@ export function activateNodes(graph: Graph, nodeIds: string[]): Graph {
     }
   }
   return { ...graph, nodes: updatedNodes };
+}
+
+// ---------------------------------------------------------------------------
+// Refinement-aware graph mutations
+// ---------------------------------------------------------------------------
+
+/** Node statuses that indicate the node has been completed or is actively running. */
+const ACTIVE_OR_COMPLETED_STATUSES: Node["status"][] = [
+  "active",
+  "pr_created",
+  "merged",
+];
+
+/**
+ * Add a node to the graph with refinement-mode guards.
+ *
+ * When `refining` is true:
+ * - The node's `stackedOn` target must not be an active or completed node
+ *   (new nodes cannot be inserted into completed/active waves).
+ *
+ * When `refining` is false, the node is accepted unconditionally (validation
+ * is deferred to `validate()` / `computeWaves()`).
+ */
+export function addNode(
+  graph: Graph,
+  node: Node,
+  refining = false,
+): MutationResult<Graph> {
+  if (refining && graph.nodes[node.id] !== undefined) {
+    return {
+      ok: false,
+      error:
+        `Cannot add node during refinement: ID "${node.id}" already exists`,
+    };
+  }
+
+  if (refining && node.stackedOn !== undefined) {
+    const parent = graph.nodes[node.stackedOn];
+    if (parent && ACTIVE_OR_COMPLETED_STATUSES.includes(parent.status)) {
+      return {
+        ok: false,
+        error:
+          `Cannot add node "${node.id}" stacked on "${node.stackedOn}" — that node is ${parent.status} and belongs to a completed or active wave`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...graph,
+      nodes: { ...graph.nodes, [node.id]: node },
+    },
+  };
+}
+
+/**
+ * Add an edge to the graph with refinement-mode guards.
+ *
+ * When `refining` is true:
+ * - The `to` node must not be an active or completed node (adding an incoming
+ *   dependency to already-dispatched work is forbidden).
+ *
+ * When `refining` is false, the edge is accepted unconditionally.
+ */
+export function addEdge(
+  graph: Graph,
+  edge: Edge,
+  refining = false,
+): MutationResult<Graph> {
+  if (refining) {
+    const target = graph.nodes[edge.to];
+    if (target && ACTIVE_OR_COMPLETED_STATUSES.includes(target.status)) {
+      return {
+        ok: false,
+        error:
+          `Cannot add edge to "${edge.to}" — that node is ${target.status} (active or completed)`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...graph,
+      edges: [...graph.edges, edge],
+    },
+  };
+}
+
+/**
+ * Compute waves for a graph that is being refined mid-execution.
+ *
+ * Rules:
+ * - Completed nodes (status "merged") are excluded from the topological sort.
+ * - Edges whose `from` node is completed are treated as pre-satisfied (not a
+ *   blocking dependency for the receiving node).
+ * - New waves are numbered starting after `waveOffset` so they do not
+ *   collide with already-assigned completed wave numbers.
+ *
+ * Returns only the new/modified waves. The caller merges them with the
+ * existing completed waves.
+ */
+export function computeWavesFromRefinement(
+  graph: Graph,
+  waveOffset: number,
+): Wave[] {
+  const completedStatuses: Node["status"][] = ["merged"];
+
+  // Identify completed node IDs — excluded from the new computation
+  const completedNodeIds = new Set(
+    Object.entries(graph.nodes)
+      .filter(([, n]) => completedStatuses.includes(n.status))
+      .map(([id]) => id),
+  );
+
+  // Remaining nodes to assign to new waves
+  const remainingNodeIds = Object.keys(graph.nodes).filter(
+    (id) => !completedNodeIds.has(id),
+  );
+
+  if (remainingNodeIds.length === 0) return [];
+
+  // Filter edges: keep only those whose both endpoints are remaining nodes,
+  // OR whose `from` is a completed node (treated as pre-satisfied — excluded
+  // from in-degree computation so remaining nodes start at level 0 if their
+  // only deps are completed).
+  const activeEdges = graph.edges.filter(
+    (e) => !completedNodeIds.has(e.from) && !completedNodeIds.has(e.to),
+  );
+
+  // Assign topological levels for remaining nodes only.
+  const level = new Map<string, number>();
+  for (const id of remainingNodeIds) {
+    level.set(id, 0);
+  }
+
+  // Build adjacency and in-degree for remaining nodes only
+  const inDegreeAll = new Map<string, number>();
+  const adjAll = new Map<string, string[]>();
+  for (const id of remainingNodeIds) {
+    inDegreeAll.set(id, 0);
+    adjAll.set(id, []);
+  }
+  for (const edge of activeEdges) {
+    adjAll.get(edge.from)!.push(edge.to);
+    inDegreeAll.set(edge.to, (inDegreeAll.get(edge.to) ?? 0) + 1);
+  }
+
+  // Topological sort
+  const tempQueue: string[] = [];
+  for (const [id, deg] of inDegreeAll) {
+    if (deg === 0) tempQueue.push(id);
+  }
+
+  const topoOrder: string[] = [];
+  const queue = [...tempQueue];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    topoOrder.push(cur);
+    for (const nb of adjAll.get(cur) ?? []) {
+      const nd = (inDegreeAll.get(nb) ?? 0) - 1;
+      inDegreeAll.set(nb, nd);
+      if (nd === 0) queue.push(nb);
+    }
+  }
+
+  // Build edge type lookup
+  const edgeType = new Map<string, Edge["type"]>();
+  for (const edge of activeEdges) {
+    edgeType.set(`${edge.from}::${edge.to}`, edge.type);
+  }
+
+  // Propagate levels
+  for (const id of topoOrder) {
+    const curLevel = level.get(id) ?? 0;
+    for (const nb of adjAll.get(id) ?? []) {
+      const eType = edgeType.get(`${id}::${nb}`);
+      const bump = eType === "merge_gate" ? 1 : 0;
+      const newLevel = curLevel + bump;
+      if (newLevel > (level.get(nb) ?? 0)) {
+        level.set(nb, newLevel);
+      }
+    }
+  }
+
+  // Group remaining nodes by level
+  const byLevel = new Map<number, string[]>();
+  for (const [id, lv] of level) {
+    if (!byLevel.has(lv)) byLevel.set(lv, []);
+    byLevel.get(lv)!.push(id);
+  }
+
+  const sortedLevels = [...byLevel.keys()].sort((a, b) => a - b);
+
+  // Determine wave IDs with outgoing merge_gate edges into later waves
+  const mergeGateSourceLevels = new Set<number>();
+  for (const edge of activeEdges) {
+    if (edge.type === "merge_gate") {
+      const fromLevel = level.get(edge.from) ?? 0;
+      mergeGateSourceLevels.add(fromLevel);
+    }
+  }
+
+  // Build new waves, numbering from waveOffset + 1
+  const waves: Wave[] = sortedLevels.map((lv, idx) => ({
+    id: waveOffset + idx + 1,
+    nodes: byLevel.get(lv) ?? [],
+    hasMergeGate: mergeGateSourceLevels.has(lv),
+  }));
+
+  return waves;
 }
 
 // ---------------------------------------------------------------------------

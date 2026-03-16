@@ -94,6 +94,7 @@ export type MachineState =
   | "initializing"
   | "dispatching"
   | "gate_halted"
+  | "refining"
   | "failed"
   | "completed";
 
@@ -122,6 +123,17 @@ export interface Checkpoint {
   updatedAt: string;
   /** Brain task ID of the epic task for this borgcube execution, if materialized. */
   epicTaskId?: string;
+  /** History of plan refinements applied after initial dispatch. */
+  refinementHistory: Array<{
+    /** ISO 8601 timestamp when this refinement was applied. */
+    timestamp: string;
+    /** Node IDs added during this refinement. */
+    addedNodes: string[];
+    /** Edges added during this refinement. */
+    addedEdges: Array<{ from: string; to: string; type: string }>;
+    /** Repository names added during this refinement. */
+    addedRepos: string[];
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +205,156 @@ export interface PrInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Elicitation types
+// ---------------------------------------------------------------------------
+
+/**
+ * A single primitive property within an elicitation schema.
+ * MCP elicitation restricts schemas to flat objects with primitive fields only.
+ */
+export type ElicitationProperty =
+  | {
+    type: "string";
+    title?: string;
+    description?: string;
+    minLength?: number;
+    maxLength?: number;
+    format?: string;
+  }
+  | {
+    type: "number" | "integer";
+    title?: string;
+    description?: string;
+    minimum?: number;
+    maximum?: number;
+  }
+  | { type: "boolean"; title?: string; description?: string; default?: boolean }
+  | {
+    type: "string";
+    enum: string[];
+    enumNames?: string[];
+    title?: string;
+    description?: string;
+  };
+
+/**
+ * The requestedSchema parameter for MCP elicitation/create.
+ * Must be a flat JSON Schema object — no nested objects, no arrays of objects.
+ */
+export interface ElicitationRequestedSchema {
+  type: "object";
+  properties: Record<string, ElicitationProperty>;
+  required?: string[];
+}
+
+/**
+ * Result returned by an MCP elicitation/create request.
+ * - `accept`: user submitted data; `content` holds the form values.
+ * - `decline`: user explicitly rejected the form.
+ * - `cancel`: user dismissed without choosing.
+ */
+export type ElicitResult =
+  | { action: "accept"; content: Record<string, unknown> }
+  | { action: "decline" }
+  | { action: "cancel" };
+
+// ---------------------------------------------------------------------------
+// Elicitation schema builders
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema for an approval form.
+ * Presents a boolean approval field and an optional free-text modifications field.
+ */
+export function approvalSchema(opts?: {
+  approveTitle?: string;
+  modificationsTitle?: string;
+}): ElicitationRequestedSchema {
+  return {
+    type: "object",
+    properties: {
+      approve: {
+        type: "boolean",
+        title: opts?.approveTitle ?? "Approve",
+        description: "Approve this action to proceed.",
+        default: false,
+      },
+      modifications: {
+        type: "string",
+        title: opts?.modificationsTitle ?? "Requested modifications",
+        description:
+          "Optional: describe any modifications before proceeding.",
+      },
+    },
+    required: ["approve"],
+  };
+}
+
+/**
+ * Schema for a triage form.
+ * Presents a decision enum (retry / diagnose / abandon) and an optional context field.
+ */
+export function triageSchema(opts?: {
+  decisionTitle?: string;
+  contextTitle?: string;
+}): ElicitationRequestedSchema {
+  return {
+    type: "object",
+    properties: {
+      decision: {
+        type: "string",
+        enum: ["retry", "diagnose", "abandon"],
+        enumNames: ["Retry", "Diagnose", "Abandon"],
+        title: opts?.decisionTitle ?? "Decision",
+        description: "How to proceed after this failure.",
+      },
+      context: {
+        type: "string",
+        title: opts?.contextTitle ?? "Additional context",
+        description:
+          "Optional: provide additional context for the decision.",
+      },
+    },
+    required: ["decision"],
+  };
+}
+
+/**
+ * Schema for a generic selection form.
+ * Presents an enum selection field and an optional free-text notes field.
+ *
+ * @param choices - Array of option values to present.
+ * @param opts.choiceNames - Optional human-readable labels for each option.
+ */
+export function selectionSchema(
+  choices: string[],
+  opts?: {
+    choiceNames?: string[];
+    selectionTitle?: string;
+    notesTitle?: string;
+  },
+): ElicitationRequestedSchema {
+  return {
+    type: "object",
+    properties: {
+      selection: {
+        type: "string",
+        enum: choices,
+        ...(opts?.choiceNames ? { enumNames: opts.choiceNames } : {}),
+        title: opts?.selectionTitle ?? "Selection",
+        description: "Choose one of the available options.",
+      },
+      notes: {
+        type: "string",
+        title: opts?.notesTitle ?? "Notes",
+        description: "Optional: provide any additional notes.",
+      },
+    },
+    required: ["selection"],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Events (state machine transitions)
 // ---------------------------------------------------------------------------
 
@@ -213,4 +375,6 @@ export type Event =
   | { type: "wave_completed"; waveId: number }
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }
-  | { type: "retry_wave"; waveId: number };
+  | { type: "retry_wave"; waveId: number }
+  | { type: "refine" }
+  | { type: "refinement_approved" };

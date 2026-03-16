@@ -55,6 +55,7 @@ function makeCheckpoint(overrides: Partial<Checkpoint> = {}): Checkpoint {
     currentWaveId: null,
     repos: [],
     waveHistory: [],
+    refinementHistory: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -277,7 +278,7 @@ Deno.test("deserialize: version mismatch throws", () => {
   assertThrows(
     () => deserialize(JSON.stringify(raw)),
     Error,
-    "version mismatch",
+    "Checkpoint version unsupported",
   );
 });
 

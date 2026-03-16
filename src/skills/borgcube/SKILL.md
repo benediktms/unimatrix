@@ -128,15 +128,22 @@ If `--resume` is set:
    - New brains were added (step 4 found repos not in the checkpoint).
    - The user's message includes additional instructions or scope changes.
    In refinement mode:
-   a. Present the current graph: nodes, edges, wave plan, and node statuses.
-      Highlight any newly added repos that have no nodes yet.
-   b. Apply changes — add nodes for new repos, add/remove edges, modify
-      labels or implementation details.
-   c. Re-validate the graph (`validate`).
-   d. Re-compute waves (`compute_waves`).
-   e. Persist the updated checkpoint (Step 5).
-   f. Present the updated plan and wait for user approval.
-   g. After approval, route by the new `machineState` (step 6 below).
+   a. Call `refine` to transition the machine into refinement state.
+   b. Apply changes — call `add_repo` / `add_node` / `add_edge` for new repos
+      and their work items. Remove or modify existing nodes/edges as needed.
+   c. Call `compute_waves` — the server elicits refinement approval from the
+      user via structured form. The response includes `ok: true` or `ok: false`
+      with optional modification notes.
+   d. On approval (`ok: true`): persist the updated checkpoint (Step 5), then
+      proceed with dispatch of new/modified waves (route by `machineState`).
+   e. On rejection (`ok: false`): remain in refinement state. Adjust the graph
+      based on the user's notes, then retry `compute_waves`.
+   f. **Fallback behavior (client lacks elicitation capability):** If the `ok`
+      field is absent from the `compute_waves` response, elicitation is
+      unavailable. Present the refinement summary conversationally — show the
+      current graph: nodes, edges, wave plan, and node statuses, highlighting
+      newly added repos. HALT for user approval before persisting and
+      dispatching.
 6. Route by state (if not entering refinement mode):
    - `dispatching` → jump to Step 6 (wave dispatch loop)
    - `gate_halted` → jump to Step 8 (gate check)
@@ -259,8 +266,21 @@ We execute waves in topological order.
 - `"Execution failed."` → go to Step 9.
 - Other: report the reason and halt.
 
-**6b. Present wave plan:** Before dispatching, present a detailed plan for the
-wave to the user and wait for approval. The plan must include:
+**6b. Wave approval:** The server elicits wave approval from the user via
+structured form when `next_wave` is called. The wave plan returned by `next_wave`
+includes node details (repo, branch, label, implementation notes, dependencies,
+risks). The elicitation form presents this plan to the user and collects a
+structured response.
+
+If the user rejects, the `next_wave` response includes `approved: false` with
+optional modification notes. Act on the rejection: modify the plan (adjust node
+labels, implementation details, or edge structure) or re-present with
+clarifications. Do not proceed to 6c until `approved: true`.
+
+**Fallback behavior (client lacks elicitation capability):** If the `approved`
+field is absent from the `next_wave` response, elicitation is unavailable.
+Present the wave plan conversationally using the format below and HALT for
+approval before proceeding to 6c:
 
 ```
 WAVE <N> — <node count> nodes across <repo count> repos
@@ -289,8 +309,6 @@ Risks:
 For each node, the implementation details must be concrete — file paths, function
 names, API changes, proto definitions, etc. The user must be able to evaluate
 whether the plan is correct before drones execute it.
-
-**HALT and wait for user approval before proceeding to 6c.**
 
 **6c. Dispatch wave:** Call `dispatch_wave` with `waveId` from the returned
 wave.
@@ -422,9 +440,27 @@ Update the base to the merged target branch (typically `main`).
 
 One or more nodes have failed. The collective does not proceed blindly.
 
-Call `status` to enumerate failed nodes with `failureReason`.
+Call `status` to enumerate failed nodes with `failureReason`. Then call
+`fail_node` for each failed node (if not already marked failed) — the server
+elicits a triage decision from the user via structured form. The `fail_node`
+response includes `triage: { decision, context? }` where `decision` is one of
+`retry`, `diagnose`, or `abandon`.
 
-Present to the user:
+Act on the decision:
+
+- **retry**: For each failed node, call a state reset (re-create worktree if
+  needed, dispatch new Drone). On success, call `complete_node`. On failure,
+  return to this step.
+- **diagnose**: Invoke `/diagnose` with the failure context from
+  `triage.context` (if provided). After diagnosis, return to this step with
+  findings.
+- **abandon**: Close all open brain tasks. Remove all worktrees
+  (`git -C <repo-root> worktree remove --force <path>`). Report which nodes
+  completed and which failed. Do not close the epic (user may want to inspect).
+
+**Fallback behavior (client lacks elicitation capability):** If the `triage`
+field is absent from the `fail_node` response, elicitation is unavailable.
+Present failure details conversationally and HALT for triage decision:
 
 ```
 ADAPTATION INCOMPLETE — Wave N has failed nodes:
@@ -437,17 +473,6 @@ Options:
   diagnose — invoke /diagnose on the failure logs
   abandon  — close all tasks, tear down worktrees, report partial results
 ```
-
-Wait for user selection:
-
-- **retry**: For each failed node, call a state reset (re-create worktree if
-  needed, dispatch new Drone). On success, call `complete_node`. On failure,
-  report again.
-- **diagnose**: Invoke `/diagnose` with the failure context. After diagnosis,
-  return to this step with findings.
-- **abandon**: Close all open brain tasks. Remove all worktrees
-  (`git -C <repo-root> worktree remove --force <path>`). Report which nodes
-  completed and which failed. Do not close the epic (user may want to inspect).
 
 ## Step 10: Completion
 
@@ -494,7 +519,8 @@ themselves.
 | `add_node`           | Add a node to the graph (id, repo, type, label, worktreeBranch, stackedOn?).      |
 | `add_edge`           | Add a directed edge (from, to, type: merge_gate\|stacked).                        |
 | `validate`           | Check graph integrity — edge refs, stackedOn refs, cycles.                        |
-| `compute_waves`      | Validate, compute topological wave order, transition to `dispatching`.            |
+| `refine`             | Enter refinement state on a loaded checkpoint. Enables graph modification before re-dispatching. |
+| `compute_waves`      | Validate, compute topological wave order, transition to `dispatching`. Elicits refinement approval when in refinement state. |
 | `dispatch_wave`      | Activate all nodes in a wave and record it as current.                            |
 | `complete_node`      | Mark a node complete. Optionally record prUrl and prNumber.                       |
 | `fail_node`          | Mark a node failed with a reason string.                                          |
@@ -508,7 +534,7 @@ themselves.
 
 ```
 initializing
-    │ compute_waves (plan_approved)
+    │ compute_waves (approved)
     ▼
 dispatching ◄──────────────────────────────────────────────────┐
     │ next_wave → dispatch → complete/fail all nodes           │
@@ -518,6 +544,17 @@ dispatching ◄─────────────────────�
     ├─ all waves done ──► completed
     │
     └─ node_failed ──► failed
+
+On resume with new repos or scope changes:
+dispatching/gate_halted/failed
+    │ refine
+    ▼
+refining ──► add_repo / add_node / add_edge ──► compute_waves (approved)
+    │                                                           │
+    │ rejected ◄─────────────────────────────────────────────┘
+    │ (adjust graph, retry compute_waves)
+    │
+    │ approved ──► dispatching (resumes from new/modified waves)
 ```
 
 **Node statuses:** `pending` → `active` → `pr_created` → `merged` | `failed` |

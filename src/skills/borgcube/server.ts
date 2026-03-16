@@ -9,12 +9,21 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import type { Checkpoint, RepoMetadata } from "./types.ts";
+import type {
+  Checkpoint,
+  ElicitationRequestedSchema,
+  ElicitResult,
+  RepoMetadata,
+} from "./types.ts";
+import { approvalSchema, triageSchema } from "./types.ts";
 import {
   activateNodes,
+  addEdge,
+  addNode,
   clearGate,
   completeNode,
   computeWaves,
+  computeWavesFromRefinement,
   failNode,
   nextWave,
   validate,
@@ -55,6 +64,39 @@ const server = new McpServer({
   name: "borgcube",
   version: "1.0.0",
 });
+
+// ---------------------------------------------------------------------------
+// Elicitation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Request user input via MCP elicitation (form mode).
+ *
+ * Checks whether the connected client advertises elicitation capability.
+ * If capable, sends an elicitation/create request and returns the result.
+ * If the client lacks elicitation capability, returns `{ action: 'decline' }`
+ * so callers can treat it as a graceful opt-out.
+ */
+export async function elicitForm(
+  message: string,
+  requestedSchema: ElicitationRequestedSchema,
+): Promise<ElicitResult> {
+  const capabilities = server.server.getClientCapabilities();
+  if (!capabilities?.elicitation) {
+    return { action: "decline" };
+  }
+  // Our ElicitationRequestedSchema is a structural subset of the SDK's
+  // requestedSchema. Cast to the parameter type via Parameters<> to avoid
+  // importing the SDK types.js entry directly.
+  type ElicitInputParams = Parameters<typeof server.server.elicitInput>[0];
+  const raw = await server.server.elicitInput(
+    { message, requestedSchema } as ElicitInputParams,
+  );
+  if (raw.action === "accept") {
+    return { action: "accept", content: raw.content ?? {} };
+  }
+  return { action: raw.action };
+}
 
 // ---------------------------------------------------------------------------
 // Tool: init
@@ -120,6 +162,12 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_repo requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const existing = cp.repos.find((r) => r.name === params.name);
     if (existing) {
       return {
@@ -177,6 +225,13 @@ server.tool(
   },
   (params) => {
     const cp = requireCheckpoint();
+
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_node requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const node = {
       id: params.id,
       repo: params.repo,
@@ -188,12 +243,15 @@ server.tool(
         : {}),
       status: "pending" as const,
     };
+
+    const result = addNode(cp.graph, node, cp.machineState === "refining");
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
     checkpoint = {
       ...cp,
-      graph: {
-        ...cp.graph,
-        nodes: { ...cp.graph.nodes, [params.id]: node },
-      },
+      graph: result.value!,
       updatedAt: new Date().toISOString(),
     };
     return {
@@ -219,17 +277,27 @@ server.tool(
   },
   (params) => {
     const cp = requireCheckpoint();
+
+    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+      throw new Error(
+        `add_edge requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
     const edge = {
       from: params.from,
       to: params.to,
       type: params.type as "merge_gate" | "stacked",
     };
+
+    const result = addEdge(cp.graph, edge, cp.machineState === "refining");
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
     checkpoint = {
       ...cp,
-      graph: {
-        ...cp.graph,
-        edges: [...cp.graph.edges, edge],
-      },
+      graph: result.value!,
       updatedAt: new Date().toISOString(),
     };
     return {
@@ -237,6 +305,42 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify({ ok: true, from: params.from, to: params.to }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: refine
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "refine",
+  "Enter refining state to add new nodes, edges, or repos to an in-progress execution. Call compute_waves when done to apply the changes and resume dispatching.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+
+    const check = canTransition(cp, { type: "refine" });
+    if (!check.allowed) {
+      throw new Error(`Cannot enter refining state: ${check.reason}`);
+    }
+
+    const transitioned = transition(cp, { type: "refine" });
+    checkpoint = transitioned;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            currentWaveId: checkpoint.currentWaveId,
+            nodeCount: Object.keys(checkpoint.graph.nodes).length,
+            waveCount: checkpoint.waves.length,
+          }),
         },
       ],
     };
@@ -266,9 +370,9 @@ server.tool(
 
 server.tool(
   "compute_waves",
-  "Validate graph, compute execution waves, and transition to dispatching state (plan_approved).",
+  "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     const validationResult = validate(cp.graph);
@@ -278,6 +382,157 @@ server.tool(
       );
     }
 
+    if (cp.machineState === "refining") {
+      // Partial recomputation — preserve completed waves, append new waves
+      const check = canTransition(cp, { type: "refinement_approved" });
+      if (!check.allowed) {
+        throw new Error(`Cannot transition: ${check.reason}`);
+      }
+
+      // Determine the last completed wave number to offset new wave IDs
+      const completedWaves = cp.waves.filter((w) =>
+        w.nodes.every((nId) => cp.graph.nodes[nId]?.status === "merged")
+      );
+      const waveOffset = completedWaves.length > 0
+        ? Math.max(...completedWaves.map((w) => w.id))
+        : 0;
+
+      const newWaves = computeWavesFromRefinement(cp.graph, waveOffset);
+
+      // Merge: keep completed waves, replace remaining with recomputed waves
+      const mergedWaves = [...completedWaves, ...newWaves];
+
+      // Collect what was added in this refinement for the history record
+      const existingNodeIds = new Set(
+        cp.waves.flatMap((w) => w.nodes),
+      );
+      const addedNodes = Object.keys(cp.graph.nodes).filter(
+        (id) => !existingNodeIds.has(id),
+      );
+
+      // Record all edges pointing to or from new nodes
+      const addedEdges = cp.graph.edges
+        .filter((e) => addedNodes.includes(e.from) || addedNodes.includes(e.to))
+        .map((e) => ({ from: e.from, to: e.to, type: e.type }));
+
+      // Repos referenced by pre-refinement wave nodes (existing scope)
+      const preRefinementRepoNames = new Set(
+        cp.waves.flatMap((w) =>
+          w.nodes.map((nId) => cp.graph.nodes[nId]?.repo).filter(Boolean)
+        ),
+      );
+      const addedRepos = cp.repos
+        .map((r) => r.name)
+        .filter((name) => !preRefinementRepoNames.has(name));
+
+      // Build elicitation message summarising the proposed changes
+      const completedWavesSummary = completedWaves.length > 0
+        ? `Completed waves (read-only): ${completedWaves.map((w) => `Wave ${w.id}`).join(", ")}`
+        : "No completed waves.";
+
+      const revisedWavesSummary = newWaves.length > 0
+        ? `Revised future waves (${newWaves.length}): ${
+          newWaves.map((w) =>
+            `Wave ${w.id} — ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"}`
+          ).join("; ")
+        }`
+        : "No future waves after refinement.";
+
+      const changesSummary = [
+        `New nodes: ${addedNodes.length}`,
+        `New edges: ${addedEdges.length}`,
+        `New repos: ${addedRepos.length}`,
+      ].join(" | ");
+
+      const elicitMessage =
+        `Refinement ready to apply.\n\n` +
+        `Changes: ${changesSummary}\n\n` +
+        `${completedWavesSummary}\n` +
+        `${revisedWavesSummary}\n\n` +
+        `Approve to transition to dispatching state.`;
+
+      const elicitResult = await elicitForm(
+        elicitMessage,
+        approvalSchema({
+          approveTitle: "Approve refinement?",
+          modificationsTitle: "Notes (optional)",
+        }),
+      );
+
+      // Graceful degradation: decline from missing capability — proceed without approval
+      const proceedWithoutApproval = elicitResult.action === "decline" &&
+        !server.server.getClientCapabilities()?.elicitation;
+
+      if (!proceedWithoutApproval) {
+        if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason: "Refinement rejected by user.",
+                  machineState: cp.machineState,
+                }),
+              },
+            ],
+          };
+        }
+
+        if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+          const notes = typeof elicitResult.content.modifications === "string" &&
+              elicitResult.content.modifications.length > 0
+            ? elicitResult.content.modifications
+            : undefined;
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason: "Refinement not approved.",
+                  machineState: cp.machineState,
+                  ...(notes !== undefined ? { notes } : {}),
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+      const refinementRecord = {
+        timestamp: new Date().toISOString(),
+        addedNodes,
+        addedEdges,
+        addedRepos,
+      };
+
+      const transitioned = transition(
+        {
+          ...cp,
+          waves: mergedWaves,
+          refinementHistory: [...cp.refinementHistory, refinementRecord],
+        },
+        { type: "refinement_approved" },
+      );
+      checkpoint = transitioned;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              machineState: checkpoint.machineState,
+              waves: checkpoint.waves,
+              refinementHistory: checkpoint.refinementHistory,
+            }),
+          },
+        ],
+      };
+    }
+
+    // initializing state — full computation
     const check = canTransition(cp, { type: "plan_approved" });
     if (!check.allowed) {
       throw new Error(`Cannot transition: ${check.reason}`);
@@ -424,7 +679,7 @@ server.tool(
     nodeId: z.string().describe("Node ID to fail"),
     reason: z.string().describe("Human-readable failure reason"),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -461,16 +716,55 @@ server.tool(
       }
     }
 
+    const failureData = {
+      ok: true,
+      nodeId: params.nodeId,
+      status: checkpoint.graph.nodes[params.nodeId]?.status,
+      machineState: checkpoint.machineState,
+    };
+
+    // Elicit triage decision from the user
+    const node = checkpoint.graph.nodes[params.nodeId];
+    const nodeLabel = node?.label ?? params.nodeId;
+    const nodeRepo = node?.repo ?? "unknown";
+    const message =
+      `Node "${nodeLabel}" (id: ${params.nodeId}, repo: ${nodeRepo}) has failed.\n` +
+      `Reason: ${params.reason}\n\n` +
+      `Choose how to proceed with this failure.`;
+
+    const elicitResult = await elicitForm(message, triageSchema({
+      decisionTitle: "Triage decision",
+      contextTitle: "Additional context (optional)",
+    }));
+
+    if (elicitResult.action === "accept") {
+      const decision = elicitResult.content.decision as string;
+      const context = typeof elicitResult.content.context === "string" &&
+          elicitResult.content.context.length > 0
+        ? elicitResult.content.context
+        : undefined;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ...failureData,
+              triage: {
+                decision,
+                ...(context !== undefined ? { context } : {}),
+              },
+            }),
+          },
+        ],
+      };
+    }
+
+    // decline (no elicitation capability) or cancel — return without triage
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            ok: true,
-            nodeId: params.nodeId,
-            status: checkpoint.graph.nodes[params.nodeId]?.status,
-            machineState: checkpoint.machineState,
-          }),
+          text: JSON.stringify(failureData),
         },
       ],
     };
@@ -532,7 +826,7 @@ server.tool(
   "next_wave",
   "Return the next wave ready for execution, or null with a reason if none is available.",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     if (cp.machineState === "gate_halted") {
@@ -593,8 +887,64 @@ server.tool(
       };
     }
 
+    // Build node summary lines for the elicitation message
+    const nodeSummaries = wave.nodes
+      .map((nodeId) => {
+        const node = cp.graph.nodes[nodeId];
+        if (!node) return `  - ${nodeId} (unknown)`;
+        return `  - ${node.id} | repo: ${node.repo} | ${node.label} | branch: ${node.worktreeBranch}`;
+      })
+      .join("\n");
+
+    const message =
+      `Wave ${wave.id + 1} is ready for dispatch.\n` +
+      `Nodes (${wave.nodes.length}):\n${nodeSummaries}\n\n` +
+      `Approve this wave to proceed with execution.`;
+
+    const elicitResult = await elicitForm(
+      message,
+      approvalSchema({
+        approveTitle: "Approve this wave?",
+        modificationsTitle: "Modification notes (optional)",
+      }),
+    );
+
+    if (elicitResult.action === "accept") {
+      const approved = Boolean(elicitResult.content.approve);
+      const modifications =
+        typeof elicitResult.content.modifications === "string" &&
+          elicitResult.content.modifications.length > 0
+          ? elicitResult.content.modifications
+          : undefined;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              wave,
+              approved,
+              ...(modifications !== undefined ? { modifications } : {}),
+            }),
+          },
+        ],
+      };
+    }
+
+    if (elicitResult.action === "decline") {
+      // Client lacks elicitation capability — preserve current behavior
+      return {
+        content: [{ type: "text", text: JSON.stringify({ wave }) }],
+      };
+    }
+
+    // cancel
     return {
-      content: [{ type: "text", text: JSON.stringify({ wave }) }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ wave, approved: false }),
+        },
+      ],
     };
   },
 );

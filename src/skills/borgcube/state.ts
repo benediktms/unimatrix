@@ -11,7 +11,10 @@ import { computeWaves } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+
+/** All checkpoint versions this runtime can load. */
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -34,6 +37,7 @@ export function createCheckpoint(
     currentWaveId: null,
     repos,
     waveHistory: [],
+    refinementHistory: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -104,6 +108,30 @@ export function canTransition(
         return {
           allowed: false,
           reason: `retry_wave requires failed state, got ${machineState}`,
+        };
+      }
+      return { allowed: true };
+
+    case "refine":
+      if (
+        machineState !== "dispatching" &&
+        machineState !== "gate_halted" &&
+        machineState !== "failed"
+      ) {
+        return {
+          allowed: false,
+          reason:
+            `refine requires dispatching, gate_halted, or failed state, got ${machineState}`,
+        };
+      }
+      return { allowed: true };
+
+    case "refinement_approved":
+      if (machineState !== "refining") {
+        return {
+          allowed: false,
+          reason:
+            `refinement_approved requires refining state, got ${machineState}`,
         };
       }
       return { allowed: true };
@@ -270,6 +298,20 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         currentWaveId: event.waveId,
         updatedAt: now,
       };
+
+    case "refine":
+      return {
+        ...checkpoint,
+        machineState: "refining",
+        updatedAt: now,
+      };
+
+    case "refinement_approved":
+      return {
+        ...checkpoint,
+        machineState: "dispatching",
+        updatedAt: now,
+      };
   }
 }
 
@@ -308,10 +350,15 @@ export function deserialize(json: string): Checkpoint {
   }
 
   const cp = parsed as Checkpoint;
-  if (cp.version !== VERSION) {
+  if (!SUPPORTED_VERSIONS.has(cp.version)) {
     throw new Error(
-      `Checkpoint version mismatch — expected ${VERSION}, got ${cp.version}`,
+      `Checkpoint version unsupported — supported: ${[...SUPPORTED_VERSIONS].join(", ")}, got ${cp.version}`,
     );
+  }
+
+  // Backward compat: 1.0.0 checkpoints lack refinementHistory — default to [].
+  if (cp.version === "1.0.0") {
+    cp.refinementHistory ??= [];
   }
 
   return cp;
