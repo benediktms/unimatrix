@@ -33,7 +33,7 @@ If the output is non-empty, warn the user and abort. Uncommitted changes could b
 Use `EnterWorktree` with name `bisect-<timestamp>` (e.g., `bisect-1710000000`) to create an isolated worktree.
 <!-- @end -->
 <!-- @opencode -->
-Use `git worktree add` to create an isolated worktree with a timestamped branch name (e.g., `bisect-<timestamp>`).
+Use `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/bisect-<timestamp> -b bisect-<timestamp>` to create an isolated worktree.
 <!-- @end -->
 
 ### Step 3: Resolve Commit Range

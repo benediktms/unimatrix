@@ -11,6 +11,7 @@ The **Queen** plans, creates brain tasks, and orchestrates execution by creating
 ## Orchestration Worktree
 - Every `/assemble` and `/reengage` execution creates (or re-enters) an isolated worktree.
 - The dispatch plan specifies the worktree branch name in its `Worktree` section.
+- **Worktrees are always created inside `.claude/worktrees/`.** Path: `.claude/worktrees/<branch-name>`. This matches Claude Code's built-in `EnterWorktree` behavior, prevents collisions with sibling directories, and keeps worktrees self-contained within the project.
 - The worktree is created **after** the plan is approved, **before** any Drones are dispatched.
 - After worktree creation, the Queen runs `brain link <brain-name>` from inside the worktree to register it as an additional root of the brain. This enables agents spawned in the worktree to access brain tasks and records.
 - All Drone commits land on the worktree branch. The main branch remains clean until merge.

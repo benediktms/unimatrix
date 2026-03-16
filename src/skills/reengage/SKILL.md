@@ -25,7 +25,7 @@ Re-engage the collective on a previously planned brain task. Use this when execu
 <!-- @end -->
 <!-- @opencode -->
    - **If it exists:** `cd` into the existing worktree directory.
-   - **If it does not exist:** create it via `git worktree add ../<branch-name> -b <branch-name>` and `cd` into it. This handles cases where the worktree was cleaned up or the session is resuming on a different machine.
+   - **If it does not exist:** create it via `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/<branch-name> -b <branch-name>` and `cd` into it. This handles cases where the worktree was cleaned up or the session is resuming on a different machine.
 <!-- @end -->
    - All subsequent dispatch, verification, and review happens inside this worktree.
    - **If the worktree was newly created**, link it to the brain via `mcp__unimatrix__brain_link` with `name` set to the brain name (from the parent repo's `.brain/brain.toml` or the epic's brain) and `cwd` set to the worktree directory. Skip this if re-entering an existing worktree — it is already linked.

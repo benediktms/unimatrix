@@ -178,8 +178,9 @@ EnterWorktree:
 <!-- @end -->
 <!-- @opencode -->
 ```bash
-git worktree add ../<branch-name> -b <branch-name>
-cd ../<branch-name>
+mkdir -p .claude/worktrees
+git worktree add .claude/worktrees/<branch-name> -b <branch-name>
+cd .claude/worktrees/<branch-name>
 ```
 <!-- @end -->
 
@@ -457,7 +458,7 @@ After Vinculum passes and all tasks are closed:
 ```bash
 git merge --squash <branch-name>
 git commit -m "<conventional commit message based on the work done>"
-git worktree remove <worktree-path>
+git worktree remove .claude/worktrees/<branch-name>
 git branch -d <branch-name>
 ```
 
@@ -474,7 +475,7 @@ ExitWorktree:
 <!-- @end -->
 <!-- @opencode -->
 ```bash
-git worktree remove <worktree-path>
+git worktree remove .claude/worktrees/<branch-name>
 git branch -D <branch-name>
 ```
 <!-- @end -->

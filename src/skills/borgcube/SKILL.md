@@ -307,10 +307,11 @@ wave.
 the target repo:
 
 ```bash
-git -C <repo-root> worktree add -b <worktreeBranch> <worktree-path>
+mkdir -p <repo-root>/.claude/worktrees
+git -C <repo-root> worktree add -b <worktreeBranch> <repo-root>/.claude/worktrees/<worktreeBranch>
 ```
 
-Use path `<repo-root>/.worktrees/<worktreeBranch>`.
+Use path `<repo-root>/.claude/worktrees/<worktreeBranch>`.
 
 If the node has `stackedOn` set: the new branch must be created from the
 `stackedOn` branch, not from main.
