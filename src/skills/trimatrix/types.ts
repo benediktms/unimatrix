@@ -89,15 +89,17 @@ export interface Wave {
 
 /**
  * Top-level states of the trimatrix execution state machine.
+ * Enum values match the serialized form (checkpoint JSON) for backward compatibility.
  */
-export type MachineState =
-  | "initializing"
-  | "dispatching"
-  | "gate_halted"
-  | "refining"
-  | "failed"
-  | "completed"
-  | "cancelled";
+export enum MachineState {
+  INITIALIZING = "initializing",
+  DISPATCHING = "dispatching",
+  GATE_HALTED = "gate_halted",
+  REFINING = "refining",
+  FAILED = "failed",
+  COMPLETED = "completed",
+  CANCELLED = "cancelled",
+}
 
 /**
  * Persisted checkpoint capturing the full state of a trimatrix execution.

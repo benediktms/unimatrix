@@ -6,14 +6,35 @@
  */
 
 export const NUMBERS = [
-  "", "One", "Two", "Three", "Four", "Five", "Six",
-  "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
+  "",
+  "One",
+  "Two",
+  "Three",
+  "Four",
+  "Five",
+  "Six",
+  "Seven",
+  "Eight",
+  "Nine",
+  "Ten",
+  "Eleven",
+  "Twelve",
 ];
 
 export const ORDINALS = [
-  "", "Primary", "Secondary", "Tertiary", "Quaternary", "Quinary",
-  "Senary", "Septenary", "Octonary", "Nonary", "Denary",
-  "Undenary", "Duodenary",
+  "",
+  "Primary",
+  "Secondary",
+  "Tertiary",
+  "Quaternary",
+  "Quinary",
+  "Senary",
+  "Septenary",
+  "Octonary",
+  "Nonary",
+  "Denary",
+  "Undenary",
+  "Duodenary",
 ];
 
 export const ROLE_TITLES: Record<string, string> = {
@@ -28,7 +49,12 @@ export const ROLE_TITLES: Record<string, string> = {
 // All other roles share one randomly chosen ordinal across the batch.
 export const UNIQUE_ORDINAL_ROLES = new Set(["TacticalAnalysis", "Validation"]);
 
-export type Role = "Assimilation" | "Validation" | "Reconnaissance" | "TacticalAnalysis" | "Closure";
+export type Role =
+  | "Assimilation"
+  | "Validation"
+  | "Reconnaissance"
+  | "TacticalAnalysis"
+  | "Closure";
 
 export interface DesignateResult {
   designations: string[];
@@ -56,9 +82,10 @@ export function designate(
   let resolved_trimatrix_id: number | undefined;
 
   if (trimatrix) {
-    resolved_trimatrix_id = trimatrix_id !== undefined
-      ? trimatrix_id
-      : Math.floor(Math.random() * 999) + 1;
+    resolved_trimatrix_id =
+      trimatrix_id !== undefined
+        ? trimatrix_id
+        : Math.floor(Math.random() * 999) + 1;
     unit = `Trimatrix ${resolved_trimatrix_id}`;
   } else {
     unit = "Unimatrix Zero";

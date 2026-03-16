@@ -5,6 +5,7 @@
  */
 
 import type { Checkpoint, Event, Graph, RepoMetadata } from "./types.ts";
+import { MachineState } from "./types.ts";
 import { computeWaves } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ export function createCheckpoint(
   const now = new Date().toISOString();
   return {
     version: VERSION,
-    machineState: "initializing",
+    machineState: MachineState.INITIALIZING,
     graph,
     waves: computeWaves(graph),
     currentWaveId: null,
@@ -65,7 +66,7 @@ export function canTransition(
 
   switch (event.type) {
     case "plan_approved":
-      if (machineState !== "initializing") {
+      if (machineState !== MachineState.INITIALIZING) {
         return {
           allowed: false,
           reason:
@@ -79,7 +80,7 @@ export function canTransition(
     case "node_failed":
     case "wave_completed":
     case "wave_failed":
-      if (machineState !== "dispatching") {
+      if (machineState !== MachineState.DISPATCHING) {
         return {
           allowed: false,
           reason:
@@ -89,7 +90,7 @@ export function canTransition(
       return { allowed: true };
 
     case "execution_completed":
-      if (machineState !== "dispatching") {
+      if (machineState !== MachineState.DISPATCHING) {
         return {
           allowed: false,
           reason:
@@ -99,7 +100,7 @@ export function canTransition(
       return { allowed: true };
 
     case "gate_cleared":
-      if (machineState !== "gate_halted") {
+      if (machineState !== MachineState.GATE_HALTED) {
         return {
           allowed: false,
           reason:
@@ -109,7 +110,7 @@ export function canTransition(
       return { allowed: true };
 
     case "retry_wave":
-      if (machineState !== "failed") {
+      if (machineState !== MachineState.FAILED) {
         return {
           allowed: false,
           reason: `retry_wave requires failed state, got ${machineState}`,
@@ -119,9 +120,9 @@ export function canTransition(
 
     case "refine":
       if (
-        machineState !== "dispatching" &&
-        machineState !== "gate_halted" &&
-        machineState !== "failed"
+        machineState !== MachineState.DISPATCHING &&
+        machineState !== MachineState.GATE_HALTED &&
+        machineState !== MachineState.FAILED
       ) {
         return {
           allowed: false,
@@ -132,7 +133,7 @@ export function canTransition(
       return { allowed: true };
 
     case "refinement_approved":
-      if (machineState !== "refining") {
+      if (machineState !== MachineState.REFINING) {
         return {
           allowed: false,
           reason:
@@ -142,7 +143,7 @@ export function canTransition(
       return { allowed: true };
 
     case "cancel":
-      if (machineState === "completed" || machineState === "cancelled") {
+      if (machineState === MachineState.COMPLETED || machineState === MachineState.CANCELLED) {
         return {
           allowed: false,
           reason: `cancel is not allowed in terminal state ${machineState}`,
@@ -182,7 +183,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "plan_approved":
       return {
         ...checkpoint,
-        machineState: "dispatching",
+        machineState: MachineState.DISPATCHING,
         updatedAt: now,
       };
 
@@ -244,7 +245,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         // Gate halt — pause execution for merge confirmation
         return {
           ...checkpoint,
-          machineState: "gate_halted",
+          machineState: MachineState.GATE_HALTED,
           updatedAt: now,
         };
       }
@@ -252,7 +253,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       if (isLastWave) {
         return {
           ...checkpoint,
-          machineState: "completed",
+          machineState: MachineState.COMPLETED,
           updatedAt: now,
         };
       }
@@ -263,14 +264,14 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "wave_failed":
       return {
         ...checkpoint,
-        machineState: "failed",
+        machineState: MachineState.FAILED,
         updatedAt: now,
       };
 
     case "execution_completed":
       return {
         ...checkpoint,
-        machineState: "completed",
+        machineState: MachineState.COMPLETED,
         updatedAt: now,
       };
 
@@ -300,7 +301,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       return {
         ...checkpoint,
         graph: updatedGraph,
-        machineState: allGatesCleared ? "dispatching" : "gate_halted",
+        machineState: allGatesCleared ? MachineState.DISPATCHING : MachineState.GATE_HALTED,
         updatedAt: now,
       };
     }
@@ -308,7 +309,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "retry_wave":
       return {
         ...checkpoint,
-        machineState: "dispatching",
+        machineState: MachineState.DISPATCHING,
         currentWaveId: event.waveId,
         updatedAt: now,
       };
@@ -316,21 +317,21 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "refine":
       return {
         ...checkpoint,
-        machineState: "refining",
+        machineState: MachineState.REFINING,
         updatedAt: now,
       };
 
     case "refinement_approved":
       return {
         ...checkpoint,
-        machineState: "dispatching",
+        machineState: MachineState.DISPATCHING,
         updatedAt: now,
       };
 
     case "cancel":
       return {
         ...checkpoint,
-        machineState: "cancelled",
+        machineState: MachineState.CANCELLED,
         cancellationReason: event.reason,
         cancelledAt: now,
         updatedAt: now,

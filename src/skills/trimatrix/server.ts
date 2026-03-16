@@ -23,7 +23,7 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
-import { approvalSchema, triageSchema } from "./types.ts";
+import { MachineState, approvalSchema, triageSchema } from "./types.ts";
 import { designate, type Role } from "./designate.ts";
 import {
   activateNodes,
@@ -83,7 +83,7 @@ function requireCheckpoint(): Checkpoint {
 // Server setup
 // ---------------------------------------------------------------------------
 
-const server = new McpServer({
+const mcp = new McpServer({
   name: "trimatrix",
   version: "1.0.0",
 });
@@ -104,17 +104,18 @@ export async function elicitForm(
   message: string,
   requestedSchema: ElicitationRequestedSchema,
 ): Promise<ElicitResult> {
-  const capabilities = server.server.getClientCapabilities();
+  const capabilities = mcp.server.getClientCapabilities();
   if (!capabilities?.elicitation) {
     return { action: "decline" };
   }
   // Our ElicitationRequestedSchema is a structural subset of the SDK's
   // requestedSchema. Cast to the parameter type via Parameters<> to avoid
   // importing the SDK types.js entry directly.
-  type ElicitInputParams = Parameters<typeof server.server.elicitInput>[0];
-  const raw = await server.server.elicitInput(
-    { message, requestedSchema } as ElicitInputParams,
-  );
+  type ElicitInputParams = Parameters<typeof mcp.server.elicitInput>[0];
+  const raw = await mcp.server.elicitInput({
+    message,
+    requestedSchema,
+  } as ElicitInputParams);
   if (raw.action === "accept") {
     return { action: "accept", content: raw.content ?? {} };
   }
@@ -125,11 +126,9 @@ export async function elicitForm(
 // Tool: init
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "init",
-  "Initialize trimatrix with repository metadata. Creates an empty graph and checkpoint in initializing state.",
-  {
-    repos: z.array(
+const initSchema = z.object({
+  repos: z
+    .array(
       z.object({
         name: z.string(),
         root: z.string(),
@@ -142,17 +141,31 @@ server.tool(
           }),
         ),
       }),
-    ).describe("Repository metadata for this execution"),
-    sessionLabel: z.string().optional().describe(
-      "Human-readable session label. Auto-generated if omitted.",
-    ),
+    )
+    .describe("Repository metadata for this execution"),
+  sessionLabel: z
+    .string()
+    .optional()
+    .describe("Human-readable session label. Auto-generated if omitted."),
+});
+
+mcp.registerTool(
+  "init",
+  {
+    title: "Initialize Trimatrix protocol",
+    description:
+      "Initialize trimatrix with repository metadata. Creates an empty graph and checkpoint in initializing state.",
+    inputSchema: initSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof initSchema>) => {
     const repos = params.repos as RepoMetadata[];
     const emptyGraph = { nodes: {}, edges: [] };
     const sessionId = generateSessionId();
     const sessionLabel = params.sessionLabel ?? generateSessionLabel(repos);
-    checkpoint = createCheckpoint(repos, emptyGraph, { sessionId, sessionLabel });
+    checkpoint = createCheckpoint(repos, emptyGraph, {
+      sessionId,
+      sessionLabel,
+    });
     return {
       content: [
         {
@@ -174,25 +187,37 @@ server.tool(
 // Tool: add_repo
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "add_repo",
-  "Add a repository to the current checkpoint. Use when expanding scope on resume. No-op if the repo already exists.",
-  {
-    name: z.string().describe("Brain name or ref for the repository"),
-    root: z.string().describe("Resolved root path of the repository"),
-    worktrees: z.array(
+const addRepoSchema = z.object({
+  name: z.string().describe("Brain name or ref for the repository"),
+  root: z.string().describe("Resolved root path of the repository"),
+  worktrees: z
+    .array(
       z.object({
         branch: z.string(),
         path: z.string().optional(),
         stackedOn: z.string().optional(),
         nodeId: z.string(),
       }),
-    ).optional().describe("Worktree metadata (can be added later via add_node)"),
+    )
+    .optional()
+    .describe("Worktree metadata (can be added later via add_node)"),
+});
+
+mcp.registerTool(
+  "add_repo",
+  {
+    title: "Add repository",
+    description:
+      "Add a repository to the current checkpoint. Use when expanding scope on resume. No-op if the repo already exists.",
+    inputSchema: addRepoSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof addRepoSchema>) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_repo requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -201,14 +226,16 @@ server.tool(
     const existing = cp.repos.find((r) => r.name === params.name);
     if (existing) {
       return {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            ok: true,
-            added: false,
-            message: `Repo '${params.name}' already exists.`,
-          }),
-        }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              added: false,
+              message: `Repo '${params.name}' already exists.`,
+            }),
+          },
+        ],
       };
     }
 
@@ -224,14 +251,16 @@ server.tool(
     };
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          ok: true,
-          added: true,
-          repos: checkpoint!.repos.map((r) => r.name),
-        }),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            added: true,
+            repos: checkpoint!.repos.map((r) => r.name),
+          }),
+        },
+      ],
     };
   },
 );
@@ -240,23 +269,32 @@ server.tool(
 // Tool: add_node
 // ---------------------------------------------------------------------------
 
-server.tool(
+const addNodeSchema = z.object({
+  id: z.string().describe("Unique node identifier"),
+  repo: z.string().describe("Brain name or ref for the target repository"),
+  type: z.enum(["contract", "implementation"]).describe("Node type"),
+  label: z.string().describe("Human-readable description"),
+  worktreeBranch: z.string().describe("Worktree branch name for this node"),
+  stackedOn: z
+    .string()
+    .optional()
+    .describe("Node ID this node is stacked on within the same repository"),
+});
+
+mcp.registerTool(
   "add_node",
-  "Add a node to the execution graph.",
   {
-    id: z.string().describe("Unique node identifier"),
-    repo: z.string().describe("Brain name or ref for the target repository"),
-    type: z.enum(["contract", "implementation"]).describe("Node type"),
-    label: z.string().describe("Human-readable description"),
-    worktreeBranch: z.string().describe("Worktree branch name for this node"),
-    stackedOn: z.string().optional().describe(
-      "Node ID this node is stacked on within the same repository",
-    ),
+    title: "Add node",
+    description: "Add a node to the execution graph.",
+    inputSchema: addNodeSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof addNodeSchema>) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_node requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -274,7 +312,11 @@ server.tool(
       status: "pending" as const,
     };
 
-    const result = addNode(cp.graph, node, cp.machineState === "refining");
+    const result = addNode(
+      cp.graph,
+      node,
+      cp.machineState === MachineState.REFINING,
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -285,10 +327,12 @@ server.tool(
       updatedAt: new Date().toISOString(),
     };
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({ ok: true, id: params.id }),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: true, id: params.id }),
+        },
+      ],
     };
   },
 );
@@ -297,18 +341,26 @@ server.tool(
 // Tool: add_edge
 // ---------------------------------------------------------------------------
 
-server.tool(
+const addEdgeSchema = z.object({
+  from: z.string().describe("Source node ID"),
+  to: z.string().describe("Target node ID"),
+  type: z.enum(["merge_gate", "stacked"]).describe("Edge type"),
+});
+
+mcp.registerTool(
   "add_edge",
-  "Add a directed dependency edge between two nodes.",
   {
-    from: z.string().describe("Source node ID"),
-    to: z.string().describe("Target node ID"),
-    type: z.enum(["merge_gate", "stacked"]).describe("Edge type"),
+    title: "Add edge",
+    description: "Add a directed dependency edge between two nodes.",
+    inputSchema: addEdgeSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof addEdgeSchema>) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_edge requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -320,7 +372,11 @@ server.tool(
       type: params.type as "merge_gate" | "stacked",
     };
 
-    const result = addEdge(cp.graph, edge, cp.machineState === "refining");
+    const result = addEdge(
+      cp.graph,
+      edge,
+      cp.machineState === MachineState.REFINING,
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -345,10 +401,14 @@ server.tool(
 // Tool: refine
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "refine",
-  "Enter refining state to add new nodes, edges, or repos to an in-progress execution. Call compute_waves when done to apply the changes and resume dispatching.",
-  {},
+  {
+    title: "Refine",
+    description:
+      "Enter refining state to add new nodes, edges, or repos to an in-progress execution. Call compute_waves when done to apply the changes and resume dispatching.",
+    inputSchema: {},
+  },
   () => {
     const cp = requireCheckpoint();
 
@@ -381,10 +441,14 @@ server.tool(
 // Tool: validate
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "validate",
-  "Validate graph integrity — checks edge refs, stackedOn refs, and cycles.",
-  {},
+  {
+    title: "Validate graph",
+    description:
+      "Validate graph integrity — checks edge refs, stackedOn refs, and cycles.",
+    inputSchema: {},
+  },
   () => {
     const cp = requireCheckpoint();
     const result = validate(cp.graph);
@@ -398,10 +462,14 @@ server.tool(
 // Tool: compute_waves
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "compute_waves",
-  "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
-  {},
+  {
+    title: "Compute Execution Waves",
+    description:
+      "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
+    inputSchema: {},
+  },
   async () => {
     const cp = requireCheckpoint();
 
@@ -412,7 +480,7 @@ server.tool(
       );
     }
 
-    if (cp.machineState === "refining") {
+    if (cp.machineState === MachineState.REFINING) {
       // Partial recomputation — preserve completed waves, append new waves
       const check = canTransition(cp, { type: "refinement_approved" });
       if (!check.allowed) {
@@ -421,11 +489,12 @@ server.tool(
 
       // Determine the last completed wave number to offset new wave IDs
       const completedWaves = cp.waves.filter((w) =>
-        w.nodes.every((nId) => cp.graph.nodes[nId]?.status === "merged")
+        w.nodes.every((nId) => cp.graph.nodes[nId]?.status === "merged"),
       );
-      const waveOffset = completedWaves.length > 0
-        ? Math.max(...completedWaves.map((w) => w.id))
-        : 0;
+      const waveOffset =
+        completedWaves.length > 0
+          ? Math.max(...completedWaves.map((w) => w.id))
+          : 0;
 
       const newWaves = computeWavesFromRefinement(cp.graph, waveOffset);
 
@@ -433,9 +502,7 @@ server.tool(
       const mergedWaves = [...completedWaves, ...newWaves];
 
       // Collect what was added in this refinement for the history record
-      const existingNodeIds = new Set(
-        cp.waves.flatMap((w) => w.nodes),
-      );
+      const existingNodeIds = new Set(cp.waves.flatMap((w) => w.nodes));
       const addedNodes = Object.keys(cp.graph.nodes).filter(
         (id) => !existingNodeIds.has(id),
       );
@@ -448,7 +515,7 @@ server.tool(
       // Repos referenced by pre-refinement wave nodes (existing scope)
       const preRefinementRepoNames = new Set(
         cp.waves.flatMap((w) =>
-          w.nodes.map((nId) => cp.graph.nodes[nId]?.repo).filter(Boolean)
+          w.nodes.map((nId) => cp.graph.nodes[nId]?.repo).filter(Boolean),
         ),
       );
       const addedRepos = cp.repos
@@ -456,17 +523,20 @@ server.tool(
         .filter((name) => !preRefinementRepoNames.has(name));
 
       // Build elicitation message summarising the proposed changes
-      const completedWavesSummary = completedWaves.length > 0
-        ? `Completed waves (read-only): ${completedWaves.map((w) => `Wave ${w.id}`).join(", ")}`
-        : "No completed waves.";
+      const completedWavesSummary =
+        completedWaves.length > 0
+          ? `Completed waves (read-only): ${completedWaves.map((w) => `Wave ${w.id}`).join(", ")}`
+          : "No completed waves.";
 
-      const revisedWavesSummary = newWaves.length > 0
-        ? `Revised future waves (${newWaves.length}): ${
-          newWaves.map((w) =>
-            `Wave ${w.id} — ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"}`
-          ).join("; ")
-        }`
-        : "No future waves after refinement.";
+      const revisedWavesSummary =
+        newWaves.length > 0
+          ? `Revised future waves (${newWaves.length}): ${newWaves
+              .map(
+                (w) =>
+                  `Wave ${w.id} — ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"}`,
+              )
+              .join("; ")}`
+          : "No future waves after refinement.";
 
       const changesSummary = [
         `New nodes: ${addedNodes.length}`,
@@ -490,11 +560,15 @@ server.tool(
       );
 
       // Graceful degradation: decline from missing capability — proceed without approval
-      const proceedWithoutApproval = elicitResult.action === "decline" &&
-        !server.server.getClientCapabilities()?.elicitation;
+      const proceedWithoutApproval =
+        elicitResult.action === "decline" &&
+        !mcp.server.getClientCapabilities()?.elicitation;
 
       if (!proceedWithoutApproval) {
-        if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+        if (
+          elicitResult.action === "decline" ||
+          elicitResult.action === "cancel"
+        ) {
           return {
             content: [
               {
@@ -510,10 +584,11 @@ server.tool(
         }
 
         if (elicitResult.action === "accept" && !elicitResult.content.approve) {
-          const notes = typeof elicitResult.content.modifications === "string" &&
-              elicitResult.content.modifications.length > 0
-            ? elicitResult.content.modifications
-            : undefined;
+          const notes =
+            typeof elicitResult.content.modifications === "string" &&
+            elicitResult.content.modifications.length > 0
+              ? elicitResult.content.modifications
+              : undefined;
           return {
             content: [
               {
@@ -594,13 +669,19 @@ server.tool(
 // Tool: dispatch_wave
 // ---------------------------------------------------------------------------
 
-server.tool(
+const dispatchWaveSchema = z.object({
+  waveId: z.number().int().describe("Wave index to dispatch"),
+});
+
+mcp.registerTool(
   "dispatch_wave",
-  "Activate all nodes in the specified wave and record it as the current wave.",
   {
-    waveId: z.number().int().describe("Wave index to dispatch"),
+    title: "Dispatch wave",
+    description:
+      "Activate all nodes in the specified wave and record it as the current wave.",
+    inputSchema: dispatchWaveSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof dispatchWaveSchema>) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -643,17 +724,21 @@ server.tool(
 // Tool: complete_node
 // ---------------------------------------------------------------------------
 
-server.tool(
+const completeNodeSchema = z.object({
+  nodeId: z.string().describe("Node ID to complete"),
+  prUrl: z.string().optional().describe("URL of the pull request, if any"),
+  prNumber: z.number().int().optional().describe("Pull request number, if any"),
+});
+
+mcp.registerTool(
   "complete_node",
-  "Mark a node as completed. Provide prUrl and prNumber to record a PR; omit to mark as merged directly.",
   {
-    nodeId: z.string().describe("Node ID to complete"),
-    prUrl: z.string().optional().describe("URL of the pull request, if any"),
-    prNumber: z.number().int().optional().describe(
-      "Pull request number, if any",
-    ),
+    title: "Complete Node",
+    description:
+      "Mark a node as completed. Provide prUrl and prNumber to record a PR; omit to mark as merged directly.",
+    inputSchema: completeNodeSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof completeNodeSchema>) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -666,9 +751,10 @@ server.tool(
       throw new Error(`Cannot complete node: ${check.reason}`);
     }
 
-    const pr = params.prUrl !== undefined && params.prNumber !== undefined
-      ? { url: params.prUrl, number: params.prNumber }
-      : undefined;
+    const pr =
+      params.prUrl !== undefined && params.prNumber !== undefined
+        ? { url: params.prUrl, number: params.prNumber }
+        : undefined;
 
     const updatedGraph = completeNode(cp.graph, params.nodeId, pr);
     const transitioned = transition(
@@ -702,14 +788,19 @@ server.tool(
 // Tool: fail_node
 // ---------------------------------------------------------------------------
 
-server.tool(
+const failNodeSchema = z.object({
+  nodeId: z.string().describe("Node ID to fail"),
+  reason: z.string().describe("Human-readable failure reason"),
+});
+
+mcp.registerTool(
   "fail_node",
-  "Mark a node as failed with a human-readable reason.",
   {
-    nodeId: z.string().describe("Node ID to fail"),
-    reason: z.string().describe("Human-readable failure reason"),
+    title: "Fail Node",
+    description: "Mark a node as failed with a human-readable reason.",
+    inputSchema: failNodeSchema.shape,
   },
-  async (params) => {
+  async (params: z.infer<typeof failNodeSchema>) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -762,17 +853,21 @@ server.tool(
       `Reason: ${params.reason}\n\n` +
       `Choose how to proceed with this failure.`;
 
-    const elicitResult = await elicitForm(message, triageSchema({
-      decisionTitle: "Triage decision",
-      contextTitle: "Additional context (optional)",
-    }));
+    const elicitResult = await elicitForm(
+      message,
+      triageSchema({
+        decisionTitle: "Triage decision",
+        contextTitle: "Additional context (optional)",
+      }),
+    );
 
     if (elicitResult.action === "accept") {
       const decision = elicitResult.content.decision as string;
-      const context = typeof elicitResult.content.context === "string" &&
-          elicitResult.content.context.length > 0
-        ? elicitResult.content.context
-        : undefined;
+      const context =
+        typeof elicitResult.content.context === "string" &&
+        elicitResult.content.context.length > 0
+          ? elicitResult.content.context
+          : undefined;
       return {
         content: [
           {
@@ -805,13 +900,19 @@ server.tool(
 // Tool: clear_gate
 // ---------------------------------------------------------------------------
 
-server.tool(
+const clearGateSchema = z.object({
+  nodeId: z.string().describe("Node ID to clear gate for"),
+});
+
+mcp.registerTool(
   "clear_gate",
-  "Clear the merge gate on a node. Auto-advances to dispatching state if all gates in the current wave are cleared.",
   {
-    nodeId: z.string().describe("Node ID to clear gate for"),
+    title: "Clear Gate",
+    description:
+      "Clear the merge gate on a node. Auto-advances to dispatching state if all gates in the current wave are cleared.",
+    inputSchema: clearGateSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof clearGateSchema>) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -852,13 +953,19 @@ server.tool(
 // Tool: cancel
 // ---------------------------------------------------------------------------
 
-server.tool(
+const cancelSchema = z.object({
+  reason: z.string().optional().describe("Human-readable cancellation reason"),
+});
+
+mcp.registerTool(
   "cancel",
-  "Cancel the current trimatrix execution. Transitions to cancelled state.",
   {
-    reason: z.string().optional().describe("Human-readable cancellation reason"),
+    title: "Cancel",
+    description:
+      "Cancel the current trimatrix execution. Transitions to cancelled state.",
+    inputSchema: cancelSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof cancelSchema>) => {
     const cp = requireCheckpoint();
     const check = canTransition(cp, { type: "cancel", reason: params.reason });
     if (!check.allowed) throw new Error(`Cannot cancel: ${check.reason}`);
@@ -883,16 +990,27 @@ server.tool(
 // Tool: archive
 // ---------------------------------------------------------------------------
 
-server.tool(
+const archiveSchema = z.object({
+  artifactId: z
+    .string()
+    .describe("Brain artifact ID of the checkpoint to archive"),
+  reason: z.string().optional().describe("Archival reason"),
+});
+
+mcp.registerTool(
   "archive",
-  "Archive a trimatrix checkpoint artifact. Requires completed or cancelled state.",
   {
-    artifactId: z.string().describe("Brain artifact ID of the checkpoint to archive"),
-    reason: z.string().optional().describe("Archival reason"),
+    title: "Archive",
+    description:
+      "Archive a trimatrix checkpoint artifact. Requires completed or cancelled state.",
+    inputSchema: archiveSchema.shape,
   },
-  async (params) => {
+  async (params: z.infer<typeof archiveSchema>) => {
     const cp = requireCheckpoint();
-    if (cp.machineState !== "completed" && cp.machineState !== "cancelled") {
+    if (
+      cp.machineState !== MachineState.COMPLETED &&
+      cp.machineState !== MachineState.CANCELLED
+    ) {
       throw new Error(
         `archive requires completed or cancelled state, got ${cp.machineState}`,
       );
@@ -927,14 +1045,18 @@ server.tool(
 // Tool: next_wave
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "next_wave",
-  "Return the next wave ready for execution, or null with a reason if none is available.",
-  {},
+  {
+    title: "Next Wave",
+    description:
+      "Return the next wave ready for execution, or null with a reason if none is available.",
+    inputSchema: {},
+  },
   async () => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState === "gate_halted") {
+    if (cp.machineState === MachineState.GATE_HALTED) {
       return {
         content: [
           {
@@ -949,7 +1071,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "completed") {
+    if (cp.machineState === MachineState.COMPLETED) {
       return {
         content: [
           {
@@ -963,7 +1085,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "cancelled") {
+    if (cp.machineState === MachineState.CANCELLED) {
       return {
         content: [
           {
@@ -977,7 +1099,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "failed") {
+    if (cp.machineState === MachineState.FAILED) {
       return {
         content: [
           {
@@ -1032,7 +1154,7 @@ server.tool(
       const approved = Boolean(elicitResult.content.approve);
       const modifications =
         typeof elicitResult.content.modifications === "string" &&
-          elicitResult.content.modifications.length > 0
+        elicitResult.content.modifications.length > 0
           ? elicitResult.content.modifications
           : undefined;
       return {
@@ -1072,10 +1194,14 @@ server.tool(
 // Tool: status
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "status",
-  "Return full state summary including machine state, current wave, node statuses, and wave history. Returns idle state if no checkpoint is loaded.",
-  {},
+  {
+    title: "Status",
+    description:
+      "Return full state summary including machine state, current wave, node statuses, and wave history. Returns idle state if no checkpoint is loaded.",
+    inputSchema: {},
+  },
   () => {
     if (checkpoint === null) {
       return {
@@ -1142,10 +1268,13 @@ server.tool(
 // Tool: list_sessions
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "list_sessions",
-  "List all trimatrix sessions grouped by session ID.",
-  {},
+  {
+    title: "List sessions",
+    description: "List all trimatrix sessions grouped by session ID.",
+    inputSchema: {},
+  },
   async () => {
     try {
       const { stdout } = await execFileAsync("brain", [
@@ -1170,7 +1299,7 @@ server.tool(
 
       for (const record of records) {
         const sessionTag = record.tags?.find((t) =>
-          t.startsWith("trimatrix-session:")
+          t.startsWith("trimatrix-session:"),
         );
         const sessionKey = sessionTag
           ? sessionTag.slice("trimatrix-session:".length)
@@ -1199,7 +1328,7 @@ server.tool(
 
       // Sort by most recent updatedAt descending
       sessions.sort((a, b) =>
-        b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
+        b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0,
       );
 
       return {
@@ -1230,10 +1359,14 @@ server.tool(
 // Tool: save_checkpoint
 // ---------------------------------------------------------------------------
 
-server.tool(
+mcp.registerTool(
   "save_checkpoint",
-  "Serialize the current checkpoint to a JSON string for persistence.",
-  {},
+  {
+    title: "Save checkpoint",
+    description:
+      "Serialize the current checkpoint to a JSON string for persistence.",
+    inputSchema: {},
+  },
   () => {
     const cp = requireCheckpoint();
     const json = serialize(cp);
@@ -1256,13 +1389,19 @@ server.tool(
 // Tool: restore_checkpoint
 // ---------------------------------------------------------------------------
 
-server.tool(
+const restoreCheckpointSchema = z.object({
+  checkpoint: z.string().describe("JSON string of a serialized checkpoint"),
+});
+
+mcp.registerTool(
   "restore_checkpoint",
-  "Deserialize a previously saved checkpoint JSON string and load it into memory.",
   {
-    checkpoint: z.string().describe("JSON string of a serialized checkpoint"),
+    title: "Restore checkpoint",
+    description:
+      "Deserialize a previously saved checkpoint JSON string and load it into memory.",
+    inputSchema: restoreCheckpointSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof restoreCheckpointSchema>) => {
     const cp = deserialize(params.checkpoint);
     checkpoint = cp;
     return {
@@ -1285,24 +1424,46 @@ server.tool(
 // Tool: designate
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "designate",
-  "Generate Borg-style designations for one or more agents.",
-  {
-    count: z.number().int().min(1).max(12).describe(
-      "Number of agents to generate designations for (1–12)",
-    ),
-    role: z.enum(["Assimilation", "Validation", "Reconnaissance", "TacticalAnalysis", "Closure"])
-      .optional()
-      .describe("Agent role (determines Borg functional title)"),
-    trimatrix: z.boolean().optional().describe(
+const designateSchema = z.object({
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(12)
+    .describe("Number of agents to generate designations for (1–12)"),
+  role: z
+    .enum([
+      "Assimilation",
+      "Validation",
+      "Reconnaissance",
+      "TacticalAnalysis",
+      "Closure",
+    ])
+    .optional()
+    .describe("Agent role (determines Borg functional title)"),
+  trimatrix: z
+    .boolean()
+    .optional()
+    .describe(
       "If true, use 'Trimatrix <random>' as unit instead of 'Unimatrix Zero'",
     ),
-    trimatrix_id: z.number().int().min(1).max(999).optional().describe(
-      "Pin a specific Trimatrix ID instead of generating a random one",
-    ),
+  trimatrix_id: z
+    .number()
+    .int()
+    .min(1)
+    .max(999)
+    .optional()
+    .describe("Pin a specific Trimatrix ID instead of generating a random one"),
+});
+
+mcp.registerTool(
+  "designate",
+  {
+    title: "Designate",
+    description: "Generate Borg-style designations for one or more agents.",
+    inputSchema: designateSchema.shape,
   },
-  (params) => {
+  (params: z.infer<typeof designateSchema>) => {
     const result = designate(
       params.count,
       params.role as Role | undefined,
@@ -1357,15 +1518,24 @@ function buildLookups(brains: BrainRegistryEntry[]): {
 // Tool: resolve_brains
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "resolve_brains",
-  "Resolve brain references (ID, name, alias, or filesystem path) to their registry entries. Auto-initializes unregistered paths.",
-  {
-    refs: z.array(z.string()).min(1).describe(
+const resolveBrainsSchema = z.object({
+  refs: z
+    .array(z.string())
+    .min(1)
+    .describe(
       "Brain references to resolve — each can be a brain ID, name, alias, or filesystem path",
     ),
+});
+
+mcp.registerTool(
+  "resolve_brains",
+  {
+    title: "Resolve brains",
+    description:
+      "Resolve brain references (ID, name, alias, or filesystem path) to their registry entries. Auto-initializes unregistered paths.",
+    inputSchema: resolveBrainsSchema.shape,
   },
-  async (params) => {
+  async (params: z.infer<typeof resolveBrainsSchema>) => {
     const brains = await brainLsJson();
     const { byId, byName, byAlias, byRoot } = buildLookups(brains);
 
@@ -1500,15 +1670,24 @@ server.tool(
 // Tool: brain_id
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "brain_id",
-  "Return the brain ID and name for the current working directory (or a specified path).",
-  {
-    cwd: z.string().optional().describe(
+const brainIdSchema = z.object({
+  cwd: z
+    .string()
+    .optional()
+    .describe(
       "Directory to query. Defaults to the server's working directory.",
     ),
+});
+
+mcp.registerTool(
+  "brain_id",
+  {
+    title: "Brain ID",
+    description:
+      "Return the brain ID and name for the current working directory (or a specified path).",
+    inputSchema: brainIdSchema.shape,
   },
-  async (params) => {
+  async (params: z.infer<typeof brainIdSchema>) => {
     const cwd = params.cwd ?? process.cwd();
 
     // Get the ID
@@ -1539,16 +1718,22 @@ server.tool(
 // Tool: brain_link
 // ---------------------------------------------------------------------------
 
-server.tool(
+const brainLinkSchema = z.object({
+  name: z.string().describe("Brain name, ID, or alias to link to"),
+  cwd: z
+    .string()
+    .describe("Directory to link (must run from inside the worktree)"),
+});
+
+mcp.registerTool(
   "brain_link",
-  "Link a directory as an additional root for an existing brain. Use after creating a worktree to give spawned agents access to brain tasks and records.",
   {
-    name: z.string().describe("Brain name, ID, or alias to link to"),
-    cwd: z.string().describe(
-      "Directory to link (must run from inside the worktree)",
-    ),
+    title: "Link brain",
+    description:
+      "Link a directory as an additional root for an existing brain. Use after creating a worktree to give spawned agents access to brain tasks and records.",
+    inputSchema: brainLinkSchema.shape,
   },
-  async (params) => {
+  async (params: z.infer<typeof brainLinkSchema>) => {
     try {
       const { stdout, stderr } = await execFileAsync(
         "brain",
@@ -1581,4 +1766,4 @@ server.tool(
 // ---------------------------------------------------------------------------
 
 const transport = new StdioServerTransport();
-await server.connect(transport);
+await mcp.connect(transport);

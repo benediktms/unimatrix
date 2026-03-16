@@ -131,7 +131,13 @@ Deno.test("N=12: all positions are unique and span 1–12", () => {
 // Role title mapping
 // ---------------------------------------------------------------------------
 
-const ROLES: Role[] = ["Assimilation", "Validation", "Reconnaissance", "TacticalAnalysis", "Closure"];
+const ROLES: Role[] = [
+  "Assimilation",
+  "Validation",
+  "Reconnaissance",
+  "TacticalAnalysis",
+  "Closure",
+];
 
 for (const role of ROLES) {
   const expectedTitle = ROLE_TITLES[role];
@@ -195,26 +201,33 @@ Deno.test("trimatrix omitted: designation contains 'Unimatrix Zero'", () => {
 // Shared vs unique ordinals
 // ---------------------------------------------------------------------------
 
-const SHARED_ORDINAL_ROLES: Role[] = ["Assimilation", "Reconnaissance", "Closure"];
+const SHARED_ORDINAL_ROLES: Role[] = [
+  "Assimilation",
+  "Reconnaissance",
+  "Closure",
+];
 
 for (const role of SHARED_ORDINAL_ROLES) {
-  Deno.test(`Shared ordinals: ${role} N=5 — all designations share the same ordinal`, () => {
-    // Run multiple times because the shared ordinal is randomly chosen.
-    for (let iter = 0; iter < 10; iter++) {
-      const { designations } = designate(5, role);
-      // Extract the ordinal word (first word after the comma+space).
-      const ordinals = designations.map((d) => {
-        const afterComma = d.split(", ")[1];
-        return afterComma.split(" ")[0];
-      });
-      const uniqueOrdinals = new Set(ordinals);
-      assertEquals(
-        uniqueOrdinals.size,
-        1,
-        `Expected shared ordinal for ${role} but got: ${ordinals}`,
-      );
-    }
-  });
+  Deno.test(
+    `Shared ordinals: ${role} N=5 — all designations share the same ordinal`,
+    () => {
+      // Run multiple times because the shared ordinal is randomly chosen.
+      for (let iter = 0; iter < 10; iter++) {
+        const { designations } = designate(5, role);
+        // Extract the ordinal word (first word after the comma+space).
+        const ordinals = designations.map((d) => {
+          const afterComma = d.split(", ")[1];
+          return afterComma.split(" ")[0];
+        });
+        const uniqueOrdinals = new Set(ordinals);
+        assertEquals(
+          uniqueOrdinals.size,
+          1,
+          `Expected shared ordinal for ${role} but got: ${ordinals}`,
+        );
+      }
+    },
+  );
 }
 
 for (const role of ["TacticalAnalysis", "Validation"] as Role[]) {
@@ -257,22 +270,33 @@ Deno.test("Format validation: N=1 no-role matches designation regex", () => {
 // UNIQUE_ORDINAL_ROLES set export
 // ---------------------------------------------------------------------------
 
-Deno.test("UNIQUE_ORDINAL_ROLES contains TacticalAnalysis and Validation", () => {
-  assertEquals(UNIQUE_ORDINAL_ROLES.has("TacticalAnalysis"), true);
-  assertEquals(UNIQUE_ORDINAL_ROLES.has("Validation"), true);
-  assertEquals(UNIQUE_ORDINAL_ROLES.has("Assimilation"), false);
-  assertEquals(UNIQUE_ORDINAL_ROLES.has("Reconnaissance"), false);
-  assertEquals(UNIQUE_ORDINAL_ROLES.has("Closure"), false);
-});
+Deno.test(
+  "UNIQUE_ORDINAL_ROLES contains TacticalAnalysis and Validation",
+  () => {
+    assertEquals(UNIQUE_ORDINAL_ROLES.has("TacticalAnalysis"), true);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has("Validation"), true);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has("Assimilation"), false);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has("Reconnaissance"), false);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has("Closure"), false);
+  },
+);
 
 // ---------------------------------------------------------------------------
 // trimatrix_id pin parameter
 // ---------------------------------------------------------------------------
 
-Deno.test("trimatrix_id pin: all designations end with 'Trimatrix 42' and trimatrix_id === 42", () => {
-  const { designations, trimatrix_id } = designate(3, "Assimilation", true, 42);
-  assertEquals(trimatrix_id, 42);
-  for (const d of designations) {
-    assertMatch(d, /Trimatrix 42$/);
-  }
-});
+Deno.test(
+  "trimatrix_id pin: all designations end with 'Trimatrix 42' and trimatrix_id === 42",
+  () => {
+    const { designations, trimatrix_id } = designate(
+      3,
+      "Assimilation",
+      true,
+      42,
+    );
+    assertEquals(trimatrix_id, 42);
+    for (const d of designations) {
+      assertMatch(d, /Trimatrix 42$/);
+    }
+  },
+);
