@@ -16,6 +16,7 @@ import type {
   RepoMetadata,
 } from "./types.ts";
 import { approvalSchema, triageSchema } from "./types.ts";
+import { designate, type Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
@@ -1055,6 +1056,36 @@ server.tool(
           }),
         },
       ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: designate
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "designate",
+  "Generate Borg-style designations for one or more agents.",
+  {
+    count: z.number().int().min(1).max(12).describe(
+      "Number of agents to generate designations for (1–12)",
+    ),
+    role: z.enum(["Drone", "Vinculum", "Probe", "Cortex", "Subroutine"])
+      .optional()
+      .describe("Agent role (determines Borg functional title)"),
+    trimatrix: z.boolean().optional().describe(
+      "If true, use 'Trimatrix <random>' as unit instead of 'Unimatrix Zero'",
+    ),
+  },
+  (params) => {
+    const result = designate(
+      params.count,
+      params.role as Role | undefined,
+      params.trimatrix,
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
     };
   },
 );

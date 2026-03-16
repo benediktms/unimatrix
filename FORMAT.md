@@ -355,7 +355,6 @@ src/
 │   │   └── ...
 │   └── SPEC.md                # Shared hook logic specification
 └── shared/                    # Platform-agnostic assets
-    ├── designate.py           # Borg designation generator
     └── statusline.py          # Status line script
 ```
 

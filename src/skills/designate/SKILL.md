@@ -12,16 +12,21 @@ Generate Borg-style designations (e.g., "Seven of Nine, Septenary Tactical Adjun
 ## Behavior
 
 1. **Count subtasks** — Determine how many agents will be dispatched.
-2. **Generate designations** — Run the following via Bash, replacing `<N>` with the number of agents and adding the appropriate flags:
-   ```bash
-   SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/designate ] && echo .claude/skills/designate/SKILL.md || echo ~/.claude/skills/designate/SKILL.md)")")" && python3 "$SKILL_DIR/designate.py" <N> [--role Drone|Vinculum|Probe] [--trimatrix]
-   ```
-   Each line of output is one designation. Role determines the Borg functional title:
+2. **Generate designations** — Call the `mcp__unimatrix__designate` MCP tool with:
+   - `count` (number, 1–12) — number of designations to generate
+   - `role` (optional string) — one of `Drone`, `Vinculum`, `Probe`, `Cortex`, `Subroutine`
+   - `trimatrix` (optional boolean) — set `true` for all spawned agents (uses "Trimatrix \<N\>" instead of "Unimatrix Zero")
+
+   The tool returns `{ designations: string[], trimatrix_id?: number }`. Each element of `designations` is one full designation string.
+
+   Role determines the Borg functional title:
    - `Drone` → Tactical Adjunct
    - `Vinculum` → Auxiliary Processor
    - `Probe` → Adjunct
-   - (default) → Adjunct
-   - `--trimatrix` → Uses "Trimatrix \<random\>" instead of "Unimatrix Zero" (use for all spawned agents)
+   - `Cortex` → Cortical Processing Adjunct
+   - `Subroutine` → Adjunct
+   - (default / no role) → Adjunct
+
 3. **Assign to agents** — When spawning each agent:
 <!-- @claude -->
    - Set the Agent tool's `name` to the designation
@@ -41,6 +46,8 @@ Invoked by the Queen during `/assemble` Step 2 before dispatching drones. Can al
 /designate <N>                              # Generic Adjunct titles (Unimatrix Zero)
 /designate <N> --role Drone                 # Tactical Adjunct titles
 /designate <N> --role Vinculum              # Auxiliary Processor titles
-/designate <N> --role Drone --trimatrix     # Trimatrix instead of Unimatrix
-/designate <N> --role Drone --swarm         # Legacy alias for --trimatrix
+/designate <N> --role Probe                 # Adjunct titles
+/designate <N> --role Cortex                # Cortical Processing Adjunct titles
+/designate <N> --role Subroutine            # Adjunct titles
+/designate <N> --role Drone --trimatrix     # Trimatrix instead of Unimatrix Zero
 ```
