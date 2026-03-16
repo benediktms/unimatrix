@@ -26,7 +26,6 @@ All borgcube executions follow this state machine:
 stateDiagram-v2
     [*] --> initializing: init()
     initializing --> dispatching: compute_waves()
-    dispatching --> dispatching: wave lifecycle events
     dispatching --> gate_halted: merge gate reached
     dispatching --> completed: final wave done
     dispatching --> failed: node or wave failed
