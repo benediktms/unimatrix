@@ -24,7 +24,7 @@ import type {
   RepoMetadata,
 } from "./types.ts";
 import { MachineState, approvalSchema, triageSchema } from "./types.ts";
-import { designate, type Role } from "./designate.ts";
+import { designate, Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
@@ -1432,13 +1432,7 @@ const designateSchema = z.object({
     .max(12)
     .describe("Number of agents to generate designations for (1–12)"),
   role: z
-    .enum([
-      "Assimilation",
-      "Validation",
-      "Reconnaissance",
-      "TacticalAnalysis",
-      "Closure",
-    ])
+    .nativeEnum(Role)
     .optional()
     .describe("Agent role (determines Borg functional title)"),
   trimatrix: z
@@ -1466,7 +1460,7 @@ mcp.registerTool(
   (params: z.infer<typeof designateSchema>) => {
     const result = designate(
       params.count,
-      params.role as Role | undefined,
+      params.role,
       params.trimatrix,
       params.trimatrix_id,
     );

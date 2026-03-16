@@ -37,24 +37,30 @@ export const ORDINALS = [
   "Duodenary",
 ];
 
-export const ROLE_TITLES: Record<string, string> = {
-  Assimilation: "Tactical Adjunct",
-  Validation: "Auxiliary Processor",
-  Reconnaissance: "Adjunct",
-  TacticalAnalysis: "Cortical Processing Adjunct",
-  Closure: "Adjunct",
+export enum Role {
+  ADJUNCT = "ADJUNCT",
+  ASSIMILATION = "ASSIMILATION",
+  VALIDATION = "VALIDATION",
+  RECONNAISSANCE = "RECONNAISSANCE",
+  TACTICAL_ANALYSIS = "TACTICAL_ANALYSIS",
+  CLOSURE = "CLOSURE",
+}
+
+export const ROLE_TITLES: Record<Role, string> = {
+  [Role.ADJUNCT]: "Adjunct",
+  [Role.ASSIMILATION]: "Tactical Adjunct",
+  [Role.VALIDATION]: "Auxiliary Processor",
+  [Role.RECONNAISSANCE]: "Adjunct",
+  [Role.TACTICAL_ANALYSIS]: "Cortical Processing Adjunct",
+  [Role.CLOSURE]: "Adjunct",
 };
 
 // Roles where each agent gets its own unique ordinal (== its position).
 // All other roles share one randomly chosen ordinal across the batch.
-export const UNIQUE_ORDINAL_ROLES = new Set(["TacticalAnalysis", "Validation"]);
-
-export type Role =
-  | "Assimilation"
-  | "Validation"
-  | "Reconnaissance"
-  | "TacticalAnalysis"
-  | "Closure";
+export const UNIQUE_ORDINAL_ROLES = new Set<Role>([
+  Role.TACTICAL_ANALYSIS,
+  Role.VALIDATION,
+]);
 
 export interface DesignateResult {
   designations: string[];
@@ -71,11 +77,11 @@ export interface DesignateResult {
  */
 export function designate(
   count: number,
-  role?: Role,
+  role: Role = Role.ADJUNCT,
   trimatrix?: boolean,
   trimatrix_id?: number,
 ): DesignateResult {
-  const titleBase = role ? (ROLE_TITLES[role] ?? "Adjunct") : "Adjunct";
+  const titleBase = ROLE_TITLES[role];
   const uniqueOrdinals = role !== undefined && UNIQUE_ORDINAL_ROLES.has(role);
 
   let unit: string;
