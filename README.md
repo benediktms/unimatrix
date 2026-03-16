@@ -439,7 +439,6 @@ unimatrix/
 │   │   │   ├── track-agents.py
 │   │   │   ├── track-cost.py
 │   │   │   ├── track-compactions.py
-│   │   │   ├── designate.py
 │   │   │   └── post-commit
 │   │   ├── opencode/             #   TypeScript plugin (OpenCode)
 │   │   │   └── unimatrix-hooks.ts

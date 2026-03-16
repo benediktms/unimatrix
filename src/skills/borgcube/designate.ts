@@ -1,5 +1,5 @@
 /**
- * Borg-style designation generator — ported from designate.py.
+ * Borg-style designation generator.
  *
  * Generates designations of the form:
  *   "{Number} of {Total}, {Ordinal} {Title} of {Unit}"
