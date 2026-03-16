@@ -30,7 +30,7 @@ The classifier runs on every prompt. It determines execution mode before any act
 | REVIEW | `modes/review.md` | "Review this", code review requests, validation | `/comply` |
 | ADAPT | `modes/adapt.md` | Tasks needing iterative refinement, quality gates | `/adapt` |
 | SWARM | `modes/swarm.md` | Bulk changes, migrations, "rename X everywhere" | `/swarm` |
-| CROSS_REPO | `modes/cross-repo.md` | Multi-repo features, `--include` flag | `/borgcube` |
+| CROSS_REPO | `modes/cross-repo.md` | Multi-repo features, `--include` flag | — |
 | RESUME | (built-in) | References a task ID, "resume", "continue", `/reengage <id>` | `/reengage` |
 
 ### Classifier Rules

@@ -1,12 +1,12 @@
 # Cross-Repo Mode
 
-Alias: /borgcube
+Alias: none
 
 ## When Triggered
 - Feature spans multiple repositories
 - User provides --include flag with repo refs
 - Cross-repo dependencies, merge gates needed
-- User explicitly uses /borgcube or /trimatrix cross-repo
+- User explicitly uses /trimatrix cross-repo
 
 ## Invocation
 /trimatrix cross-repo --include <ref,ref,...> [--resume [artifact-id | brain-ref]] [--dry-run]
