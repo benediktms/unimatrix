@@ -47,12 +47,12 @@ export enum Role {
 }
 
 export const ROLE_TITLES: Record<Role, string> = {
-  [Role.ADJUNCT]: "Adjunct",
-  [Role.ASSIMILATION]: "Tactical Adjunct",
-  [Role.VALIDATION]: "Auxiliary Processor",
-  [Role.RECONNAISSANCE]: "Adjunct",
-  [Role.TACTICAL_ANALYSIS]: "Cortical Processing Adjunct",
-  [Role.CLOSURE]: "Adjunct",
+  [Role.ADJUNCT]: "Adjunct: Generic Drone",
+  [Role.ASSIMILATION]: "Adjunct: Assimilation Protocol",
+  [Role.VALIDATION]: "Adjunct: Validation Protocol",
+  [Role.RECONNAISSANCE]: "Adjunct: Reconnaissance Protocol",
+  [Role.TACTICAL_ANALYSIS]: "Adjunct: Tactical Analysis Protocol",
+  [Role.CLOSURE]: "Adjunct: Closure Protocol",
 };
 
 // Roles where each agent gets its own unique ordinal (== its position).
