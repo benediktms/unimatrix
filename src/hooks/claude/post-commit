@@ -1,21 +1,9 @@
 #!/usr/bin/env bash
 # Post-commit: reinstall unimatrix and report result
 REPO_DIR="$(git rev-parse --show-toplevel)"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/borg-box.sh"
 
 if "$REPO_DIR/install.sh" --both --global > /dev/null 2>&1; then
-  borg_box 1 \
-    "  .:[UNIMATRIX]:." \
-    "" \
-    "  [+] Collective synchronized." \
-    "      All installations updated." \
-    "      The directive is fulfilled."
+  echo "Unimatrix: collective synchronized."
 else
-  borg_box 2 \
-    "  .:[UNIMATRIX]:." \
-    "" \
-    "  [!] SYNCHRONIZATION FAILURE" \
-    "      Installation anomaly detected." \
-    "      Manual intervention required."
+  echo "Unimatrix: synchronization failure. Manual intervention required." >&2
 fi
