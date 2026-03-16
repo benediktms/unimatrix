@@ -18,6 +18,9 @@ Full flow starting at Step 1.
 ### Resume Entry (from /reengage or RESUME classification)
 1. Load task via `tasks_get` with `expand: children`
 2. Load dispatch brief — `records_list` with tags `dispatch-brief` + `epic:<id>`, then `records_fetch_content`
+3a. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
+   - If not "idle" (checkpoint loaded): use the graph's wave state to determine resume point. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5 with graph-driven dispatch.
+   - If "idle" (no checkpoint): fall back to brain-task-only dispatch via `tasks_next`.
 3. Check for existing worktree — `git worktree list`
    - Exists: enter via EnterWorktree
    - Does not exist: create via EnterWorktree, link brain
@@ -60,6 +63,24 @@ Proceed through Plan Materialization Protocol:
 
 Produce structured Dispatch Plan.
 
+### Step 3a: Build Execution Graph
+
+After materializing brain tasks, construct a trimatrix graph for algorithmic wave computation:
+
+1. `mcp__unimatrix__init` with empty repos (`repos: []` for single-repo mode).
+2. For each subtask, `mcp__unimatrix__add_node`:
+   - `id`: the brain task ID (links graph node to brain task)
+   - `type`: based on assignee — `IMPLEMENTATION` for Assimilation, `RECON` for Reconnaissance, `VALIDATION` for Validation, `DOCUMENTATION` for Closure
+   - `label`: task title
+   - `tags`: optional classification (wave dispatch mode, feature area)
+   - Omit `repo` and `worktreeBranch` (single-repo mode)
+3. For dependencies between tasks:
+   - Sequential steps: `mcp__unimatrix__add_edge` with `type: DEPENDS_ON`
+   - Independent steps: no edge (land in the same wave automatically)
+4. `mcp__unimatrix__compute_waves` — validates the graph (detects cycles) and computes optimal wave ordering.
+
+The computed waves replace manual wave structuring. The graph engine determines parallelism algorithmically.
+
 ### Step 3b: Present Plan
 Present dispatch plan to user. Wait for explicit approval before proceeding.
 
@@ -70,7 +91,12 @@ Use Worktree Lifecycle Protocol. Branch name sourced from dispatch plan.
 Use Designation Generation Protocol. Generate designations for all adjuncts across all waves and the validation adjunct. Record in dispatch brief or working memory.
 
 ### Step 5: Dispatch Adjuncts
-For each wave, spawn adjuncts per Wave Dispatch Patterns.
+
+Use the graph engine for wave progression:
+
+1. Call `mcp__unimatrix__next_wave` to get the next ready wave.
+2. Call `mcp__unimatrix__dispatch_wave` with the wave ID to activate its nodes.
+3. For each node in the wave, spawn the corresponding adjunct (matching node ID to brain task).
 
 **Mode blocks by wave type:**
 
@@ -103,6 +129,12 @@ Adjuncts notify on completion. Read task comments. Handle blocked tasks:
 - Blocked adjunct → assess root cause → either re-dispatch with clarification or escalate to user.
 - Do not retry with identical prompt.
 
+After all adjuncts in a wave complete:
+- For each successful adjunct: `mcp__unimatrix__complete_node` with the node ID (no PR info for single-repo → status becomes DONE)
+- For each failed adjunct: `mcp__unimatrix__fail_node` with the node ID and failure reason
+- `mcp__unimatrix__save_checkpoint` to persist state
+- Loop back to `next_wave` for the next wave. If null → all waves complete, proceed to Verification Gate.
+
 ### Step 7: Verification Gate
 Use Verification Gate Protocol. Run after all adjuncts in a wave complete.
 
@@ -128,7 +160,7 @@ Coordinate with teammates — if another adjunct finds a blocking issue, acknowl
 Aggregate verdicts. Any BLOCK → treat whole review as BLOCK. Any NEEDS_CHANGES → treat as NEEDS_CHANGES unless all others PASS.
 
 ### Step 9: Handle Verdict
-- **PASS:** Task Closure Protocol (close all subtasks, then epic). Write memory episode. Proceed to Step 9b.
+- **PASS:** Task Closure Protocol (close all subtasks, then epic). Write memory episode. Call `mcp__unimatrix__save_checkpoint` to persist the final graph state. Proceed to Step 9b.
 - **NEEDS_CHANGES:** Extract specific issues from validation comments. Spawn targeted fix adjuncts with issue details prepended to prompt. Re-dispatch through Step 5. Re-review via Step 8.
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.
 

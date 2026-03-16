@@ -15,5 +15,13 @@
   },
   "compilerOptions": {
     "strict": true
-  }
+  },
+  "exclude": [
+    "dist/",
+    "bin/",
+    ".venv/",
+    ".opencode/",
+    ".claude/",
+    "__pycache__/"
+  ]
 }

@@ -160,6 +160,12 @@ For modes that create brain tasks:
 5. Set dependencies via `tasks_deps_batch` (`chain` for sequential, `fan` for parallel)
 6. Save plan artifact: `records_create_artifact`, `kind: "plan"`, tagged `queen-plan`
 7. Save dispatch brief: `records_create_artifact`, `kind: "dispatch-brief"`, tagged `dispatch-brief` and `epic:<id>`
+8. **Build execution graph** — construct a trimatrix graph for algorithmic wave ordering:
+   - `mcp__unimatrix__init` with `repos: []` for single-repo executions (or with repo metadata for cross-repo)
+   - `mcp__unimatrix__add_node` per subtask: `id` = brain task ID, `type` based on role (`IMPLEMENTATION`, `RECON`, `VALIDATION`, `DOCUMENTATION`), omit `repo`/`worktreeBranch` for single-repo
+   - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies (independent tasks get no edges — same wave automatically)
+   - `mcp__unimatrix__compute_waves` to validate the graph and compute wave ordering
+   - The graph enables cycle detection, optimal parallelism, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
 
 **Task description format** — every subtask must be self-contained:
 

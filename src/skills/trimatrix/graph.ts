@@ -6,6 +6,7 @@
  */
 
 import type { Edge, Graph, Node, Wave } from "./types.ts";
+import { EdgeType, NodeStatus } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Refinement mutation result
@@ -119,20 +120,20 @@ export function validate(graph: Graph): ValidationResult {
  * Compute ordered waves for the graph via topological level assignment.
  *
  * Rules:
- * - `merge_gate` edges create wave boundaries — the target node belongs to a
- *   later wave than the source.
- * - `stacked` edges within the same repo do NOT create wave boundaries — the
+ * - `MERGE_GATE` and `DEPENDS_ON` edges create wave boundaries — the target
+ *   node belongs to a later wave than the source.
+ * - `STACKED` edges within the same repo do NOT create wave boundaries — the
  *   target node can be in the same wave as the source.
  * - Nodes with no incoming edges start at wave 0.
- * - A wave carries `hasMergeGate = true` when any `merge_gate` edge points
- *   INTO a subsequent wave (i.e., the gate is guarded by this wave's completion).
+ * - A wave carries `hasMergeGate = true` when any `MERGE_GATE` or `DEPENDS_ON`
+ *   edge points INTO a subsequent wave (i.e., the gate is guarded by this wave's completion).
  */
 export function computeWaves(graph: Graph): Wave[] {
   const nodeIds = Object.keys(graph.nodes);
   if (nodeIds.length === 0) return [];
 
   // Assign topological levels.
-  // Only merge_gate edges advance the wave boundary.
+  // Only MERGE_GATE and DEPENDS_ON edges advance the wave boundary.
   const level = new Map<string, number>();
   for (const id of nodeIds) {
     level.set(id, 0);
@@ -182,7 +183,7 @@ export function computeWaves(graph: Graph): Wave[] {
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = eType === "merge_gate" ? 1 : 0;
+      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -199,19 +200,19 @@ export function computeWaves(graph: Graph): Wave[] {
 
   const sortedLevels = [...byLevel.keys()].sort((a, b) => a - b);
 
-  // Determine which wave IDs have outgoing merge_gate edges into a later wave
-  const mergeGateSourceLevels = new Set<number>();
+  // Determine which wave IDs have outgoing MERGE_GATE or DEPENDS_ON edges into a later wave
+  const gateSourceLevels = new Set<number>();
   for (const edge of graph.edges) {
-    if (edge.type === "merge_gate") {
+    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
       const fromLevel = level.get(edge.from) ?? 0;
-      mergeGateSourceLevels.add(fromLevel);
+      gateSourceLevels.add(fromLevel);
     }
   }
 
   const waves: Wave[] = sortedLevels.map((lv, idx) => ({
     id: idx + 1,
     nodes: byLevel.get(lv) ?? [],
-    hasMergeGate: mergeGateSourceLevels.has(lv),
+    hasMergeGate: gateSourceLevels.has(lv),
   }));
 
   return waves;
@@ -221,21 +222,25 @@ export function computeWaves(graph: Graph): Wave[] {
 // Wave progression
 // ---------------------------------------------------------------------------
 
-/** Statuses that satisfy a `stacked` edge dependency. */
-const STACKED_SATISFIED: Node["status"][] = [
-  "pr_created",
-  "merged",
+/** Statuses that satisfy a `STACKED` edge dependency. */
+const STACKED_SATISFIED: NodeStatus[] = [
+  NodeStatus.PR_CREATED,
+  NodeStatus.MERGED,
 ];
 
-/** Status that satisfies a `merge_gate` edge dependency. */
-const MERGE_GATE_SATISFIED: Node["status"] = "merged";
+/** Status that satisfies a `MERGE_GATE` edge dependency. */
+const MERGE_GATE_SATISFIED: NodeStatus = NodeStatus.MERGED;
+
+/** Statuses that satisfy a `DEPENDS_ON` edge dependency. */
+const DEPENDS_ON_SATISFIED: NodeStatus[] = [NodeStatus.DONE, NodeStatus.MERGED];
 
 /**
  * Returns the next wave ready for execution, or null if none is available.
  *
  * A wave is ready when all upstream dependencies are satisfied:
- * - `merge_gate` edges: source node must be "merged"
- * - `stacked` edges: source node must be "pr_created" or later
+ * - `MERGE_GATE` edges: source node must be MERGED
+ * - `STACKED` edges: source node must be PR_CREATED or later
+ * - `DEPENDS_ON` edges: source node must be DONE or MERGED
  *
  * Returns null when:
  * - The machine is gate_halted (caller is responsible for detecting this)
@@ -253,7 +258,10 @@ export function nextWave(
   const completedWaveIds = new Set<number>();
   for (const wave of waves) {
     const allDone = wave.nodes.every(
-      (nId) => graph.nodes[nId]?.status === "merged",
+      (nId) => {
+        const s = graph.nodes[nId]?.status;
+        return s === NodeStatus.MERGED || s === NodeStatus.DONE;
+      },
     );
     if (allDone) completedWaveIds.add(wave.id);
   }
@@ -283,10 +291,13 @@ export function nextWave(
         if (waveNodeIds.has(edge.from)) return true; // intra-wave: always ok
         const sourceNode = graph.nodes[edge.from];
         if (!sourceNode) return false;
-        if (edge.type === "merge_gate") {
+        if (edge.type === EdgeType.MERGE_GATE) {
           return sourceNode.status === MERGE_GATE_SATISFIED;
         }
-        // stacked
+        if (edge.type === EdgeType.DEPENDS_ON) {
+          return DEPENDS_ON_SATISFIED.includes(sourceNode.status);
+        }
+        // STACKED
         return STACKED_SATISFIED.includes(sourceNode.status);
       });
     });
@@ -302,7 +313,7 @@ export function nextWave(
 // ---------------------------------------------------------------------------
 
 /**
- * Clear the merge gate on a node: transition from "blocked" back to "active"
+ * Clear the merge gate on a node: transition from BLOCKED back to ACTIVE
  * so the wave can proceed past the gate.
  */
 export function clearGate(graph: Graph, nodeId: string): Graph {
@@ -312,14 +323,16 @@ export function clearGate(graph: Graph, nodeId: string): Graph {
     ...graph,
     nodes: {
       ...graph.nodes,
-      [nodeId]: { ...node, status: "active", failureReason: undefined },
+      [nodeId]: { ...node, status: NodeStatus.ACTIVE, failureReason: undefined },
     },
   };
 }
 
 /**
- * Mark a node as completed (status "pr_created" if PR info supplied, else "merged").
- * Attaches PR metadata when provided.
+ * Mark a node as completed.
+ * - With PR info: status becomes PR_CREATED.
+ * - Without PR info and node has repo: status becomes MERGED.
+ * - Without PR info and no repo (single-repo): status becomes DONE.
  */
 export function completeNode(
   graph: Graph,
@@ -330,7 +343,7 @@ export function completeNode(
   if (!node) return graph;
   const updated: Node = {
     ...node,
-    status: pr ? "pr_created" : "merged",
+    status: pr ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
     ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
   };
   return {
@@ -353,19 +366,19 @@ export function failNode(
     ...graph,
     nodes: {
       ...graph.nodes,
-      [nodeId]: { ...node, status: "failed", failureReason: reason },
+      [nodeId]: { ...node, status: NodeStatus.FAILED, failureReason: reason },
     },
   };
 }
 
 /**
- * Transition a set of nodes to "active" status.
+ * Transition a set of nodes to ACTIVE status.
  */
 export function activateNodes(graph: Graph, nodeIds: string[]): Graph {
   const updatedNodes = { ...graph.nodes };
   for (const id of nodeIds) {
     if (updatedNodes[id]) {
-      updatedNodes[id] = { ...updatedNodes[id], status: "active" };
+      updatedNodes[id] = { ...updatedNodes[id], status: NodeStatus.ACTIVE };
     }
   }
   return { ...graph, nodes: updatedNodes };
@@ -376,10 +389,10 @@ export function activateNodes(graph: Graph, nodeIds: string[]): Graph {
 // ---------------------------------------------------------------------------
 
 /** Node statuses that indicate the node has been completed or is actively running. */
-const ACTIVE_OR_COMPLETED_STATUSES: Node["status"][] = [
-  "active",
-  "pr_created",
-  "merged",
+const ACTIVE_OR_COMPLETED_STATUSES: NodeStatus[] = [
+  NodeStatus.ACTIVE,
+  NodeStatus.PR_CREATED,
+  NodeStatus.MERGED,
 ];
 
 /**
@@ -463,7 +476,7 @@ export function addEdge(
  * Compute waves for a graph that is being refined mid-execution.
  *
  * Rules:
- * - Completed nodes (status "merged") are excluded from the topological sort.
+ * - Completed nodes (status MERGED or DONE) are excluded from the topological sort.
  * - Edges whose `from` node is completed are treated as pre-satisfied (not a
  *   blocking dependency for the receiving node).
  * - New waves are numbered starting after `waveOffset` so they do not
@@ -476,7 +489,7 @@ export function computeWavesFromRefinement(
   graph: Graph,
   waveOffset: number,
 ): Wave[] {
-  const completedStatuses: Node["status"][] = ["merged"];
+  const completedStatuses: NodeStatus[] = [NodeStatus.MERGED, NodeStatus.DONE];
 
   // Identify completed node IDs — excluded from the new computation
   const completedNodeIds = new Set(
@@ -547,7 +560,7 @@ export function computeWavesFromRefinement(
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = eType === "merge_gate" ? 1 : 0;
+      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -564,12 +577,12 @@ export function computeWavesFromRefinement(
 
   const sortedLevels = [...byLevel.keys()].sort((a, b) => a - b);
 
-  // Determine wave IDs with outgoing merge_gate edges into later waves
-  const mergeGateSourceLevels = new Set<number>();
+  // Determine wave IDs with outgoing MERGE_GATE or DEPENDS_ON edges into later waves
+  const gateSourceLevels = new Set<number>();
   for (const edge of activeEdges) {
-    if (edge.type === "merge_gate") {
+    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
       const fromLevel = level.get(edge.from) ?? 0;
-      mergeGateSourceLevels.add(fromLevel);
+      gateSourceLevels.add(fromLevel);
     }
   }
 
@@ -577,7 +590,7 @@ export function computeWavesFromRefinement(
   const waves: Wave[] = sortedLevels.map((lv, idx) => ({
     id: waveOffset + idx + 1,
     nodes: byLevel.get(lv) ?? [],
-    hasMergeGate: mergeGateSourceLevels.has(lv),
+    hasMergeGate: gateSourceLevels.has(lv),
   }));
 
   return waves;
@@ -590,7 +603,7 @@ export function computeWavesFromRefinement(
 /**
  * Aggregate status of a wave based on its constituent node statuses.
  *
- * - "completed"       — all nodes are merged
+ * - "completed"       — all nodes are MERGED or DONE
  * - "failed"          — all nodes failed or blocked
  * - "partial_failure" — some nodes failed/blocked, at least one completed
  * - "active"          — at least one node is active (and none failed yet)
@@ -602,24 +615,24 @@ export function waveStatus(
 ): "pending" | "active" | "completed" | "partial_failure" | "failed" {
   if (wave.nodes.length === 0) return "completed";
 
-  const statuses = wave.nodes.map((id) => graph.nodes[id]?.status ?? "pending");
+  const statuses = wave.nodes.map((id) => graph.nodes[id]?.status ?? NodeStatus.PENDING);
 
-  const allMerged = statuses.every((s) => s === "merged");
-  if (allMerged) return "completed";
+  const allTerminal = statuses.every((s) => s === NodeStatus.MERGED || s === NodeStatus.DONE);
+  if (allTerminal) return "completed";
 
-  const failedOrBlocked = (s: Node["status"] | undefined) =>
-    s === "failed" || s === "blocked";
+  const failedOrBlocked = (s: NodeStatus | undefined) =>
+    s === NodeStatus.FAILED || s === NodeStatus.BLOCKED;
   const allFailed = statuses.every(failedOrBlocked);
   if (allFailed) return "failed";
 
   const hasFailure = statuses.some(failedOrBlocked);
   const hasCompleted = statuses.some(
-    (s) => s === "merged" || s === "pr_created",
+    (s) => s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED || s === NodeStatus.DONE,
   );
   if (hasFailure && hasCompleted) return "partial_failure";
   if (hasFailure) return "failed";
 
-  const hasActive = statuses.some((s) => s === "active");
+  const hasActive = statuses.some((s) => s === NodeStatus.ACTIVE);
   if (hasActive) return "active";
 
   return "pending";

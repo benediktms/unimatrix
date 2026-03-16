@@ -6,35 +6,66 @@
  */
 
 // ---------------------------------------------------------------------------
+// Graph enums
+// ---------------------------------------------------------------------------
+
+export enum NodeType {
+  CONTRACT = "CONTRACT",
+  IMPLEMENTATION = "IMPLEMENTATION",
+  RECON = "RECON",
+  VALIDATION = "VALIDATION",
+  DOCUMENTATION = "DOCUMENTATION",
+  DIAGNOSIS = "DIAGNOSIS",
+}
+
+export enum NodeStatus {
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  PR_CREATED = "PR_CREATED",
+  MERGED = "MERGED",
+  BLOCKED = "BLOCKED",
+  FAILED = "FAILED",
+  DONE = "DONE",
+}
+
+export enum EdgeType {
+  MERGE_GATE = "MERGE_GATE",
+  STACKED = "STACKED",
+  DEPENDS_ON = "DEPENDS_ON",
+}
+
+// ---------------------------------------------------------------------------
 // Graph types
 // ---------------------------------------------------------------------------
 
 /**
  * A single unit of work in the trimatrix execution graph.
- * Corresponds to one branch/PR per repository.
+ * Corresponds to one branch/PR per repository (or a single-repo task when repo is absent).
  */
 export interface Node {
   /** Unique identifier for this node within the graph. */
   id: string;
-  /** Brain name or ref identifying the target repository. */
-  repo: string;
-  /** Whether this node defines an API contract or an implementation against it. */
-  type: "contract" | "implementation";
+  /** Brain name or ref identifying the target repository. Absent for single-repo nodes. */
+  repo?: string;
+  /** The kind of work this node represents. */
+  type: NodeType;
   /** Human-readable description of this node's purpose. */
   label: string;
+  /** Optional tags for categorisation or filtering. */
+  tags?: string[];
   /** Brain task ID once the corresponding task has been materialized. */
   taskId?: string;
-  /** Name of the worktree branch for this node. */
-  worktreeBranch: string;
+  /** Name of the worktree branch for this node. Absent for single-repo nodes. */
+  worktreeBranch?: string;
   /** Node ID this node is stacked on within the same repository. */
   stackedOn?: string;
   /** Current execution status of this node. */
-  status: "pending" | "active" | "pr_created" | "merged" | "blocked" | "failed";
+  status: NodeStatus;
   /** URL of the pull request created for this node, if any. */
   prUrl?: string;
   /** Number of the pull request created for this node, if any. */
   prNumber?: number;
-  /** Human-readable reason for failure, if status is "failed" or "blocked". */
+  /** Human-readable reason for failure, if status is FAILED or BLOCKED. */
   failureReason?: string;
 }
 
@@ -48,10 +79,11 @@ export interface Edge {
   to: string;
   /**
    * Relationship type:
-   * - `merge_gate`: target cannot proceed until source is merged.
-   * - `stacked`: target branch is stacked on top of source within one repo.
+   * - `MERGE_GATE`: target cannot proceed until source is merged.
+   * - `STACKED`: target branch is stacked on top of source within one repo.
+   * - `DEPENDS_ON`: target cannot proceed until source is done or merged (single-repo friendly).
    */
-  type: "merge_gate" | "stacked";
+  type: EdgeType;
 }
 
 /**
@@ -79,6 +111,7 @@ export interface Wave {
   /**
    * When true, execution halts after this wave completes and waits for
    * explicit merge confirmation before proceeding to the next wave.
+   * Covers both MERGE_GATE and DEPENDS_ON edges.
    */
   hasMergeGate: boolean;
 }
@@ -89,17 +122,15 @@ export interface Wave {
 
 /**
  * Top-level states of the trimatrix execution state machine.
- * Enum values match the serialized form (checkpoint JSON) for backward compatibility.
  */
-export enum MachineState {
-  INITIALIZING = "initializing",
-  DISPATCHING = "dispatching",
-  GATE_HALTED = "gate_halted",
-  REFINING = "refining",
-  FAILED = "failed",
-  COMPLETED = "completed",
-  CANCELLED = "cancelled",
-}
+export type MachineState =
+  | "initializing"
+  | "dispatching"
+  | "gate_halted"
+  | "refining"
+  | "failed"
+  | "completed"
+  | "cancelled";
 
 /**
  * Persisted checkpoint capturing the full state of a trimatrix execution.
