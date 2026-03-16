@@ -389,11 +389,11 @@ Present to the user:
 ```
 MERGE GATE — Wave N complete. PRs await merge:
 
-  [<repo-a>] PR #<N>: <title>
-  URL: <prUrl>
+  [<repo-a>] <title>
+  <prUrl>
 
-  [<repo-b>] PR #<N>: <title>
-  URL: <prUrl>
+  [<repo-b>] <title>
+  <prUrl>
 
 Merge the PRs externally. Then resume execution:
 
@@ -496,8 +496,8 @@ Report to the user:
 BORGCUBE COMPLETE — <N> nodes across <M> repos
 
 PRs created:
-  [<repo>] #<number>: <title> — <url>
-  [<repo>] #<number>: <title> — <url>
+  [<repo>] <title> — <url>
+  [<repo>] <title> — <url>
 
 All nodes merged or awaiting final merge. The directive has been fulfilled.
 ```
