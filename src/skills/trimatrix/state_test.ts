@@ -1,5 +1,5 @@
 /**
- * State machine tests for borgcube execution lifecycle.
+ * State machine tests for trimatrix execution lifecycle.
  *
  * Coverage:
  * - canTransition: valid and invalid transitions for each state
@@ -31,7 +31,7 @@ function makeNode(id: string, overrides: Partial<Node> = {}): Node {
     repo: "test-repo",
     type: "implementation",
     label: `Node ${id}`,
-    worktreeBranch: `borgcube/${id}`,
+    worktreeBranch: `trimatrix/${id}`,
     status: "pending",
     ...overrides,
   };
@@ -457,10 +457,10 @@ Deno.test("canTransition: no transitions allowed out of cancelled state", () => 
 Deno.test("createCheckpoint: with session opts — sessionId and sessionLabel present", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp = createCheckpoint([], graph, {
-    sessionId: "borgcube-2026-01-01-abcd",
+    sessionId: "trimatrix-2026-01-01-abcd",
     sessionLabel: "test session",
   });
-  assertEquals(cp.sessionId, "borgcube-2026-01-01-abcd");
+  assertEquals(cp.sessionId, "trimatrix-2026-01-01-abcd");
   assertEquals(cp.sessionLabel, "test session");
 });
 
@@ -516,7 +516,7 @@ Deno.test("deserialize: 1.1.0 checkpoint without session fields — sessionId un
 Deno.test("serialize/deserialize: round trip with session and cancel fields survives", () => {
   const graph = makeGraph([makeNode("n1")]);
   let cp = createCheckpoint([], graph, {
-    sessionId: "borgcube-2026-01-01-abcd",
+    sessionId: "trimatrix-2026-01-01-abcd",
     sessionLabel: "test session",
   });
   cp = transition(cp, { type: "plan_approved" });
@@ -525,7 +525,7 @@ Deno.test("serialize/deserialize: round trip with session and cancel fields surv
   const json = serialize(cp);
   const restored = deserialize(json);
 
-  assertEquals(restored.sessionId, "borgcube-2026-01-01-abcd");
+  assertEquals(restored.sessionId, "trimatrix-2026-01-01-abcd");
   assertEquals(restored.sessionLabel, "test session");
   assertEquals(restored.cancellationReason, "operator override");
   assertEquals(restored.machineState, "cancelled");

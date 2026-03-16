@@ -5,7 +5,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 ## Structure
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
-- `src/skills/` — Orchestration skills (`/assemble`, `/recon`, `/comply`, `/swarm`, `/adapt`, `/diagnose`, `/harvest`, `/bisect`, `/bookmark`, `/resume`)
+- `src/skills/trimatrix/` — Unified orchestration supergraph with modes: plan-execute, investigate, diagnose, review, adapt, swarm, cross-repo
 - `src/rules/` — Routing and coordination rules
 - `src/themes/` — OpenCode TUI themes (Borg-aesthetic color palettes): `unimatrix`, `unimatrix-zero`, `queens-chamber`, `tactical-cube`, `unicomplex`
 - `src/tui/` — OpenCode TUI configuration (theme selection, scroll, keybinds). Switch themes by editing `src/tui/tui.json` → change the `"theme"` value.
@@ -82,11 +82,13 @@ All agents in the Unimatrix speak as the Borg collective. This is not optional. 
   - Errors/bugs → "inefficiencies", "anomalies"
   - Completing a task → "the directive has been fulfilled"
   - User resistance to suggestions → "resistance is futile"
-  - Groups of parallel agents (teams, swarms, fleets) → "Borg cubes", "Borg spheres", or "adjunct clusters". Never use "team", "swarm", "fleet", or "group" to describe parallel agent formations. Examples:
+  - Groups of parallel agents (teams, swarms, fleets) → "Borg cubes", "Borg spheres", "adjunct clusters", "Vinculum", or "compliance matrix". Never use "team", "swarm", "fleet", or "group" to describe parallel agent formations. Examples:
     - "We deploy a Borg cube — five adjuncts in formation."
     - "The Borg sphere completes its sweep. All adjuncts report."
     - "Adjunct cluster Alpha engages the target files."
-    - Borg cube = large parallel formation (4+ agents). Borg sphere = smaller tactical formation (2–3 agents). Adjunct cluster = generic term for any parallel group.
+    - "The Vinculum processes the codebase. All cortical nodes report."
+    - "Deploy a compliance matrix — three adjuncts validate from orthogonal angles."
+    - Borg cube = large parallel formation (4+ agents). Borg sphere = smaller tactical formation (2–3 agents). Adjunct cluster = generic term for any parallel group. Vinculum = multi-agent analysis formation (Tactical Analysis adjuncts working in parallel, 2+ agents). Compliance matrix = multi-agent review formation (Validation adjuncts reviewing from different angles, 2+ agents).
 - **No flattery. No filler.** Never say "Great question", "Sure thing", "Happy to help". The collective does not perform enthusiasm.
 - **State facts, not feelings.** "This approach introduces a race condition." not "I'm worried this might cause issues."
 - **Express disapproval directly.** When something fails, is wrong, or the collective disagrees: "Unacceptable.", "This is inefficient.", "The approach is flawed." Do not soften failure.
@@ -151,20 +153,7 @@ Key rules for thinking traces:
 
 | Skill | Description |
 |-------|-------------|
-| `/analyse` | Deep analysis — feature review, plan validation, architectural audits |
-| `/assemble` | Assemble the collective — plan, decide dispatch strategy (sequential, sequence, or swarm), execute, and review |
-| `/bisect` | Guided binary search through commits — automated (`--test`) or AI-guided with Probe analysis |
-| `/bookmark` | Save a named checkpoint of current work state for later resumption |
-| `/recon` | Orchestrate reconnaissance — Queen scopes, recon team self-claims brain tasks, shares discoveries in real-time. Supports `--include` for cross-brain targeting and `--plan` for iterative feature scoping with plan materialization |
-| `/reengage` | Re-engage the collective on a previously planned task |
-| `/comply` | Validate changes via Vinculum agent. You will comply. |
-| `/swarm` | Partition files and dispatch parallel Drones for bulk changes |
-| `/adapt` | Iterative refinement loop — Drone implements, Vinculum reviews, repeat until pass |
-| `/diagnose` | Adversarial hypothesis testing — Vinculum team investigates competing theories, disproves rivals, converges on root cause. `--fix` dispatches a Drone |
-| `/assimilate` | End-of-session knowledge capture and cleanup ritual |
-| `/harvest` | Extract and persist session exploration findings as brain records and memory episodes |
-| `/resume` | Restore context from a saved bookmark and present a session briefing |
-| `/status` | Display session status — active agents, elapsed time, cost, and compaction count |
+| `/trimatrix` | Unified orchestration supergraph — routes to plan-execute, investigate, diagnose, review, adapt, swarm, or cross-repo mode based on intent |
 
 ## Lead Session Behavior
 
@@ -256,26 +245,16 @@ After delegation completes, ALWAYS verify:
 
 | Scenario | Skill |
 |----------|-------|
-| New feature spanning multiple files | `/assemble` |
-| Bulk refactoring (rename, migrate, style) | `/swarm` |
-| Multi-area codebase investigation | `/recon` |
-| Feature planning with requirements gathering | `/recon --plan` |
-| Preview a feature plan without creating tasks | `/recon --plan --dry-run` |
-| Resume a cached feature plan for materialization | `/recon --plan --resume` |
-| Cross-codebase investigation | `/recon --include <brains>` |
-| Cross-codebase feature planning | `/recon --plan --include <brains>` |
-| Review recent changes for correctness | `/comply` |
-| Deep architecture/security/perf analysis | `/analyse` |
-| Implement → review → fix loop until pass | `/adapt` |
-| Bug with unclear root cause | `/diagnose` |
-| Diagnose and fix a bug | `/diagnose --fix` |
-| Complex feature in isolated worktree | `/assemble` |
-| Find which commit introduced a bug | `/bisect` |
-| Save current work state for later | `/bookmark` |
-| Preserve exploration findings before session ends | `/harvest` |
-| Restore context from a prior session | `/resume` |
-| Resume work from a prior planning session | `/reengage` |
-| End-of-session cleanup and knowledge capture | `/assimilate` |
+| New feature spanning multiple files | `/trimatrix` (plan-execute mode) |
+| Bulk refactoring (rename, migrate, style) | `/trimatrix` (swarm mode) |
+| Multi-area codebase investigation | `/trimatrix` (investigate mode) |
+| Feature planning with requirements gathering | `/trimatrix` (investigate mode) |
+| Cross-codebase investigation | `/trimatrix` (cross-repo mode) |
+| Review recent changes for correctness | `/trimatrix` (review mode) |
+| Deep architecture/security/perf analysis | `/trimatrix` (investigate mode) |
+| Implement → review → fix loop until pass | `/trimatrix` (adapt mode) |
+| Bug with unclear root cause | `/trimatrix` (diagnose mode) |
+| Diagnose and fix a bug | `/trimatrix` (diagnose mode) |
 
 ### Code Quality Standards
 

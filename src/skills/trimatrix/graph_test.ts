@@ -1,5 +1,5 @@
 /**
- * Tests for the borgcube graph engine (graph.ts).
+ * Tests for the trimatrix graph engine (graph.ts).
  *
  * Covers: validate, computeWaves, nextWave, completeNode, failNode,
  * clearGate, and waveStatus.
@@ -7,9 +7,13 @@
 
 import { assertEquals } from "@std/assert";
 import {
+  activateNodes,
+  addEdge,
+  addNode,
   clearGate,
   completeNode,
   computeWaves,
+  computeWavesFromRefinement,
   failNode,
   nextWave,
   validate,
@@ -27,7 +31,7 @@ function makeNode(overrides: Partial<Node> = {}): Node {
     repo: "repo-a",
     type: "implementation",
     label: "Node",
-    worktreeBranch: "borgcube/n",
+    worktreeBranch: "trimatrix/n",
     status: "pending",
     ...overrides,
   };
@@ -384,4 +388,248 @@ Deno.test("waveStatus: at least one active, none failed → active", () => {
   ]);
   const wave = makeWave(0, ["A", "B"]);
   assertEquals(waveStatus(g, wave), "active");
+});
+
+Deno.test("waveStatus: all nodes pending → pending", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "pending" }),
+  ]);
+  const wave = makeWave(0, ["A", "B"]);
+  assertEquals(waveStatus(g, wave), "pending");
+});
+
+// ---------------------------------------------------------------------------
+// activateNodes
+// ---------------------------------------------------------------------------
+
+Deno.test("activateNodes: transitions pending nodes to active", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "pending" }),
+  ]);
+  const updated = activateNodes(g, ["A", "B"]);
+  assertEquals(updated.nodes["A"].status, "active");
+  assertEquals(updated.nodes["B"].status, "active");
+  // Original is not mutated
+  assertEquals(g.nodes["A"].status, "pending");
+});
+
+Deno.test("activateNodes: ignores non-existent node IDs", () => {
+  const g = makeGraph([makeNode({ id: "A", status: "pending" })]);
+  const updated = activateNodes(g, ["A", "MISSING"]);
+  assertEquals(updated.nodes["A"].status, "active");
+  assertEquals(updated.nodes["MISSING"], undefined);
+});
+
+Deno.test("activateNodes: partial activation — only specified nodes", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "pending" }),
+  ]);
+  const updated = activateNodes(g, ["A"]);
+  assertEquals(updated.nodes["A"].status, "active");
+  assertEquals(updated.nodes["B"].status, "pending");
+});
+
+// ---------------------------------------------------------------------------
+// addNode
+// ---------------------------------------------------------------------------
+
+Deno.test("addNode: adds node to empty graph (non-refining)", () => {
+  const g = makeGraph([]);
+  const result = addNode(g, makeNode({ id: "A" }));
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.nodes["A"].id, "A");
+});
+
+Deno.test("addNode: non-refining allows duplicate ID (overwrites)", () => {
+  const g = makeGraph([makeNode({ id: "A", label: "old" })]);
+  const result = addNode(g, makeNode({ id: "A", label: "new" }));
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.nodes["A"].label, "new");
+});
+
+Deno.test("addNode: refining rejects duplicate ID", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addNode(g, makeNode({ id: "A" }), true);
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("already exists"), true);
+});
+
+Deno.test("addNode: refining rejects stackedOn pointing to active node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: "active" })]);
+  const result = addNode(
+    g,
+    makeNode({ id: "B", stackedOn: "A" }),
+    true,
+  );
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("active"), true);
+});
+
+Deno.test("addNode: refining rejects stackedOn pointing to merged node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: "merged" })]);
+  const result = addNode(
+    g,
+    makeNode({ id: "B", stackedOn: "A" }),
+    true,
+  );
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("merged"), true);
+});
+
+Deno.test("addNode: refining allows stackedOn pointing to pending node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: "pending" })]);
+  const result = addNode(
+    g,
+    makeNode({ id: "B", stackedOn: "A" }),
+    true,
+  );
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.nodes["B"].stackedOn, "A");
+});
+
+// ---------------------------------------------------------------------------
+// addEdge
+// ---------------------------------------------------------------------------
+
+Deno.test("addEdge: adds edge (non-refining)", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
+  const result = addEdge(g, { from: "A", to: "B", type: "merge_gate" });
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 1);
+  assertEquals(result.value!.edges[0].from, "A");
+});
+
+Deno.test("addEdge: refining rejects edge to active node", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "active" }),
+  ]);
+  const result = addEdge(
+    g,
+    { from: "A", to: "B", type: "merge_gate" },
+    true,
+  );
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("active"), true);
+});
+
+Deno.test("addEdge: refining rejects edge to merged node", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "merged" }),
+  ]);
+  const result = addEdge(
+    g,
+    { from: "A", to: "B", type: "merge_gate" },
+    true,
+  );
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("merged"), true);
+});
+
+Deno.test("addEdge: refining allows edge to pending node", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "pending" }),
+    makeNode({ id: "B", status: "pending" }),
+  ]);
+  const result = addEdge(
+    g,
+    { from: "A", to: "B", type: "stacked" },
+    true,
+  );
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// computeWavesFromRefinement
+// ---------------------------------------------------------------------------
+
+Deno.test("computeWavesFromRefinement: excludes completed nodes", () => {
+  // A is merged (completed). B and C are pending with B→C merge_gate.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: "merged" }),
+      makeNode({ id: "B", status: "pending" }),
+      makeNode({ id: "C", status: "pending" }),
+    ],
+    [
+      { from: "A", to: "B", type: "merge_gate" },
+      { from: "B", to: "C", type: "merge_gate" },
+    ],
+  );
+  const waves = computeWavesFromRefinement(g, 2);
+  // A is excluded. B starts at level 0 (its only dep A is completed → pre-satisfied).
+  // B→C merge_gate → C at level 1.
+  assertEquals(waves.length, 2);
+  assertEquals(waves[0].nodes, ["B"]);
+  assertEquals(waves[1].nodes, ["C"]);
+  // Wave IDs offset by 2
+  assertEquals(waves[0].id, 3);
+  assertEquals(waves[1].id, 4);
+});
+
+Deno.test("computeWavesFromRefinement: all nodes completed → empty waves", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: "merged" }),
+    makeNode({ id: "B", status: "merged" }),
+  ]);
+  const waves = computeWavesFromRefinement(g, 1);
+  assertEquals(waves.length, 0);
+});
+
+Deno.test("computeWavesFromRefinement: new independent nodes → single wave", () => {
+  // A merged. B and C are new, independent of each other.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: "merged" }),
+      makeNode({ id: "B", status: "pending" }),
+      makeNode({ id: "C", status: "pending" }),
+    ],
+    [
+      { from: "A", to: "B", type: "merge_gate" },
+      { from: "A", to: "C", type: "merge_gate" },
+    ],
+  );
+  const waves = computeWavesFromRefinement(g, 1);
+  assertEquals(waves.length, 1);
+  assertEquals(waves[0].nodes.sort(), ["B", "C"]);
+  assertEquals(waves[0].id, 2);
+});
+
+Deno.test("computeWavesFromRefinement: preserves hasMergeGate on remaining edges", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: "merged" }),
+      makeNode({ id: "B", status: "pending" }),
+      makeNode({ id: "C", status: "pending" }),
+    ],
+    [
+      { from: "A", to: "B", type: "merge_gate" },
+      { from: "B", to: "C", type: "merge_gate" },
+    ],
+  );
+  const waves = computeWavesFromRefinement(g, 0);
+  assertEquals(waves[0].hasMergeGate, true);
+  assertEquals(waves[1].hasMergeGate, false);
+});
+
+Deno.test("computeWavesFromRefinement: stacked edges within remaining nodes — same wave", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: "merged" }),
+      makeNode({ id: "B", repo: "repo-x", status: "pending" }),
+      makeNode({ id: "C", repo: "repo-x", status: "pending", stackedOn: "B" }),
+    ],
+    [
+      { from: "A", to: "B", type: "merge_gate" },
+      { from: "B", to: "C", type: "stacked" },
+    ],
+  );
+  const waves = computeWavesFromRefinement(g, 1);
+  assertEquals(waves.length, 1);
+  assertEquals(waves[0].nodes.sort(), ["B", "C"]);
 });

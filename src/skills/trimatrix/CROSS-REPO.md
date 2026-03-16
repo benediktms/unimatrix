@@ -1,10 +1,10 @@
-# Borgcube: Cross-Repository Orchestration
+# Trimatrix: Cross-Repository Orchestration
 
 ## Overview
 
-Borgcube orchestrates multi-repository feature development for the collective. When a feature spans multiple repositories and requires coordinated, staged deployments — contract-first API definitions, dependent implementations, stacked PRs with merge gates — the collective deploys borgcube.
+Trimatrix orchestrates multi-repository feature development for the collective. When a feature spans multiple repositories and requires coordinated, staged deployments — contract-first API definitions, dependent implementations, stacked PRs with merge gates — the collective deploys trimatrix cross-repo mode.
 
-**What borgcube does:**
+**What trimatrix does:**
 - Decomposes cross-repository features into nodes (branches/PRs) and edges (dependencies)
 - Computes execution waves via topological sort, respecting merge gates as wave boundaries
 - Dispatches parallel Assimilation adjuncts per wave, each working in an isolated git worktree
@@ -12,15 +12,15 @@ Borgcube orchestrates multi-repository feature development for the collective. W
 - Persists state via checkpoints, enabling resumption across sessions
 - Supports refinement — adding repos or recomputing waves mid-execution
 
-**When to use borgcube vs `/assemble`:**
+**When to use cross-repo mode vs `/assemble`:**
 - **`/assemble`** — Single repository, arbitrary feature complexity. Deploys workflow with Assimilation adjuncts, Validation adjunct review, task closure.
-- **`/borgcube`** — Multiple repositories with inter-repo dependencies, contract-first patterns, or merge gates. Orchestrates via graph topology, wave dispatch, and gate checkpoints.
+- **`/trimatrix cross-repo`** — Multiple repositories with inter-repo dependencies, contract-first patterns, or merge gates. Orchestrates via graph topology, wave dispatch, and gate checkpoints.
 
 ---
 
 ## State Machine
 
-All borgcube executions follow this state machine:
+All trimatrix cross-repo executions follow this state machine:
 
 ```mermaid
 stateDiagram-v2
@@ -119,7 +119,7 @@ flowchart TD
 
 ## Elicitation Interaction Diagram
 
-Borgcube integrates with the collective's elicitation capability. Three primary interaction flows exist:
+Trimatrix integrates with the collective's elicitation capability. Three primary interaction flows exist:
 
 ```mermaid
 sequenceDiagram
@@ -199,7 +199,7 @@ sequenceDiagram
 
 ## Graph Topology
 
-Borgcube's execution model is a directed acyclic graph (DAG) of nodes and edges.
+Trimatrix's execution model is a directed acyclic graph (DAG) of nodes and edges.
 
 ### Node Types
 
@@ -211,7 +211,7 @@ interface Node {
   repo: string                         // Brain name: "api", "service", etc.
   type: "contract" | "implementation"  // Contract defines API; implementation depends on it
   label: string                        // Human description
-  worktreeBranch: string              // Git branch: "borgcube/api-contracts"
+  worktreeBranch: string              // Git branch: "trimatrix/api-contracts"
   stackedOn?: string                  // Node ID this node stacks on (same repo only)
   status: "pending" | "active" | "pr_created" | "merged" | "blocked" | "failed"
 }
@@ -280,11 +280,11 @@ Waves:
 
 ## Session Grouping
 
-Borgcube groups checkpoints and executions into **sessions**. Each session has a unique identifier and optional label, enabling discovery and management of multiple concurrent or historical borgcube executions.
+Trimatrix groups checkpoints and executions into **sessions**. Each session has a unique identifier and optional label, enabling discovery and management of multiple concurrent or historical trimatrix executions.
 
 ### Session Identity
 
-**Session ID:** Automatically generated in format `borgcube-YYYY-MM-DD-XXXX` (date + 4-digit random suffix).
+**Session ID:** Automatically generated in format `trimatrix-YYYY-MM-DD-XXXX` (date + 4-digit random suffix).
 - Ensures uniqueness across sessions initiated on the same day.
 - Returned by `save_checkpoint` and stored in the checkpoint.
 
@@ -294,21 +294,21 @@ Borgcube groups checkpoints and executions into **sessions**. Each session has a
 
 ### Session Tagging
 
-All checkpoints within a session are tagged with `borgcube-session:<sessionId>` during artifact creation (Step 5 of SKILL.md). This enables:
+All checkpoints within a session are tagged with `trimatrix-session:<sessionId>` during artifact creation (Step 5 of cross-repo mode flow). This enables:
 
 - **Checkpoint grouping:** All checkpoints for a session discoverable via `records_list` with the session tag.
 - **Session listing:** Call `list_sessions` to retrieve all sessions and their associated checkpoints.
-- **Organized discovery:** Users can explore concurrent or historical borgcube work without ambiguity.
+- **Organized discovery:** Users can explore concurrent or historical trimatrix work without ambiguity.
 
 ### Example
 
 ```
-Session: borgcube-2026-03-16-a7k2
+Session: trimatrix-2026-03-16-a7k2
 Label: api-backend-grpc-feature
 
 Checkpoints:
   - artifact-id-001 (checkpoint: graph computed, awaiting user approval)
-  - artifact-id-002 (checkpoint: Wave 1 dispatched, Drones active)
+  - artifact-id-002 (checkpoint: Wave 1 dispatched, Assimilation adjuncts active)
   - artifact-id-003 (checkpoint: Wave 1 completed, gate_halted, PRs merged)
 ```
 
@@ -316,7 +316,7 @@ Checkpoints:
 
 ## Cancellation
 
-Borgcube execution can be cancelled gracefully from any non-terminal state.
+Trimatrix execution can be cancelled gracefully from any non-terminal state.
 
 ### Cancel Event
 
@@ -339,7 +339,7 @@ After cancellation, optionally call `archive` with the checkpoint artifact ID to
 
 ## Refinement Flow
 
-Borgcube supports **refinement** — adding repositories or modifying the graph mid-execution while preserving completed work.
+Trimatrix supports **refinement** — adding repositories or modifying the graph mid-execution while preserving completed work.
 
 ### When Refinement Triggers
 
@@ -375,7 +375,7 @@ Initial checkpoint:
   Wave 1: api-contracts         → completed
   Wave 2: service-impl          → active (in progress)
 
-User calls: /borgcube --resume --include mobile-client
+User calls: /trimatrix cross-repo --resume --include mobile-client
 
 Refinement:
   1. Detect mobile-client not in checkpoint.repos
@@ -394,7 +394,7 @@ Refinement:
 
 ## Checkpoint Lifecycle
 
-Borgcube persists state via checkpoints. Checkpoints are saved as brain artifacts and can be resumed across sessions.
+Trimatrix persists state via checkpoints. Checkpoints are saved as brain artifacts and can be resumed across sessions.
 
 ### Checkpoint Structure
 
@@ -407,7 +407,7 @@ interface Checkpoint {
   currentWaveId: number | null // active wave ID
   repos: RepoMetadata[]        // target repositories
   waveHistory: WaveResult[]    // completed/failed wave results
-  sessionId: string            // borgcube-YYYY-MM-DD-XXXX format
+  sessionId: string            // trimatrix-YYYY-MM-DD-XXXX format
   sessionLabel?: string        // user-provided or auto-generated label
   createdAt: string            // ISO 8601
   updatedAt: string            // ISO 8601
@@ -453,30 +453,30 @@ This enables audit trails and partial rollback if needed.
 
 ## CLI Usage
 
-Borgcube is invoked via the `/borgcube` skill. All operations preserve state in the brain checkpoint system.
+Trimatrix cross-repo mode is invoked via `/trimatrix cross-repo`. All operations preserve state in the brain checkpoint system.
 
 ### Fresh Invocation
 
 ```
-/borgcube --include <brain-refs>
+/trimatrix cross-repo --include <brain-refs>
 ```
 
 Start a new orchestration with specified target repositories. Launches planning, graph decomposition, and wave dispatch.
 
 **Arguments:**
 - `<brain-refs>` — Comma-separated list: brain names, aliases, or filesystem paths.
-  Example: `/borgcube --include api,service,mobile-client`
+  Example: `/trimatrix cross-repo --include api,service,mobile-client`
 
 ### Resume from Checkpoint
 
 ```
-/borgcube --resume [artifact-id | brain-ref]
+/trimatrix cross-repo --resume [artifact-id | brain-ref]
 ```
 
 Resume a prior execution. Optionally specify which checkpoint:
-- **No argument** — Fetch latest `borgcube-checkpoint` artifact.
+- **No argument** — Fetch latest `trimatrix-checkpoint` artifact.
 - **Artifact ID** (UUID) — Resume specific checkpoint.
-- **Brain ref** (name/alias) — Resume latest checkpoint tagged `borgcube-repo:<ref>`.
+- **Brain ref** (name/alias) — Resume latest checkpoint tagged `trimatrix-repo:<ref>`.
 
 **Behavior:**
 - Loads checkpoint state and machine state.
@@ -487,7 +487,7 @@ Resume a prior execution. Optionally specify which checkpoint:
 ### Expand Scope on Resume
 
 ```
-/borgcube --resume --include <additional-repos>
+/trimatrix cross-repo --resume --include <additional-repos>
 ```
 
 Add new repositories to an existing checkpoint. Triggers refinement mode:
@@ -501,7 +501,7 @@ Add new repositories to an existing checkpoint. Triggers refinement mode:
 ### Dry-Run Planning
 
 ```
-/borgcube --include <brain-refs> --dry-run
+/trimatrix cross-repo --include <brain-refs> --dry-run
 ```
 
 Plan and build the graph only. Do not dispatch Assimilation adjuncts or create worktrees.
@@ -536,7 +536,7 @@ The UNIMATRIX MCP server exposes the following tools. All require an initialized
 | `restore_checkpoint` | Deserialize JSON and load as current checkpoint. |
 | `cancel` | Cancel execution. Transitions to cancelled state. Accepts optional reason. |
 | `archive` | Archive a checkpoint artifact. Requires completed or cancelled state. |
-| `list_sessions` | List all borgcube sessions grouped by session ID. |
+| `list_sessions` | List all trimatrix sessions grouped by session ID. |
 
 ---
 
@@ -548,7 +548,7 @@ The UNIMATRIX MCP server exposes the following tools. All require an initialized
 Goal: Introduce gRPC service API.
 Repositories: api (proto definitions), backend (service implementation).
 
-/borgcube --include api,backend
+/trimatrix cross-repo --include api,backend
 
 Step 1: Plan
   User describes: "Define gRPC API in api repo, implement in backend."
@@ -579,7 +579,7 @@ Step 4: Dispatch
 Goal: Add observability feature spanning multiple repos.
 Repositories: shared-lib, service-a, service-b.
 
-/borgcube --include shared-lib,service-a,service-b
+/trimatrix cross-repo --include shared-lib,service-a,service-b
 
 Nodes:
   - observability-lib [shared-lib] (contract)
@@ -601,13 +601,13 @@ Waves:
 ### Example 3: Mid-Execution Scope Expansion
 
 ```
-Initial: /borgcube --include api,backend
+Initial: /trimatrix cross-repo --include api,backend
 
 Execution reaches Wave 2, backend implementation underway.
 
 User: "We also need web client support. Can we add it?"
 
-Lead: /borgcube --resume --include web-client
+Lead: /trimatrix cross-repo --resume --include web-client
 
 Refinement:
   Current graph: api-contracts (done), backend-impl (active)
@@ -619,10 +619,10 @@ Refinement:
 
 ---
 
-## Comparison: Borgcube vs /assemble
+## Comparison: Cross-Repo Mode vs Plan-Execute Mode
 
-| Aspect | Borgcube | /assemble |
-|--------|----------|----------|
+| Aspect | Cross-Repo Mode | Plan-Execute Mode (/assemble) |
+|--------|-----------------|-------------------------------|
 | **Scope** | Multiple repositories | Single repository |
 | **Graph** | Explicit DAG, topological waves | Tasks tree, sequential/parallel chains |
 | **Cross-repo dependency** | merge_gate edges | Implicit (via PR interdependencies) |
@@ -631,7 +631,7 @@ Refinement:
 | **Stacking** | Native: stacked edges | Manual: rebase management |
 | **Checkpoint** | Persisted DAG state | Brain task tree |
 
-**Use borgcube when:**
+**Use cross-repo mode when:**
 - Feature spans 2+ repositories.
 - Merge gates are needed (external PR coordination).
 - Graph topology is explicit (contract-first patterns).
@@ -659,11 +659,11 @@ All available waves have unmet dependencies. Check:
 - Are upstream `merge_gate` nodes in `merged` state?
 - Are upstream `stacked` nodes in `pr_created` or `merged` state?
 
-If a wave is stuck, use `/borgcube --resume` and triage via failure handling.
+If a wave is stuck, use `/trimatrix cross-repo --resume` and triage via failure handling.
 
 ### "Machine is gate_halted"
 
-External PRs must be merged. Use `/borgcube --resume` to check PR status and clear gates.
+External PRs must be merged. Use `/trimatrix cross-repo --resume` to check PR status and clear gates.
 
 ### "Execution failed"
 
@@ -678,7 +678,7 @@ One or more Assimilation adjuncts reported failure. The machine entered `failed`
 
 ### Wave Computation Algorithm
 
-Borgcube uses **Kahn's topological sort** with wave level assignment:
+Trimatrix uses **Kahn's topological sort** with wave level assignment:
 
 1. Compute in-degree for all edges.
 2. Process nodes in topological order.
@@ -701,8 +701,7 @@ Illegal transitions throw an error. No silent state drift.
 ### Persistence & Recovery
 
 - Checkpoints serialized to JSON, saved as brain artifacts.
-- Tagged with `borgcube-checkpoint` for discovery.
-- Tagged with `borgcube-repo:<name>` per repo for targeted resume.
+- Tagged with `trimatrix-checkpoint` for discovery.
+- Tagged with `trimatrix-repo:<name>` per repo for targeted resume.
 - On resume, deserialize and validate version match.
 - If version mismatch, abort with clear error (prevents silent data corruption).
-

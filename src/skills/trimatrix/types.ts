@@ -1,8 +1,8 @@
 /**
- * Shared TypeScript types for the borgcube cross-repository orchestration system.
+ * Shared TypeScript types for the trimatrix cross-repository orchestration system.
  *
  * These interfaces define the state machine, execution graph, and all data
- * structures used throughout the borgcube skill.
+ * structures used throughout the trimatrix skill.
  */
 
 // ---------------------------------------------------------------------------
@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * A single unit of work in the borgcube execution graph.
+ * A single unit of work in the trimatrix execution graph.
  * Corresponds to one branch/PR per repository.
  */
 export interface Node {
@@ -55,7 +55,7 @@ export interface Edge {
 }
 
 /**
- * The full directed acyclic graph of nodes and edges for one borgcube execution.
+ * The full directed acyclic graph of nodes and edges for one trimatrix execution.
  */
 export interface Graph {
   /** All nodes in the graph, keyed by node ID for O(1) lookup and JSON compatibility. */
@@ -88,7 +88,7 @@ export interface Wave {
 // ---------------------------------------------------------------------------
 
 /**
- * Top-level states of the borgcube execution state machine.
+ * Top-level states of the trimatrix execution state machine.
  */
 export type MachineState =
   | "initializing"
@@ -100,7 +100,7 @@ export type MachineState =
   | "cancelled";
 
 /**
- * Persisted checkpoint capturing the full state of a borgcube execution.
+ * Persisted checkpoint capturing the full state of a trimatrix execution.
  * Saved to brain snapshots to survive process restarts.
  */
 export interface Checkpoint {
@@ -122,7 +122,7 @@ export interface Checkpoint {
   createdAt: string;
   /** ISO 8601 timestamp when this checkpoint was last updated. */
   updatedAt: string;
-  /** Brain task ID of the epic task for this borgcube execution, if materialized. */
+  /** Brain task ID of the epic task for this trimatrix execution, if materialized. */
   epicTaskId?: string;
   /** History of plan refinements applied after initial dispatch. */
   refinementHistory: Array<{
@@ -150,19 +150,19 @@ export interface Checkpoint {
 // ---------------------------------------------------------------------------
 
 /**
- * Metadata about a single repository participating in the borgcube execution.
+ * Metadata about a single repository participating in the trimatrix execution.
  */
 export interface RepoMetadata {
   /** Brain name for this repository. */
   name: string;
   /** Absolute filesystem path to the repository root. */
   root: string;
-  /** All worktrees managed by borgcube within this repository. */
+  /** All worktrees managed by trimatrix within this repository. */
   worktrees: WorktreeInfo[];
 }
 
 /**
- * Information about a single git worktree managed by borgcube.
+ * Information about a single git worktree managed by trimatrix.
  */
 export interface WorktreeInfo {
   /** Branch name checked out in this worktree. */
@@ -196,7 +196,7 @@ export interface WaveResult {
 }
 
 /**
- * Information about a pull request created during borgcube execution.
+ * Information about a pull request created during trimatrix execution.
  */
 export interface PrInfo {
   /** The node ID this PR was created for. */
@@ -368,7 +368,7 @@ export function selectionSchema(
 // ---------------------------------------------------------------------------
 
 /**
- * Union of all events that drive state machine transitions in borgcube.
+ * Union of all events that drive state machine transitions in trimatrix.
  */
 export type Event =
   | { type: "plan_approved" }

@@ -168,14 +168,14 @@ def build_checkpoint(compaction_num, tasks_in_progress, tasks_open, tasks_blocke
     sections.append("\n## Session Stats")
     sections.append(" | ".join(stats_parts))
 
-    # Recommend /reengage if there are tasks but no active subagents
+    # Recommend action if there are tasks but no active subagents
     has_work = bool(tasks_in_progress or tasks_open)
     has_agents = bool(agents_state and agents_state.get("active"))
     if has_work and not has_agents:
         sections.append("\n## Recommended Action")
         sections.append(
-            "Subagents were lost during compaction. Use `/reengage` to resume "
-            "dispatching drones for the remaining tasks."
+            "Subagents were lost during compaction. Resume with the task ID — "
+            "dispatch Assimilation adjuncts for the remaining tasks."
         )
 
     return "\n".join(sections)
@@ -248,7 +248,7 @@ def build_plan_checkpoint(epic, tasks_open, tasks_in_progress):
 
     sections.append(
         "\n## Recommended Action\n"
-        f"Use `/reengage` or dispatch Assimilation adjuncts for epic **{epic_id}**."
+        f"Dispatch Assimilation adjuncts for epic **{epic_id}**."
     )
 
     return "\n".join(sections)

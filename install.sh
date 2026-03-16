@@ -57,14 +57,14 @@ ensure_build() {
 
 compile_binaries() {
   local bin_dir="$UNIMATRIX_DIR/bin"
-  local server_src="$UNIMATRIX_DIR/src/skills/borgcube/server.ts"
+  local server_src="$UNIMATRIX_DIR/src/skills/trimatrix/server.ts"
 
   [ -f "$server_src" ] || return 0
 
   if [ ! -f "$bin_dir/unimatrix" ] || [ "$server_src" -nt "$bin_dir/unimatrix" ]; then
     echo "Compiling unimatrix..."
     mkdir -p "$bin_dir"
-    (cd "$UNIMATRIX_DIR" && deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/borgcube/server.ts)
+    (cd "$UNIMATRIX_DIR" && deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/trimatrix/server.ts)
     echo ""
   fi
 }

@@ -1,5 +1,5 @@
 /**
- * State machine for borgcube execution lifecycle and checkpoint serialization.
+ * State machine for trimatrix execution lifecycle and checkpoint serialization.
  *
  * All functions are pure — no I/O, no side effects.
  */

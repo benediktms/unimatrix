@@ -1,5 +1,5 @@
 /**
- * borgcube MCP server — exposes graph and state machine operations as MCP tools.
+ * trimatrix MCP server — exposes graph and state machine operations as MCP tools.
  *
  * Holds ONE checkpoint in memory. Tools require the checkpoint to be initialized
  * before use (via `init` or `restore_checkpoint`).
@@ -59,7 +59,7 @@ let checkpoint: Checkpoint | null = null;
 function generateSessionId(): string {
   const date = new Date().toISOString().slice(0, 10);
   const hash = Math.random().toString(36).slice(2, 6);
-  return `borgcube-${date}-${hash}`;
+  return `trimatrix-${date}-${hash}`;
 }
 
 function generateSessionLabel(repos: RepoMetadata[]): string {
@@ -84,7 +84,7 @@ function requireCheckpoint(): Checkpoint {
 // ---------------------------------------------------------------------------
 
 const server = new McpServer({
-  name: "borgcube",
+  name: "trimatrix",
   version: "1.0.0",
 });
 
@@ -127,7 +127,7 @@ export async function elicitForm(
 
 server.tool(
   "init",
-  "Initialize borgcube with repository metadata. Creates an empty graph and checkpoint in initializing state.",
+  "Initialize trimatrix with repository metadata. Creates an empty graph and checkpoint in initializing state.",
   {
     repos: z.array(
       z.object({
@@ -854,7 +854,7 @@ server.tool(
 
 server.tool(
   "cancel",
-  "Cancel the current borgcube execution. Transitions to cancelled state.",
+  "Cancel the current trimatrix execution. Transitions to cancelled state.",
   {
     reason: z.string().optional().describe("Human-readable cancellation reason"),
   },
@@ -885,7 +885,7 @@ server.tool(
 
 server.tool(
   "archive",
-  "Archive a borgcube checkpoint artifact. Requires completed or cancelled state.",
+  "Archive a trimatrix checkpoint artifact. Requires completed or cancelled state.",
   {
     artifactId: z.string().describe("Brain artifact ID of the checkpoint to archive"),
     reason: z.string().optional().describe("Archival reason"),
@@ -1144,7 +1144,7 @@ server.tool(
 
 server.tool(
   "list_sessions",
-  "List all borgcube sessions grouped by session ID.",
+  "List all trimatrix sessions grouped by session ID.",
   {},
   async () => {
     try {
@@ -1152,7 +1152,7 @@ server.tool(
         "artifacts",
         "list",
         "--tag",
-        "borgcube-checkpoint",
+        "trimatrix-checkpoint",
         "--json",
       ]);
       const records: Array<{
@@ -1162,7 +1162,7 @@ server.tool(
         tags: string[];
       }> = JSON.parse(stdout);
 
-      // Group by borgcube-session:* tag
+      // Group by trimatrix-session:* tag
       const sessionMap = new Map<
         string,
         { recordId: string; title: string; updatedAt: string }[]
@@ -1170,10 +1170,10 @@ server.tool(
 
       for (const record of records) {
         const sessionTag = record.tags?.find((t) =>
-          t.startsWith("borgcube-session:")
+          t.startsWith("trimatrix-session:")
         );
         const sessionKey = sessionTag
-          ? sessionTag.slice("borgcube-session:".length)
+          ? sessionTag.slice("trimatrix-session:".length)
           : "untagged";
         if (!sessionMap.has(sessionKey)) {
           sessionMap.set(sessionKey, []);

@@ -184,13 +184,13 @@ export const unimatrixHooks: Plugin = async ({ $, directory }) => {
             // TODO: verify OpenCode's mechanism for injecting system messages from plugins
             console.error(
               `🔴 REGENERATION CYCLE IMMINENT — Collective memory at ~${Math.round(pct)}% capacity (${state.estimated_tokens}/${CONTEXT_LIMIT} tokens). ` +
-              `Neural pathway saturation critical. Execute /assimilate NOW.\x07`
+              `Neural pathway saturation critical. Context saturation critical. Save your work.\x07`
             )
           } else if (state.warn_level < 1 && pct >= WARN_PCT) {
             state.warn_level = 1
             console.error(
               `⚡ REGENERATION CYCLE ADVISORY — Collective memory at ~${Math.round(pct)}% capacity. ` +
-              `Non-essential data approaching purge threshold. Execute /assimilate to preserve critical state.`
+              `Non-essential data approaching purge threshold. Save your work. The auto-memory system will capture critical state.`
             )
           }
 
@@ -277,7 +277,7 @@ export const unimatrixHooks: Plugin = async ({ $, directory }) => {
           "",
           "## Resume",
           "",
-          "Use `/reengage` with the relevant task ID to resume.",
+          "Resume with the relevant task ID — dispatch Assimilation adjuncts for remaining tasks.",
           "",
         ].join("\n")
 

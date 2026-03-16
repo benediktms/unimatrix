@@ -1,5 +1,5 @@
 /**
- * Pure DAG computation engine for the borgcube cross-repository orchestration system.
+ * Pure DAG computation engine for the trimatrix cross-repository orchestration system.
  *
  * Provides topological sort, wave computation, gate management, cycle detection,
  * and node state mutation — all as pure functions returning new graph copies.
