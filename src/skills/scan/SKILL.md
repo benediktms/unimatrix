@@ -31,12 +31,9 @@ Parallel reconnaissance sweep — dispatch Probes and Cortex as independent suba
 
 If `--include` is provided, resolve all brain refs before proceeding:
 
-1. Run `ensure-brain.py` with the comma-separated refs:
-   ```bash
-   SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>,<ref>,...
-   ```
-2. Parse the JSON output lines. Each line contains `{"id": "...", "name": "...", "root": "/abs/path", "initialized": bool}`.
-3. If any line contains `"error"`, report the failure to the user and **abort**.
+1. Call `mcp__unimatrix__resolve_brains` with `refs` set to the list of refs from `--include`.
+2. Parse the response. Each entry in `results` contains `{"id": "...", "name": "...", "root": "/abs/path", "initialized": bool}`.
+3. If `ok` is false or any entry contains `"error"`, report the failure to the user and **abort**.
 4. Collect the resolved brain info for use in subsequent steps.
 
 ### Step 1: Scoping

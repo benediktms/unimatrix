@@ -185,13 +185,7 @@ cd ../<branch-name>
 
 All subsequent steps (drone dispatch, verification, review) execute inside this worktree. The main branch remains clean until the user chooses to merge.
 
-After entering the worktree, link it to the brain so that agents spawned inside the worktree can access brain tasks and records:
-
-```bash
-brain link <brain-name>
-```
-
-Where `<brain-name>` is the brain that tasks were created in (visible in the dispatch plan or from the parent repo's `.brain/brain.toml`). This must run **after** the worktree exists and from **inside** the worktree directory.
+After entering the worktree, link it to the brain so that agents spawned inside the worktree can access brain tasks and records. Call `mcp__unimatrix__brain_link` with `name` set to the brain name (visible in the dispatch plan or from the parent repo's `.brain/brain.toml`) and `cwd` set to the worktree directory.
 
 ### Step 4: Generate Designations
 

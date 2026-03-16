@@ -56,23 +56,13 @@ Parse ARGUMENTS to extract flags.
 
 If `--resume` is provided with a value that is NOT a UUID/numeric artifact ID
 (i.e., it looks like a brain name or alias): treat it as a brain-ref. Resolve it
-using the same mechanism as `--include` refs:
+via `mcp__unimatrix__resolve_brains` with `refs: [<ref>]`. Then proceed to Step 2
+with the resolved brain-ref.
 
-```
-SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>
-```
-
-Then proceed to Step 2 with the resolved brain-ref.
-
-For each ref in `--include` (if provided):
-
-```
-SKILL_DIR="$(dirname "$(readlink -f "$([ -L .claude/skills/recon ] && echo .claude/skills/recon/SKILL.md || echo ~/.claude/skills/recon/SKILL.md)")")" && python3 "$SKILL_DIR/ensure-brain.py" <ref>
-```
-
-Each ref can be a brain ID, name, alias, or filesystem path. This ensures the
-brain is registered and its root path is known. Capture the resolved root path
-for each target.
+For each ref in `--include` (if provided), call `mcp__unimatrix__resolve_brains`
+with `refs` set to the list of refs. Each ref can be a brain ID, name, alias, or
+filesystem path. This ensures the brain is registered and its root path is known.
+Capture the resolved root path for each target.
 
 If neither `--include` nor `--resume` is provided: abort with "DIRECTIVE
 INCOMPLETE. --include or --resume is required."
@@ -119,7 +109,7 @@ If `--resume` is set:
    - Checkpoint's existing `repos` array.
    - The `--resume` brain-ref (if it was a brain name, not an artifact-id).
    - Any `--include` refs provided alongside `--resume`.
-   Resolve each brain name via `ensure-brain.py` to confirm accessibility.
+   Resolve each brain name via `mcp__unimatrix__resolve_brains` to confirm accessibility.
    For any brain NOT already in the checkpoint's `repos`, call `add_repo`
    with the resolved name and root path. This adds the repo to the checkpoint
    without resetting the graph.

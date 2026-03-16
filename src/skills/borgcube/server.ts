@@ -5,9 +5,17 @@
  * before use (via `init` or `restore_checkpoint`).
  */
 
+import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
+import { basename, resolve as resolvePath } from "node:path";
+import process from "node:process";
+import { promisify } from "node:util";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+
+const execFileAsync = promisify(execFile);
 
 import type {
   Checkpoint,
@@ -1087,6 +1095,267 @@ server.tool(
     return {
       content: [{ type: "text", text: JSON.stringify(result) }],
     };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Brain CLI helpers
+// ---------------------------------------------------------------------------
+
+interface BrainRegistryEntry {
+  id: string;
+  name: string;
+  root: string;
+  aliases: string[];
+  extra_roots: string[];
+  prefix: string;
+}
+
+async function brainLsJson(): Promise<BrainRegistryEntry[]> {
+  const { stdout } = await execFileAsync("brain", ["ls", "--json"]);
+  const data = JSON.parse(stdout);
+  return data.brains ?? [];
+}
+
+function buildLookups(brains: BrainRegistryEntry[]): {
+  byId: Map<string, BrainRegistryEntry>;
+  byName: Map<string, BrainRegistryEntry>;
+  byAlias: Map<string, BrainRegistryEntry>;
+  byRoot: Map<string, BrainRegistryEntry>;
+} {
+  const byId = new Map<string, BrainRegistryEntry>();
+  const byName = new Map<string, BrainRegistryEntry>();
+  const byAlias = new Map<string, BrainRegistryEntry>();
+  const byRoot = new Map<string, BrainRegistryEntry>();
+  for (const b of brains) {
+    if (b.id) byId.set(b.id, b);
+    byName.set(b.name, b);
+    for (const alias of b.aliases ?? []) byAlias.set(alias, b);
+    byRoot.set(b.root, b);
+  }
+  return { byId, byName, byAlias, byRoot };
+}
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_brains
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "resolve_brains",
+  "Resolve brain references (ID, name, alias, or filesystem path) to their registry entries. Auto-initializes unregistered paths.",
+  {
+    refs: z.array(z.string()).min(1).describe(
+      "Brain references to resolve — each can be a brain ID, name, alias, or filesystem path",
+    ),
+  },
+  async (params) => {
+    const brains = await brainLsJson();
+    const { byId, byName, byAlias, byRoot } = buildLookups(brains);
+
+    const results: Record<string, unknown>[] = [];
+    let hasErrors = false;
+
+    for (const ref of params.refs) {
+      // 1. Try as brain ID
+      const byIdEntry = byId.get(ref);
+      if (byIdEntry) {
+        results.push({
+          id: byIdEntry.id,
+          name: byIdEntry.name,
+          root: byIdEntry.root,
+          initialized: false,
+        });
+        continue;
+      }
+
+      // 2. Try as brain name
+      const byNameEntry = byName.get(ref);
+      if (byNameEntry) {
+        results.push({
+          id: byNameEntry.id,
+          name: byNameEntry.name,
+          root: byNameEntry.root,
+          initialized: false,
+        });
+        continue;
+      }
+
+      // 3. Try as brain alias
+      const byAliasEntry = byAlias.get(ref);
+      if (byAliasEntry) {
+        results.push({
+          id: byAliasEntry.id,
+          name: byAliasEntry.name,
+          root: byAliasEntry.root,
+          initialized: false,
+        });
+        continue;
+      }
+
+      // 4. Try as path — resolve ~ and check registry
+      const path = ref.startsWith("~")
+        ? ref.replace(/^~/, process.env.HOME ?? "")
+        : ref;
+      const resolved = resolvePath(path);
+
+      const byRootEntry = byRoot.get(resolved);
+      if (byRootEntry) {
+        results.push({
+          id: byRootEntry.id,
+          name: byRootEntry.name,
+          root: byRootEntry.root,
+          initialized: false,
+        });
+        continue;
+      }
+
+      // Not registered — try to auto-init
+      try {
+        const s = await stat(resolved);
+        if (!s.isDirectory()) {
+          results.push({
+            error: `'${ref}' is not a registered brain and not a valid directory`,
+            ref,
+          });
+          hasErrors = true;
+          continue;
+        }
+      } catch {
+        results.push({
+          error: `'${ref}' is not a registered brain and path does not exist`,
+          ref,
+        });
+        hasErrors = true;
+        continue;
+      }
+
+      try {
+        await execFileAsync("brain", ["init", "--no-agents-md"], {
+          cwd: resolved,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push({
+          error: `brain init failed at ${resolved}: ${msg}`,
+          ref,
+        });
+        hasErrors = true;
+        continue;
+      }
+
+      // Re-query registry to get the new entry
+      const freshBrains = await brainLsJson();
+      const freshLookups = buildLookups(freshBrains);
+      const freshEntry = freshLookups.byRoot.get(resolved);
+      if (freshEntry) {
+        results.push({
+          id: freshEntry.id,
+          name: freshEntry.name,
+          root: freshEntry.root,
+          initialized: true,
+        });
+      } else {
+        // Fallback — use directory name
+        results.push({
+          id: null,
+          name: basename(resolved),
+          root: resolved,
+          initialized: true,
+        });
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: !hasErrors,
+            results,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: brain_id
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "brain_id",
+  "Return the brain ID and name for the current working directory (or a specified path).",
+  {
+    cwd: z.string().optional().describe(
+      "Directory to query. Defaults to the server's working directory.",
+    ),
+  },
+  async (params) => {
+    const cwd = params.cwd ?? process.cwd();
+
+    // Get the ID
+    const { stdout: idOut } = await execFileAsync("brain", ["id"], { cwd });
+    const id = idOut.trim();
+
+    // Look up the full entry in the registry
+    const brains = await brainLsJson();
+    const { byId } = buildLookups(brains);
+    const entry = byId.get(id);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            id,
+            name: entry?.name ?? null,
+            root: entry?.root ?? cwd,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: brain_link
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "brain_link",
+  "Link a directory as an additional root for an existing brain. Use after creating a worktree to give spawned agents access to brain tasks and records.",
+  {
+    name: z.string().describe("Brain name, ID, or alias to link to"),
+    cwd: z.string().describe(
+      "Directory to link (must run from inside the worktree)",
+    ),
+  },
+  async (params) => {
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        "brain",
+        ["link", params.name],
+        { cwd: params.cwd },
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              linked: params.name,
+              cwd: params.cwd,
+              ...(stdout.trim() ? { output: stdout.trim() } : {}),
+              ...(stderr.trim() ? { stderr: stderr.trim() } : {}),
+            }),
+          },
+        ],
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`brain link failed: ${msg}`);
+    }
   },
 );
 
