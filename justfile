@@ -34,7 +34,7 @@ build-opencode: (_build "opencode")
 # Compile the unimatrix MCP server binary
 compile:
     mkdir -p bin
-    deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/borgcube/server.ts
+    deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/trimatrix/server.ts
 
 # Install to a project for Claude Code
 install-claude path=project_root: build-claude compile

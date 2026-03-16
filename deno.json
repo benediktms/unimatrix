@@ -7,11 +7,11 @@
     "zod": "npm:zod/v3"
   },
   "tasks": {
-    "test:borgcube": "deno test src/skills/borgcube/",
-    "lint:borgcube": "deno lint src/skills/borgcube/",
-    "fmt:borgcube": "deno fmt src/skills/borgcube/",
-    "check:borgcube": "deno check src/skills/borgcube/server.ts",
-    "compile:borgcube": "deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/borgcube/server.ts"
+    "test:trimatrix": "deno test src/skills/trimatrix/",
+    "lint:trimatrix": "deno lint src/skills/trimatrix/",
+    "fmt:trimatrix": "deno fmt src/skills/trimatrix/",
+    "check:trimatrix": "deno check src/skills/trimatrix/server.ts",
+    "compile:trimatrix": "deno compile --allow-read --allow-env --allow-run --output bin/unimatrix src/skills/trimatrix/server.ts"
   },
   "compilerOptions": {
     "strict": true
