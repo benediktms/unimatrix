@@ -989,3 +989,113 @@ Deno.test("parallelNodesInWave: empty wave returns empty", () => {
   const wave: Wave = { id: 1, nodes: [], hasMergeGate: false };
   assertEquals(parallelNodesInWave(g, wave).length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// ELICIT_GATE tests
+// ---------------------------------------------------------------------------
+
+Deno.test("validate: ELICIT_GATE with ADJUNCT executor rejected", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "eg1",
+      type: NodeType.ELICIT_GATE,
+      executor: Executor.ADJUNCT,
+      elicitPrompt: "Choose approach",
+    }),
+  ]);
+  const result = validate(g);
+  assertEquals(result.valid, false);
+  assertEquals(result.errors.length, 1);
+  assertEquals(
+    result.errors[0],
+    'ELICIT_GATE node "eg1" must have executor LEAD, got ADJUNCT',
+  );
+});
+
+Deno.test("validate: ELICIT_GATE without elicitPrompt rejected", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "eg1",
+      type: NodeType.ELICIT_GATE,
+      executor: Executor.LEAD,
+      // no elicitPrompt
+    }),
+  ]);
+  const result = validate(g);
+  assertEquals(result.valid, false);
+  assertEquals(result.errors.length, 1);
+  assertEquals(
+    result.errors[0],
+    'ELICIT_GATE node "eg1" is missing elicitPrompt',
+  );
+});
+
+Deno.test("validate: valid ELICIT_GATE passes", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "eg1",
+      type: NodeType.ELICIT_GATE,
+      executor: Executor.LEAD,
+      elicitPrompt: "Which database engine?",
+    }),
+  ]);
+  const result = validate(g);
+  assertEquals(result.valid, true);
+  assertEquals(result.errors, []);
+});
+
+Deno.test("computeSubgraphs: ELICIT_GATE assigned to lead subgraph", () => {
+  const g = makeGraph(
+    [
+      makeNode({
+        id: "eg1",
+        type: NodeType.ELICIT_GATE,
+        executor: Executor.LEAD,
+        elicitPrompt: "Choose approach",
+      }),
+      makeNode({
+        id: "impl1",
+        type: NodeType.IMPLEMENTATION,
+        executor: Executor.ADJUNCT,
+      }),
+    ],
+    [{ from: "eg1", to: "impl1", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
+  // Lead subgraph contains the elicit gate
+  const leadSg = sgs.find((sg) => sg.id === "sg-lead");
+  assertEquals(leadSg !== undefined, true);
+  assertEquals(leadSg!.nodes.includes("eg1"), true);
+  // Adjunct subgraph contains the implementation node
+  const adjunctSg = sgs.find((sg) => sg.executor === Executor.ADJUNCT);
+  assertEquals(adjunctSg !== undefined, true);
+  assertEquals(adjunctSg!.nodes.includes("impl1"), true);
+});
+
+Deno.test("computeWaves: ELICIT_GATE with DEPENDS_ON creates wave boundary", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "recon1", type: NodeType.RECON, executor: Executor.LEAD }),
+      makeNode({
+        id: "eg1",
+        type: NodeType.ELICIT_GATE,
+        executor: Executor.LEAD,
+        elicitPrompt: "Proceed with implementation?",
+      }),
+      makeNode({ id: "impl1", type: NodeType.IMPLEMENTATION, executor: Executor.ADJUNCT }),
+    ],
+    [
+      { from: "recon1", to: "eg1", type: EdgeType.DEPENDS_ON },
+      { from: "eg1", to: "impl1", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+  const waves = computeWaves(g);
+  assertEquals(waves.length, 3);
+  assertEquals(waves[0].nodes, ["recon1"]);
+  assertEquals(waves[1].nodes, ["eg1"]);
+  assertEquals(waves[2].nodes, ["impl1"]);
+  // Wave 0 and 1 should have hasMergeGate since DEPENDS_ON edges cross into later waves
+  assertEquals(waves[0].hasMergeGate, true);
+  assertEquals(waves[1].hasMergeGate, true);
+});

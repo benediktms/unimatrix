@@ -45,6 +45,7 @@ import {
   canTransition,
   createCheckpoint,
   deserialize,
+  pendingGates,
   serialize,
   transition,
 } from "./state.ts";
@@ -856,12 +857,46 @@ server.tool(
       throw new Error(`Wave ${params.waveId} not found`);
     }
 
-    const activatedGraph = activateNodes(cp.graph, wave.nodes);
+    // Partition elicit gates from regular nodes
+    const elicitGateIds = wave.nodes.filter(
+      (nId) => cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
+    );
+    const regularNodeIds = wave.nodes.filter(
+      (nId) => cp.graph.nodes[nId]?.type !== NodeType.ELICIT_GATE,
+    );
+
+    // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types
+    if (elicitGateIds.length > 0 && regularNodeIds.length > 0) {
+      throw new Error(
+        `Wave ${params.waveId} mixes ELICIT_GATE nodes (${elicitGateIds.join(", ")}) with regular nodes (${regularNodeIds.join(", ")}). ` +
+        `ELICIT_GATE nodes must be in their own wave — use DEPENDS_ON edges to separate them.`,
+      );
+    }
+
+    // Activate regular nodes; set elicit gates to BLOCKED
+    let updatedGraph = activateNodes(cp.graph, regularNodeIds);
+    for (const gateId of elicitGateIds) {
+      const gateNode = updatedGraph.nodes[gateId];
+      if (gateNode) {
+        updatedGraph = {
+          ...updatedGraph,
+          nodes: {
+            ...updatedGraph.nodes,
+            [gateId]: { ...gateNode, status: NodeStatus.BLOCKED },
+          },
+        };
+      }
+    }
+
     const transitioned = transition(
-      { ...cp, graph: activatedGraph },
+      { ...cp, graph: updatedGraph },
       { type: "wave_dispatched", waveId: params.waveId },
     );
-    checkpoint = transitioned;
+
+    // Enter gate_halted if this wave contains elicit gates
+    checkpoint = elicitGateIds.length > 0
+      ? { ...transitioned, machineState: "gate_halted" as const }
+      : transitioned;
 
     // Sync task status for activated nodes (best-effort)
     const syncPromises = wave.nodes
@@ -894,6 +929,15 @@ server.tool(
             machineState: checkpoint.machineState,
             nodeExecution,
             parallelBatches: batches,
+            ...(elicitGateIds.length > 0
+              ? {
+                pendingElicitGates: elicitGateIds.map((nId) => ({
+                  nodeId: nId,
+                  prompt: cp.graph.nodes[nId]?.elicitPrompt,
+                  schema: cp.graph.nodes[nId]?.elicitSchema,
+                })),
+              }
+              : {}),
           }),
         },
       ],
@@ -1087,9 +1131,12 @@ server.tool(
 
 server.tool(
   "clear_gate",
-  "Clear the merge gate on a node. Auto-advances to dispatching state if all gates in the current wave are cleared.",
+  "Clear a gate on a node. For ELICIT_GATE nodes, pass the user's structured response. Auto-advances to dispatching state if all gates in the current wave are cleared.",
   {
     nodeId: z.string().describe("Node ID to clear gate for"),
+    response: z.record(z.unknown()).optional().describe(
+      "Structured response from user elicitation. Required for ELICIT_GATE nodes.",
+    ),
   },
   (params) => {
     const cp = requireCheckpoint();
@@ -1106,6 +1153,7 @@ server.tool(
     const transitioned = transition(cp, {
       type: "gate_cleared",
       nodeId: params.nodeId,
+      response: params.response,
     });
 
     // Also update the graph via the pure graph helper (state.ts handles it inline,
@@ -1113,6 +1161,7 @@ server.tool(
     const updatedGraph = clearGate(transitioned.graph, params.nodeId);
     checkpoint = { ...transitioned, graph: updatedGraph };
 
+    const node = checkpoint.graph.nodes[params.nodeId];
     return {
       content: [
         {
@@ -1121,6 +1170,9 @@ server.tool(
             ok: true,
             nodeId: params.nodeId,
             machineState: checkpoint.machineState,
+            ...(node?.elicitResponse !== undefined
+              ? { elicitResponse: node.elicitResponse }
+              : {}),
           }),
         },
       ],
@@ -1280,14 +1332,29 @@ server.tool(
     const cp = requireCheckpoint();
 
     if (cp.machineState === "gate_halted") {
+      const gates = pendingGates(cp);
+      const elicitGates = gates.filter(
+        (nId) => cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
+      );
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify({
               wave: null,
-              reason:
-                "Machine is gate_halted. Clear all merge gates before proceeding.",
+              reason: elicitGates.length > 0
+                ? "Machine is gate_halted. Pending elicitation gates require user input."
+                : "Machine is gate_halted. Clear all merge gates before proceeding.",
+              pendingGates: gates,
+              ...(elicitGates.length > 0
+                ? {
+                  pendingElicitGates: elicitGates.map((nId) => ({
+                    nodeId: nId,
+                    prompt: cp.graph.nodes[nId]?.elicitPrompt,
+                    schema: cp.graph.nodes[nId]?.elicitSchema,
+                  })),
+                }
+                : {}),
             }),
           },
         ],
@@ -1446,6 +1513,10 @@ server.tool(
           prUrl: node.prUrl,
           prNumber: node.prNumber,
           failureReason: node.failureReason,
+          ...(node.elicitPrompt ? { elicitPrompt: node.elicitPrompt } : {}),
+          ...(node.elicitResponse
+            ? { elicitResponse: node.elicitResponse }
+            : {}),
         },
       ]),
     );
@@ -1492,6 +1563,20 @@ server.tool(
               ? { cancellationReason: cp.cancellationReason }
               : {}),
             ...(cp.cancelledAt ? { cancelledAt: cp.cancelledAt } : {}),
+            ...(cp.machineState === "gate_halted"
+              ? {
+                pendingElicitGates: pendingGates(cp)
+                  .filter(
+                    (nId) =>
+                      cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
+                  )
+                  .map((nId) => ({
+                    nodeId: nId,
+                    prompt: cp.graph.nodes[nId]?.elicitPrompt,
+                    schema: cp.graph.nodes[nId]?.elicitSchema,
+                  })),
+              }
+              : {}),
           }),
         },
       ],

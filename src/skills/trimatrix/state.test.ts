@@ -671,5 +671,94 @@ Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", (
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.0.0");
+  assertEquals(restored.version, "2.1.0");
+});
+
+// ---------------------------------------------------------------------------
+// ELICIT_GATE tests
+// ---------------------------------------------------------------------------
+
+Deno.test("transition: gate_cleared with response stores elicitResponse", () => {
+  const graph = makeGraph([
+    makeNode("g1", {
+      type: NodeType.ELICIT_GATE,
+      status: NodeStatus.BLOCKED,
+      elicitPrompt: "Choose an approach",
+    }),
+  ]);
+  const waves: Wave[] = [{ id: 1, nodes: ["g1"], hasMergeGate: false }];
+  const cp = makeCheckpoint({
+    machineState: "gate_halted",
+    graph,
+    waves,
+    currentWaveId: 1,
+  });
+
+  const result = transition(cp, {
+    type: "gate_cleared",
+    nodeId: "g1",
+    response: { approach: "option-a", notes: "simpler" },
+  });
+
+  assertEquals(result.graph.nodes["g1"].status, NodeStatus.ACTIVE);
+  assertEquals(result.graph.nodes["g1"].elicitResponse, {
+    approach: "option-a",
+    notes: "simpler",
+  });
+  assertEquals(result.machineState, "dispatching");
+});
+
+Deno.test("transition: gate_cleared without response does not set elicitResponse", () => {
+  const graph = makeGraph([
+    makeNode("g1", { status: NodeStatus.BLOCKED }),
+  ]);
+  const waves: Wave[] = [{ id: 1, nodes: ["g1"], hasMergeGate: false }];
+  const cp = makeCheckpoint({
+    machineState: "gate_halted",
+    graph,
+    waves,
+    currentWaveId: 1,
+  });
+
+  const result = transition(cp, { type: "gate_cleared", nodeId: "g1" });
+  assertEquals(result.graph.nodes["g1"].status, NodeStatus.ACTIVE);
+  assertEquals(result.graph.nodes["g1"].elicitResponse, undefined);
+});
+
+Deno.test("serialize/deserialize: round trip preserves elicit fields", () => {
+  const graph = makeGraph([
+    makeNode("g1", {
+      type: NodeType.ELICIT_GATE,
+      elicitPrompt: "Which auth strategy?",
+      elicitResponse: { strategy: "jwt" },
+    }),
+  ]);
+  const cp = createCheckpoint([], graph);
+  const json = serialize(cp);
+  const restored = deserialize(json);
+  assertEquals(restored.graph.nodes["g1"].elicitPrompt, "Which auth strategy?");
+  assertEquals(restored.graph.nodes["g1"].elicitResponse, { strategy: "jwt" });
+});
+
+Deno.test("pendingGates: returns BLOCKED ELICIT_GATE nodes in current wave", () => {
+  const graph = makeGraph([
+    makeNode("g1", {
+      type: NodeType.ELICIT_GATE,
+      status: NodeStatus.BLOCKED,
+      elicitPrompt: "Question 1",
+    }),
+    makeNode("g2", {
+      type: NodeType.ELICIT_GATE,
+      status: NodeStatus.ACTIVE,
+      elicitPrompt: "Question 2",
+    }),
+  ]);
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["g1", "g2"],
+    hasMergeGate: false,
+  }];
+  const cp = makeCheckpoint({ graph, waves, currentWaveId: 1 });
+  const result = pendingGates(cp);
+  assertEquals(result, ["g1"]);
 });

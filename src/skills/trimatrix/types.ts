@@ -17,6 +17,7 @@ export enum NodeType {
   DOCUMENTATION = "DOCUMENTATION",
   DIAGNOSIS = "DIAGNOSIS",
   ANALYSIS = "ANALYSIS",
+  ELICIT_GATE = "ELICIT_GATE",
   VERIFY_COMPILE = "VERIFY_COMPILE",
   VERIFY_TEST = "VERIFY_TEST",
   VERIFY_LINT = "VERIFY_LINT",
@@ -113,6 +114,12 @@ export interface Node {
   subgraph?: string;
   /** Who executes this node: the lead session or a dispatched adjunct. */
   executor: Executor;
+  /** Markdown prompt/context to present to the user during elicitation. Only for ELICIT_GATE nodes. */
+  elicitPrompt?: string;
+  /** JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted. */
+  elicitSchema?: ElicitationRequestedSchema;
+  /** User's structured response after elicitation completes. Populated by clear_gate. */
+  elicitResponse?: Record<string, unknown>;
 }
 
 /**
@@ -508,7 +515,7 @@ export type Event =
     prNumber?: number;
   }
   | { type: "node_failed"; nodeId: string; reason: string }
-  | { type: "gate_cleared"; nodeId: string }
+  | { type: "gate_cleared"; nodeId: string; response?: Record<string, unknown> }
   | { type: "wave_completed"; waveId: number }
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }

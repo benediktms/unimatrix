@@ -56,6 +56,22 @@ export function validate(graph: Graph): ValidationResult {
     }
   }
 
+  // Validate ELICIT_GATE constraints
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (node.type === NodeType.ELICIT_GATE) {
+      if (node.executor !== Executor.LEAD) {
+        errors.push(
+          `ELICIT_GATE node "${id}" must have executor LEAD, got ${node.executor}`,
+        );
+      }
+      if (!node.elicitPrompt) {
+        errors.push(
+          `ELICIT_GATE node "${id}" is missing elicitPrompt`,
+        );
+      }
+    }
+  }
+
   // Validate stackedOn refs
   for (const [id, node] of Object.entries(graph.nodes)) {
     if (node.stackedOn !== undefined) {
@@ -648,6 +664,7 @@ const READ_ONLY_NODE_TYPES: NodeType[] = [
   NodeType.VALIDATION,
   NodeType.DIAGNOSIS,
   NodeType.ANALYSIS,
+  NodeType.ELICIT_GATE,
 ];
 
 /**

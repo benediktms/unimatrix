@@ -12,10 +12,10 @@ import { computeWaves } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0"]);
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -299,6 +299,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
               ...node,
               status: NodeStatus.ACTIVE,
               failureReason: undefined,
+              ...(event.response !== undefined
+                ? { elicitResponse: event.response }
+                : {}),
             },
           },
         }
