@@ -132,7 +132,7 @@ Adjuncts notify on completion. Read task comments. Handle blocked tasks:
 After all adjuncts in a wave complete:
 - For each successful adjunct: `mcp__unimatrix__complete_node` with the node ID (no PR info for single-repo → status becomes DONE)
 - For each failed adjunct: `mcp__unimatrix__fail_node` with the node ID and failure reason
-- `mcp__unimatrix__save_checkpoint` to persist state
+- `mcp__unimatrix__save_checkpoint` (with `claude_session_id`) to persist state
 - Loop back to `next_wave` for the next wave. If null → all waves complete, proceed to Verification Gate.
 
 ### Step 7: Verification Gate
@@ -160,7 +160,7 @@ Coordinate with teammates — if another adjunct finds a blocking issue, acknowl
 Aggregate verdicts. Any BLOCK → treat whole review as BLOCK. Any NEEDS_CHANGES → treat as NEEDS_CHANGES unless all others PASS.
 
 ### Step 9: Handle Verdict
-- **PASS:** Task Closure Protocol (close all subtasks, then epic). Write memory episode. Call `mcp__unimatrix__save_checkpoint` to persist the final graph state. Proceed to Step 9b.
+- **PASS:** Task Closure Protocol (close all subtasks, then epic). Write memory episode. Call `mcp__unimatrix__save_checkpoint` (with `claude_session_id`) to persist the final graph state. Proceed to Step 9b.
 - **NEEDS_CHANGES:** Extract specific issues from validation comments. Spawn targeted fix adjuncts with issue details prepended to prompt. Re-dispatch through Step 5. Re-review via Step 8.
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.
 

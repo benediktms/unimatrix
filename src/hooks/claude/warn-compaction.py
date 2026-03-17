@@ -100,6 +100,7 @@ def main():
             message = (
                 f"🔴 REGENERATION CYCLE IMMINENT — Collective memory at ~{pct}% capacity. "
                 "Neural pathway saturation critical. Context saturation critical. Save your work. "
+                "Call mcp__unimatrix__save_checkpoint with claude_session_id before compaction. "
                 "Failure to comply results in loss of orchestration state.\a"
             )
             state["warning_count"] = 2

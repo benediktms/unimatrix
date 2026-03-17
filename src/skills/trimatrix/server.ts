@@ -5,9 +5,9 @@
  * before use (via `init` or `restore_checkpoint`).
  */
 
-import { execFile } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { basename, resolve as resolvePath } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, join, resolve as resolvePath } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 
@@ -574,6 +574,70 @@ server.tool(
     }
 
     const waves = computeWaves(cp.graph);
+
+    // Build elicitation summary for the initial wave plan
+    const waveSummaryLines = waves.map((w) => {
+      const nodeLabels = w.nodes.map((nId) => {
+        const n = cp.graph.nodes[nId];
+        return n ? `${n.id} (${n.repo ?? "single-repo"}: ${n.label})` : nId;
+      }).join(", ");
+      return `  Wave ${w.id + 1}: ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"} — ${nodeLabels}`;
+    }).join("\n");
+
+    const elicitMessage =
+      `Wave plan computed from graph (${Object.keys(cp.graph.nodes).length} nodes, ${waves.length} waves).\n\n` +
+      `${waveSummaryLines}\n\n` +
+      `Approve to transition to dispatching state.`;
+
+    const elicitResult = await elicitForm(
+      elicitMessage,
+      approvalSchema({
+        approveTitle: "Approve wave plan?",
+        modificationsTitle: "Modification notes (optional)",
+      }),
+    );
+
+    // Graceful degradation: no elicitation capability — proceed without approval
+    const proceedWithoutApproval = elicitResult.action === "decline" &&
+      !server.server.getClientCapabilities()?.elicitation;
+
+    if (!proceedWithoutApproval) {
+      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: "Wave plan rejected by user.",
+                machineState: cp.machineState,
+              }),
+            },
+          ],
+        };
+      }
+
+      if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+        const notes = typeof elicitResult.content.modifications === "string" &&
+            elicitResult.content.modifications.length > 0
+          ? elicitResult.content.modifications
+          : undefined;
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: "Wave plan not approved.",
+                machineState: cp.machineState,
+                ...(notes !== undefined ? { notes } : {}),
+              }),
+            },
+          ],
+        };
+      }
+    }
+
     const transitioned = transition(
       { ...cp, waves },
       { type: "plan_approved" },
@@ -605,7 +669,7 @@ server.tool(
   {
     waveId: z.number().int().describe("Wave index to dispatch"),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -627,6 +691,13 @@ server.tool(
       { type: "wave_dispatched", waveId: params.waveId },
     );
     checkpoint = transitioned;
+
+    // Sync task status for activated nodes (best-effort)
+    const syncPromises = wave.nodes
+      .map((nid) => checkpoint!.graph.nodes[nid])
+      .filter((n) => n?.taskId)
+      .map((n) => syncTaskStatus(n.taskId!, "activate"));
+    await Promise.all(syncPromises);
 
     return {
       content: [
@@ -658,7 +729,7 @@ server.tool(
       "Pull request number, if any",
     ),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -686,6 +757,18 @@ server.tool(
       },
     );
     checkpoint = transitioned;
+
+    // Sync task status (best-effort)
+    const node = checkpoint.graph.nodes[params.nodeId];
+    if (node?.taskId) {
+      const nodeStatus = node.status;
+      if (nodeStatus === NodeStatus.DONE || nodeStatus === NodeStatus.MERGED) {
+        await syncTaskStatus(node.taskId, "close");
+      } else if (nodeStatus === NodeStatus.PR_CREATED) {
+        // PR created but not yet merged — keep as in_progress
+        await syncTaskStatus(node.taskId, "activate");
+      }
+    }
 
     return {
       content: [
@@ -732,6 +815,12 @@ server.tool(
       { type: "node_failed", nodeId: params.nodeId, reason: params.reason },
     );
     checkpoint = transitioned;
+
+    // Sync task status (best-effort)
+    const failedNode = checkpoint.graph.nodes[params.nodeId];
+    if (failedNode?.taskId) {
+      await syncTaskStatus(failedNode.taskId, "block");
+    }
 
     // Check if wave is now fully failed
     const wave = cp.waves.find((w) => w.id === cp.currentWaveId);
@@ -859,14 +948,79 @@ server.tool(
 
 server.tool(
   "cancel",
-  "Cancel the current trimatrix execution. Transitions to cancelled state.",
+  "Cancel the current trimatrix execution. Transitions to cancelled state. Requires user confirmation.",
   {
     reason: z.string().optional().describe("Human-readable cancellation reason"),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
     const check = canTransition(cp, { type: "cancel", reason: params.reason });
     if (!check.allowed) throw new Error(`Cannot cancel: ${check.reason}`);
+
+    // Elicit confirmation — cancellation is irreversible
+    const nodeCount = Object.keys(cp.graph.nodes).length;
+    const activeNodes = Object.values(cp.graph.nodes).filter(
+      (n) => n.status === NodeStatus.ACTIVE,
+    );
+    const elicitMessage =
+      `Cancel trimatrix execution?\n\n` +
+      `State: ${cp.machineState} | Nodes: ${nodeCount} | Active: ${activeNodes.length}\n` +
+      (params.reason ? `Reason: ${params.reason}\n` : "") +
+      `\nThis action is irreversible.`;
+
+    const elicitResult = await elicitForm(
+      elicitMessage,
+      approvalSchema({
+        approveTitle: "Confirm cancellation?",
+        modificationsTitle: "Cancellation reason (optional)",
+      }),
+    );
+
+    // Graceful degradation: no elicitation capability — proceed
+    const proceedWithoutApproval = elicitResult.action === "decline" &&
+      !server.server.getClientCapabilities()?.elicitation;
+
+    if (!proceedWithoutApproval) {
+      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: "Cancellation rejected by user.",
+                machineState: cp.machineState,
+              }),
+            },
+          ],
+        };
+      }
+
+      if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: "Cancellation not confirmed.",
+                machineState: cp.machineState,
+              }),
+            },
+          ],
+        };
+      }
+
+      // If user provided a reason via the form, use it as override
+      if (
+        elicitResult.action === "accept" &&
+        typeof elicitResult.content.modifications === "string" &&
+        elicitResult.content.modifications.length > 0
+      ) {
+        params.reason = elicitResult.content.modifications;
+      }
+    }
+
     checkpoint = transition(cp, { type: "cancel", reason: params.reason });
     return {
       content: [
@@ -1232,25 +1386,350 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Checkpoint helpers
+// ---------------------------------------------------------------------------
+
+const STATE_DIR = "/tmp";
+const BRAIN_CLI = "brain";
+
+/** Run a command with optional stdin data, returning stdout. */
+function execWithStdin(
+  cmd: string,
+  args: string[],
+  stdinData?: string,
+  timeout = 5000,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], timeout });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d) => { stdout += String(d); });
+    proc.stderr.on("data", (d) => { stderr += String(d); });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${cmd} exited ${code}: ${stderr}`));
+    });
+    if (stdinData) {
+      proc.stdin.write(stdinData);
+    }
+    proc.stdin.end();
+  });
+}
+
+interface BrainTask {
+  task_id: string;
+  title: string;
+  status: string;
+  assignee?: string;
+  priority?: string;
+  parent_task_id?: string;
+  task_type?: string;
+}
+
+async function queryBrainTasks(status: string): Promise<BrainTask[]> {
+  try {
+    const { stdout } = await execFileAsync(BRAIN_CLI, [
+      "tasks", "list", "--json", `--status=${status}`,
+    ], { timeout: 5000 });
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.tasks)) return parsed.tasks;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+async function queryBrainBlockedTasks(): Promise<BrainTask[]> {
+  try {
+    const { stdout } = await execFileAsync(BRAIN_CLI, [
+      "tasks", "list", "--json", "--blocked",
+    ], { timeout: 5000 });
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.tasks)) return parsed.tasks;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+async function readJsonFile(path: string): Promise<Record<string, unknown> | null> {
+  try {
+    const data = await readFile(path, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+function formatTaskTable(
+  tasks: BrainTask[],
+  columns: string[],
+): string {
+  if (tasks.length === 0) return "";
+  const COLUMN_KEY_MAP: Record<string, string> = { id: "task_id" };
+  const header = "| " + columns.join(" | ") + " |";
+  const sep = "| " + columns.map(() => "---").join(" | ") + " |";
+  const rows = tasks.slice(0, 15).map((t) => {
+    const cells = columns.map((col) => {
+      const key = COLUMN_KEY_MAP[col.toLowerCase()] ?? col.toLowerCase().replace(/ /g, "_");
+      return String((t as unknown as Record<string, unknown>)[key] ?? "-");
+    });
+    return "| " + cells.join(" | ") + " |";
+  });
+  return [header, sep, ...rows].join("\n");
+}
+
+function formatAgents(agentsState: Record<string, unknown>): string {
+  const active = (agentsState.active ?? {}) as Record<string, Record<string, unknown>>;
+  if (Object.keys(active).length === 0) return "";
+  const now = Date.now() / 1000;
+  return Object.entries(active).map(([aid, info]) => {
+    const agentType = String(info.type ?? "unknown");
+    const started = Number(info.started_at ?? now);
+    const elapsed = Math.floor(now - started);
+    const duration = elapsed >= 60
+      ? `${Math.floor(elapsed / 60)}m${elapsed % 60}s`
+      : `${elapsed}s`;
+    const shortId = aid.length > 12 ? aid.slice(0, 12) : aid;
+    return `- \`${shortId}\`: **${agentType}** (running for ${duration})`;
+  }).join("\n");
+}
+
+function buildCheckpointMarkdown(
+  opts: {
+    compactionNum: number;
+    tasksInProgress: BrainTask[];
+    tasksOpen: BrainTask[];
+    tasksBlocked: BrainTask[];
+    agentsState: Record<string, unknown> | null;
+    costsState: Record<string, unknown> | null;
+    graphJson: string | null;
+  },
+): string {
+  const sections: string[] = [];
+  sections.push(`# Post-Compaction Checkpoint (compaction #${opts.compactionNum})`);
+
+  if (opts.tasksInProgress.length > 0) {
+    sections.push("\n## In-Progress Tasks");
+    sections.push(formatTaskTable(opts.tasksInProgress, ["ID", "Title", "Status", "Assignee", "Priority"]));
+  }
+  if (opts.tasksOpen.length > 0) {
+    sections.push("\n## Open Tasks");
+    sections.push(formatTaskTable(opts.tasksOpen, ["ID", "Title", "Status", "Assignee", "Priority"]));
+  }
+  if (opts.tasksBlocked.length > 0) {
+    sections.push("\n## Blocked Tasks");
+    sections.push(formatTaskTable(opts.tasksBlocked, ["ID", "Title", "Status", "Priority"]));
+  }
+
+  const agentsMd = opts.agentsState ? formatAgents(opts.agentsState) : "";
+  if (agentsMd) {
+    sections.push("\n## Active Subagents");
+    sections.push(agentsMd);
+  }
+
+  if (opts.graphJson) {
+    sections.push("\n## Graph State");
+    sections.push("```json\n" + opts.graphJson + "\n```");
+  }
+
+  // Session stats
+  const totalCost = opts.costsState
+    ? Number(opts.costsState.total_subagent_cost_usd ?? 0)
+    : 0;
+  const totalTime = opts.agentsState
+    ? Number(opts.agentsState.total_subagent_seconds ?? 0)
+    : 0;
+
+  const statsParts = [`Compactions: ${opts.compactionNum}`];
+  if (totalCost > 0) statsParts.push(`Subagent cost: $${totalCost.toFixed(2)}`);
+  if (totalTime > 0) statsParts.push(`Subagent time: ${Math.floor(totalTime)}s`);
+
+  const nActive = opts.agentsState
+    ? Object.keys((opts.agentsState.active ?? {}) as Record<string, unknown>).length
+    : 0;
+  const taskSummary: string[] = [];
+  if (opts.tasksInProgress.length > 0) taskSummary.push(`${opts.tasksInProgress.length} in-progress`);
+  if (opts.tasksOpen.length > 0) taskSummary.push(`${opts.tasksOpen.length} open`);
+  if (opts.tasksBlocked.length > 0) taskSummary.push(`${opts.tasksBlocked.length} blocked`);
+  if (nActive > 0) taskSummary.push(`${nActive} subagents active`);
+  if (taskSummary.length > 0) statsParts.push("Tasks: " + taskSummary.join(", "));
+
+  sections.push("\n## Session Stats");
+  sections.push(statsParts.join(" | "));
+
+  // Recommend action if there are tasks but no active subagents
+  const hasWork = opts.tasksInProgress.length > 0 || opts.tasksOpen.length > 0;
+  const hasAgents = nActive > 0;
+  if (hasWork && !hasAgents) {
+    sections.push("\n## Recommended Action");
+    sections.push(
+      "Subagents were lost during compaction. Resume with the task ID — " +
+      "dispatch Assimilation adjuncts for the remaining tasks.",
+    );
+  }
+
+  return sections.join("\n");
+}
+
+async function atomicWriteFile(path: string, content: string): Promise<void> {
+  const tmpPath = path + `.${Date.now()}.tmp`;
+  try {
+    await writeFile(tmpPath, content, "utf-8");
+    await rename(tmpPath, path);
+  } catch {
+    try { await unlink(tmpPath); } catch { /* ignore */ }
+  }
+}
+
+async function saveBrainSnapshot(
+  title: string,
+  tags: string[],
+  content: string,
+): Promise<void> {
+  try {
+    const tagArgs = tags.flatMap((t) => ["--tag", t]);
+    await execWithStdin(BRAIN_CLI, [
+      "snapshots", "save", "--stdin",
+      "--title", title,
+      ...tagArgs,
+      "--media-type", "text/markdown",
+    ], content);
+  } catch {
+    // Best-effort — do not fail the tool call
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Task status sync helpers
+// ---------------------------------------------------------------------------
+
+async function syncTaskStatus(
+  taskId: string,
+  action: "activate" | "block" | "close",
+): Promise<void> {
+  try {
+    if (action === "close") {
+      await execFileAsync(BRAIN_CLI, ["tasks", "close", taskId], { timeout: 5000 });
+    } else {
+      const newStatus = action === "activate" ? "in_progress" : "blocked";
+      const eventJson = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tasks_apply_event",
+        params: { task_id: taskId, event: { type: "status_changed", status: newStatus } },
+        id: 1,
+      });
+      await execWithStdin(BRAIN_CLI, ["mcp"], eventJson);
+    }
+  } catch {
+    // Best-effort — graph remains source of truth
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool: save_checkpoint
 // ---------------------------------------------------------------------------
 
 server.tool(
   "save_checkpoint",
-  "Serialize the current checkpoint to a JSON string for persistence.",
-  {},
-  () => {
-    const cp = requireCheckpoint();
-    const json = serialize(cp);
+  "Serialize the current checkpoint to a JSON string for persistence. When claude_session_id is provided, also captures brain tasks, agent/cost state, saves a brain snapshot, and writes a temp file for post-compaction injection.",
+  {
+    claude_session_id: z.string().optional().describe(
+      "Claude Code session ID — enables capture of /tmp state files and writes temp checkpoint file for inject-checkpoint.py",
+    ),
+  },
+  async (params) => {
+    // Graph checkpoint (may be null if no graph initialized)
+    let graphJson: string | null = null;
+    if (checkpoint) {
+      graphJson = serialize(checkpoint);
+    } else if (!params.claude_session_id) {
+      // Original behavior: require checkpoint when no session ID
+      throw new Error(
+        "No checkpoint loaded. Call init or restore_checkpoint first.",
+      );
+    }
+
+    const result: Record<string, unknown> = {};
+    if (graphJson) {
+      result.checkpoint = graphJson;
+      if (checkpoint?.sessionId) result.sessionId = checkpoint.sessionId;
+      if (checkpoint?.sessionLabel) result.sessionLabel = checkpoint.sessionLabel;
+    }
+
+    // Enhanced checkpoint with session state
+    if (params.claude_session_id) {
+      const sid = params.claude_session_id;
+
+      // Query brain tasks
+      const [tasksInProgress, tasksOpen, tasksBlocked] = await Promise.all([
+        queryBrainTasks("in_progress"),
+        queryBrainTasks("open"),
+        queryBrainBlockedTasks(),
+      ]);
+
+      // Read /tmp state files
+      const agentsState = await readJsonFile(
+        join(STATE_DIR, `unimatrix-agents-${sid}.json`),
+      );
+      const costsState = await readJsonFile(
+        join(STATE_DIR, `unimatrix-costs-${sid}.json`),
+      );
+      const compactionsState = await readJsonFile(
+        join(STATE_DIR, `unimatrix-compactions-${sid}.json`),
+      );
+
+      const compactionNum = compactionsState
+        ? Number(compactionsState.compaction_count ?? 1)
+        : 1;
+
+      // Build unified markdown checkpoint
+      const markdown = buildCheckpointMarkdown({
+        compactionNum,
+        tasksInProgress,
+        tasksOpen,
+        tasksBlocked,
+        agentsState,
+        costsState,
+        graphJson,
+      });
+
+      // Save brain snapshot
+      const snapshotTags = ["trimatrix-checkpoint", "compaction-checkpoint"];
+      const parts = [`Compaction #${compactionNum}`];
+      const counts: string[] = [];
+      if (tasksInProgress.length > 0) counts.push(`${tasksInProgress.length} in-progress`);
+      if (tasksOpen.length > 0) counts.push(`${tasksOpen.length} open`);
+      if (tasksBlocked.length > 0) counts.push(`${tasksBlocked.length} blocked`);
+      if (counts.length > 0) parts.push(counts.join(", "));
+      if (graphJson) parts.push("graph attached");
+
+      await saveBrainSnapshot(parts.join(" — "), snapshotTags, markdown);
+
+      // Write temp file for inject-checkpoint.py
+      const checkpointPath = join(STATE_DIR, `unimatrix-checkpoint-${sid}.md`);
+      await atomicWriteFile(checkpointPath, markdown);
+
+      result.capturedState = {
+        tasksInProgress: tasksInProgress.length,
+        tasksOpen: tasksOpen.length,
+        tasksBlocked: tasksBlocked.length,
+        hasAgents: agentsState !== null,
+        hasCosts: costsState !== null,
+        hasGraph: graphJson !== null,
+        compactionNum,
+        tempFile: checkpointPath,
+      };
+    }
+
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            checkpoint: json,
-            ...(cp.sessionId ? { sessionId: cp.sessionId } : {}),
-            ...(cp.sessionLabel ? { sessionLabel: cp.sessionLabel } : {}),
-          }),
+          text: JSON.stringify(result),
         },
       ],
     };
