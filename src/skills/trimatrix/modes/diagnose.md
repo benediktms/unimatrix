@@ -1,11 +1,11 @@
 # Diagnose Mode
 
-Alias: /diagnose
+Alias: diagnose
 
 ## When Triggered
 - Bug reports with unclear root cause
 - Multiple competing explanations exist
-- User explicitly uses /diagnose
+- User explicitly uses diagnose
 
 ---
 

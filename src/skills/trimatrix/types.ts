@@ -16,6 +16,7 @@ export enum NodeType {
   VALIDATION = "VALIDATION",
   DOCUMENTATION = "DOCUMENTATION",
   DIAGNOSIS = "DIAGNOSIS",
+  ANALYSIS = "ANALYSIS",
 }
 
 export enum NodeStatus {

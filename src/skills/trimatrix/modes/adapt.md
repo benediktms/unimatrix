@@ -1,12 +1,12 @@
 # Adapt Mode
 
-Alias: /adapt
+Alias: adapt
 
 ## When Triggered
 - Tasks needing iterative refinement with quality gates
 - User wants implement-then-review without manual intervention
 - Automated correction must run until convergence or max cycles
-- User explicitly uses /adapt
+- User explicitly uses adapt
 
 ## Flags
 - `--cycles N` — max adaptation cycles (default: 3, max: 5)

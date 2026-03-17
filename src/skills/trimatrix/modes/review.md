@@ -1,11 +1,11 @@
 # Review Mode
 
-Alias: /comply
+Alias: comply
 
 ## When Triggered
 - "Review this", "review my changes"
 - Code review requests
-- Explicit /comply invocation
+- Explicit comply invocation
 
 ## Scope Resolution
 

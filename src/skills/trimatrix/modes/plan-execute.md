@@ -1,21 +1,21 @@
 # Plan-Execute Mode
 
-Aliases: /assemble, /reengage
+Aliases: assemble, reengage
 
 ## When Triggered
 - Complex multi-file tasks requiring decomposition
 - Tasks needing isolated worktree execution
-- User explicitly uses /assemble or /trimatrix plan
+- User explicitly uses assemble or trimatrix plan
 - RESUME classification routes here when the original mode was plan-execute
 
 ---
 
 ## Entry Paths
 
-### Fresh Entry (from /assemble or classifier)
+### Fresh Entry (from assemble or classifier)
 Full flow starting at Step 1.
 
-### Resume Entry (from /reengage or RESUME classification)
+### Resume Entry (from reengage or RESUME classification)
 1. Load task via `tasks_get` with `expand: children`
 2. Load dispatch brief — `records_list` with tags `dispatch-brief` + `epic:<id>`, then `records_fetch_content`
 3a. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
@@ -42,8 +42,8 @@ Verdict:
 - `RECON_NEEDED` — unfamiliar code areas, cross-cutting concerns → Step 2
 
 ### Step 2: Recon Phase (conditional)
-Default: /scan pattern — independent subagents, no team needed.
-Upgrade to /recon pattern if questions are cross-cutting and findings affect each other.
+Default: scan pattern — independent subagents, no team needed.
+Upgrade to recon pattern if questions are cross-cutting and findings affect each other.
 
 2a. Scope recon questions. Each question targets a specific code area or architectural concern.
 2b. Use Designation Generation Protocol. Dispatch Reconnaissance or TacticalAnalysis adjuncts.

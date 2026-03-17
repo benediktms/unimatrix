@@ -2,7 +2,7 @@
 name: trimatrix
 description: >-
   Unified orchestration supergraph. Auto-classifies intent and routes to the appropriate mode:
-  plan-execute, investigate, diagnose, review, adapt, swarm, or cross-repo. The collective
+  plan-execute, investigate, diagnose, architect, review, adapt, swarm, or cross-repo. The collective
   operates through one entry point.
 ---
 
@@ -24,14 +24,15 @@ The classifier runs on every prompt. It determines execution mode before any act
 |---|---|---|---|
 | TRIVIAL | (handle directly) | Single-file changes, known location, simple questions | — |
 | IMPLEMENT | (single adjunct dispatch) | Clear scope, 1-2 files, well-defined task | — |
-| PLAN_EXECUTE | `modes/plan-execute.md` | Complex multi-file tasks, unclear scope, needs decomposition | `/assemble`, `/reengage` |
-| INVESTIGATE | `modes/investigate.md` | "How does X work", "find Y", "audit Z", architectural questions | `/recon`, `/scan`, `/analyse` |
-| DIAGNOSE | `modes/diagnose.md` | Bug reports, "why does X happen", unclear root cause | `/diagnose` |
-| REVIEW | `modes/review.md` | "Review this", code review requests, validation | `/comply` |
-| ADAPT | `modes/adapt.md` | Tasks needing iterative refinement, quality gates | `/adapt` |
-| SWARM | `modes/swarm.md` | Bulk changes, migrations, "rename X everywhere" | `/swarm` |
+| PLAN_EXECUTE | `modes/plan-execute.md` | Complex multi-file tasks, unclear scope, needs decomposition | `assemble`, `reengage` |
+| INVESTIGATE | `modes/investigate.md` | "How does X work", "find Y", "audit Z", architectural questions | `recon`, `scan`, `analyse` |
+| DIAGNOSE | `modes/diagnose.md` | Bug reports, "why does X happen", unclear root cause | `diagnose` |
+| ARCHITECT | `modes/architect.md` | "Evaluate architecture options", "compare approaches for X", proposed re-architecture, significant structural shifts | `architect` |
+| REVIEW | `modes/review.md` | "Review this", code review requests, validation | `comply` |
+| ADAPT | `modes/adapt.md` | Tasks needing iterative refinement, quality gates | `adapt` |
+| SWARM | `modes/swarm.md` | Bulk changes, migrations, "rename X everywhere" | `swarm` |
 | CROSS_REPO | `modes/cross-repo.md` | Multi-repo features, `--include` flag | — |
-| RESUME | (built-in) | References a task ID, "resume", "continue", `/reengage <id>` | `/reengage` |
+| RESUME | (built-in) | References a task ID, "resume", "continue", `reengage <id>` | `reengage` |
 
 ### Classifier Rules
 
@@ -75,6 +76,7 @@ Teams (Claude Code TeamCreate) are required for coordination. They are NOT used 
 | Parallel implementation of cross-cutting features (e.g., client UI + backend endpoint) | YES | Agents must coordinate on shared interfaces |
 | Collaborative investigation — interconnected questions | YES | One agent's findings change another's path |
 | Adversarial diagnosis — competing hypotheses | YES | Agents must challenge each other in real-time |
+| Adversarial architecture — competing architectural approaches | YES | Agents must challenge each other's feasibility assessments |
 | Compliance matrix review — multiple Validation adjuncts | YES | Cross-cutting findings affect other reviewers |
 | Vinculum analysis — multiple Tactical Analysis adjuncts | YES | Insights in one area affect analysis of another |
 | Swarm — file-partitioned bulk changes | NO | Non-overlapping files, no coordination needed |
