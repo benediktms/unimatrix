@@ -217,14 +217,16 @@ export interface Wave {
 /**
  * Top-level states of the trimatrix execution state machine.
  */
-export type MachineState =
-  | "initializing"
-  | "dispatching"
-  | "gate_halted"
-  | "refining"
-  | "failed"
-  | "completed"
-  | "cancelled";
+export enum MachineState {
+  INITIALIZING = "initializing",
+  PLAN_REVIEW = "plan_review",
+  DISPATCHING = "dispatching",
+  GATE_HALTED = "gate_halted",
+  REFINING = "refining",
+  FAILED = "failed",
+  COMPLETED = "completed",
+  CANCELLED = "cancelled",
+}
 
 /**
  * Persisted checkpoint capturing the full state of a trimatrix execution.
@@ -258,7 +260,7 @@ export interface Checkpoint {
     /** Node IDs added during this refinement. */
     addedNodes: string[];
     /** Edges added during this refinement. */
-    addedEdges: Array<{ from: string; to: string; type: string }>;
+    addedEdges: Array<{ from: string; to: string; type: EdgeType }>;
     /** Repository names added during this refinement. */
     addedRepos: string[];
   }>;
@@ -317,11 +319,17 @@ export interface WorktreeInfo {
 /**
  * Result summary for a completed (or failed) wave.
  */
+export enum WaveResultStatus {
+  COMPLETED = "completed",
+  PARTIAL_FAILURE = "partial_failure",
+  FAILED = "failed",
+}
+
 export interface WaveResult {
   /** ID of the wave this result corresponds to. */
   waveId: number;
   /** Aggregate outcome of the wave. */
-  status: "completed" | "partial_failure" | "failed";
+  status: WaveResultStatus;
   /** Node IDs that completed successfully within this wave. */
   completedNodes: string[];
   /** Node IDs that failed within this wave. */
@@ -506,7 +514,9 @@ export function selectionSchema(
  * Union of all events that drive state machine transitions in trimatrix.
  */
 export type Event =
-  | { type: "plan_approved" }
+  | { type: "plan_submitted" }
+  | { type: "plan_finalized" }
+  | { type: "plan_revision_requested" }
   | { type: "wave_dispatched"; waveId: number }
   | {
     type: "node_completed";

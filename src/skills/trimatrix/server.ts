@@ -23,7 +23,7 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
-import { approvalSchema, EdgeType, Executor, Intent, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
+import { approvalSchema, EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
 import { designate, Role } from "./designate.ts";
 import {
   activateNodes,
@@ -49,6 +49,11 @@ import {
   serialize,
   transition,
 } from "./state.ts";
+import {
+  repoRoot as repoRootLookup,
+  syncTaskStatus as syncTaskStatusCore,
+} from "./brain-sync.ts";
+import type { BrainExec } from "./brain-sync.ts";
 
 // ---------------------------------------------------------------------------
 // In-memory checkpoint store
@@ -64,6 +69,34 @@ function generateSessionId(): string {
   const date = new Date().toISOString().slice(0, 10);
   const hash = Math.random().toString(36).slice(2, 6);
   return `trimatrix-${date}-${hash}`;
+}
+
+/**
+ * Compute subgraph partitions and stamp each node with its subgraph ID.
+ * Returns a new immutable checkpoint. No-op if tier/strategy are absent.
+ */
+function applySubgraphs(
+  cp: Checkpoint,
+  overrides?: { tier: Tier; strategy: SubgraphStrategy },
+): Checkpoint {
+  const tier = overrides?.tier ?? cp.tier;
+  const strategy = overrides?.strategy ?? cp.subgraphStrategy ?? SubgraphStrategy.SELF;
+  if (!tier) return cp;
+
+  const subgraphs = computeSubgraphs(cp.graph, cp.waves, tier, strategy);
+  const updatedNodes = { ...cp.graph.nodes };
+  for (const sg of subgraphs) {
+    for (const nodeId of sg.nodes) {
+      if (updatedNodes[nodeId]) {
+        updatedNodes[nodeId] = { ...updatedNodes[nodeId], subgraph: sg.id };
+      }
+    }
+  }
+  return {
+    ...cp,
+    graph: { ...cp.graph, nodes: updatedNodes },
+    subgraphs,
+  };
 }
 
 function generateSessionLabel(repos: RepoMetadata[]): string {
@@ -216,7 +249,7 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
       throw new Error(
         `add_repo requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -284,7 +317,7 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
       throw new Error(
         `add_node requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -304,7 +337,7 @@ server.tool(
       executor: params.executor ?? Executor.LEAD,
     };
 
-    const result = addNode(cp.graph, node, cp.machineState === "refining");
+    const result = addNode(cp.graph, node, cp.machineState === MachineState.REFINING);
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -338,7 +371,7 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== "initializing" && cp.machineState !== "refining") {
+    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
       throw new Error(
         `add_edge requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -350,7 +383,7 @@ server.tool(
       type: params.type,
     };
 
-    const result = addEdge(cp.graph, edge, cp.machineState === "refining");
+    const result = addEdge(cp.graph, edge, cp.machineState === MachineState.REFINING);
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -430,7 +463,7 @@ server.tool(
 
 server.tool(
   "compute_waves",
-  "Validate graph, compute execution waves, and transition to dispatching state. In refining state uses partial recomputation (refinement_approved); in initializing state uses full computation (plan_approved).",
+  "Validate graph and compute execution waves. In initializing state, transitions to plan_review (call finalize_plan to approve). In refining state, uses partial recomputation and transitions to dispatching (refinement_approved).",
   {},
   async () => {
     const cp = requireCheckpoint();
@@ -442,7 +475,7 @@ server.tool(
       );
     }
 
-    if (cp.machineState === "refining") {
+    if (cp.machineState === MachineState.REFINING) {
       // Partial recomputation — preserve completed waves, append new waves
       const check = canTransition(cp, { type: "refinement_approved" });
       if (!check.allowed) {
@@ -578,26 +611,7 @@ server.tool(
         },
         { type: "refinement_approved" },
       );
-      checkpoint = transitioned;
-
-      // Auto-compute subgraphs if intent and tier are set
-      if (checkpoint.intent && checkpoint.tier) {
-        const strategy = checkpoint.subgraphStrategy ?? SubgraphStrategy.SELF;
-        checkpoint = {
-          ...checkpoint,
-          subgraphs: computeSubgraphs(checkpoint.graph, checkpoint.waves, checkpoint.tier, strategy),
-        };
-        for (const sg of checkpoint.subgraphs!) {
-          for (const nodeId of sg.nodes) {
-            if (checkpoint.graph.nodes[nodeId]) {
-              checkpoint.graph.nodes[nodeId] = {
-                ...checkpoint.graph.nodes[nodeId],
-                subgraph: sg.id,
-              };
-            }
-          }
-        }
-      }
+      checkpoint = applySubgraphs(transitioned);
 
       return {
         content: [
@@ -624,101 +638,52 @@ server.tool(
       };
     }
 
-    // initializing state — full computation
-    const check = canTransition(cp, { type: "plan_approved" });
+    // initializing state — full computation, transition to plan_review
+    const check = canTransition(cp, { type: "plan_submitted" });
     if (!check.allowed) {
       throw new Error(`Cannot transition: ${check.reason}`);
     }
 
     const waves = computeWaves(cp.graph);
 
-    // Build elicitation summary for the initial wave plan
-    const waveSummaryLines = waves.map((w) => {
-      const nodeLabels = w.nodes.map((nId) => {
-        const n = cp.graph.nodes[nId];
-        return n ? `${n.id} (${n.repo ?? "single-repo"}: ${n.label})` : nId;
-      }).join(", ");
-      return `  Wave ${w.id + 1}: ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"} — ${nodeLabels}`;
-    }).join("\n");
-
-    const elicitMessage =
-      `Wave plan computed from graph (${Object.keys(cp.graph.nodes).length} nodes, ${waves.length} waves).\n\n` +
-      `${waveSummaryLines}\n\n` +
-      `Approve to transition to dispatching state.`;
-
-    const elicitResult = await elicitForm(
-      elicitMessage,
-      approvalSchema({
-        approveTitle: "Approve wave plan?",
-        modificationsTitle: "Modification notes (optional)",
-      }),
-    );
-
-    // Graceful degradation: no elicitation capability — proceed without approval
-    const proceedWithoutApproval = elicitResult.action === "decline" &&
-      !server.server.getClientCapabilities()?.elicitation;
-
-    if (!proceedWithoutApproval) {
-      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                reason: "Wave plan rejected by user.",
-                machineState: cp.machineState,
-              }),
-            },
-          ],
-        };
-      }
-
-      if (elicitResult.action === "accept" && !elicitResult.content.approve) {
-        const notes = typeof elicitResult.content.modifications === "string" &&
-            elicitResult.content.modifications.length > 0
-          ? elicitResult.content.modifications
-          : undefined;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                reason: "Wave plan not approved.",
-                machineState: cp.machineState,
-                ...(notes !== undefined ? { notes } : {}),
-              }),
-            },
-          ],
-        };
-      }
-    }
-
     const transitioned = transition(
       { ...cp, waves },
-      { type: "plan_approved" },
+      { type: "plan_submitted" },
     );
     checkpoint = transitioned;
 
-    // Auto-compute subgraphs if intent and tier are set
-    if (checkpoint.intent && checkpoint.tier) {
-      const strategy = checkpoint.subgraphStrategy ?? SubgraphStrategy.SELF;
-      checkpoint = {
-        ...checkpoint,
-        subgraphs: computeSubgraphs(checkpoint.graph, checkpoint.waves, checkpoint.tier, strategy),
-      };
-      for (const sg of checkpoint.subgraphs!) {
-        for (const nodeId of sg.nodes) {
-          if (checkpoint.graph.nodes[nodeId]) {
-            checkpoint.graph.nodes[nodeId] = {
-              ...checkpoint.graph.nodes[nodeId],
-              subgraph: sg.id,
-            };
-          }
-        }
-      }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            waves: checkpoint.waves,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: finalize_plan
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "finalize_plan",
+  "Approve the wave plan and transition from plan_review to dispatching. Auto-computes subgraphs if intent and tier are set.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+
+    const check = canTransition(cp, { type: "plan_finalized" });
+    if (!check.allowed) {
+      throw new Error(`Cannot finalize plan: ${check.reason}`);
     }
+
+    checkpoint = applySubgraphs(transition(cp, { type: "plan_finalized" }));
 
     return {
       content: [
@@ -746,6 +711,39 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: revise_plan
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "revise_plan",
+  "Request plan revision — transition from plan_review back to initializing for edits.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+
+    const check = canTransition(cp, { type: "plan_revision_requested" });
+    if (!check.allowed) {
+      throw new Error(`Cannot revise plan: ${check.reason}`);
+    }
+
+    checkpoint = transition(cp, { type: "plan_revision_requested" });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            message: "Plan revision requested. State returned to initializing — modify nodes/edges then call compute_waves again.",
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: compute_subgraphs
 // ---------------------------------------------------------------------------
 
@@ -759,22 +757,8 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
-    const subgraphs = computeSubgraphs(cp.graph, cp.waves, params.tier, params.strategy);
-
-    // Stamp subgraph IDs onto nodes
-    const updatedNodes = { ...cp.graph.nodes };
-    for (const sg of subgraphs) {
-      for (const nodeId of sg.nodes) {
-        if (updatedNodes[nodeId]) {
-          updatedNodes[nodeId] = { ...updatedNodes[nodeId], subgraph: sg.id };
-        }
-      }
-    }
-
     checkpoint = {
-      ...cp,
-      graph: { ...cp.graph, nodes: updatedNodes },
-      subgraphs,
+      ...applySubgraphs(cp, { tier: params.tier, strategy: params.strategy }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -784,7 +768,7 @@ server.tool(
           type: "text",
           text: JSON.stringify({
             ok: true,
-            subgraphs: subgraphs.map((sg) => ({
+            subgraphs: (checkpoint!.subgraphs ?? []).map((sg) => ({
               id: sg.id,
               executor: sg.executor,
               assignee: sg.assignee,
@@ -895,14 +879,14 @@ server.tool(
 
     // Enter gate_halted if this wave contains elicit gates
     checkpoint = elicitGateIds.length > 0
-      ? { ...transitioned, machineState: "gate_halted" as const }
+      ? { ...transitioned, machineState: MachineState.GATE_HALTED }
       : transitioned;
 
     // Sync task status for activated nodes (best-effort)
     const syncPromises = wave.nodes
       .map((nid) => checkpoint!.graph.nodes[nid])
       .filter((n) => n?.taskId)
-      .map((n) => syncTaskStatus(n.taskId!, "activate"));
+      .map((n) => syncTaskStatus(n.taskId!, "activate", repoRoot(n.repo)));
     await Promise.all(syncPromises);
 
     // Compute per-node execution info and parallelism groups
@@ -991,12 +975,13 @@ server.tool(
     // Sync task status (best-effort)
     const node = checkpoint.graph.nodes[params.nodeId];
     if (node?.taskId) {
+      const cwd = repoRoot(node.repo);
       const nodeStatus = node.status;
       if (nodeStatus === NodeStatus.DONE || nodeStatus === NodeStatus.MERGED) {
-        await syncTaskStatus(node.taskId, "close");
+        await syncTaskStatus(node.taskId, "close", cwd);
       } else if (nodeStatus === NodeStatus.PR_CREATED) {
         // PR created but not yet merged — keep as in_progress
-        await syncTaskStatus(node.taskId, "activate");
+        await syncTaskStatus(node.taskId, "activate", cwd);
       }
     }
 
@@ -1049,7 +1034,7 @@ server.tool(
     // Sync task status (best-effort)
     const failedNode = checkpoint.graph.nodes[params.nodeId];
     if (failedNode?.taskId) {
-      await syncTaskStatus(failedNode.taskId, "block");
+      await syncTaskStatus(failedNode.taskId, "block", repoRoot(failedNode.repo));
     }
 
     // Check if wave is now fully failed
@@ -1289,7 +1274,7 @@ server.tool(
   },
   async (params) => {
     const cp = requireCheckpoint();
-    if (cp.machineState !== "completed" && cp.machineState !== "cancelled") {
+    if (cp.machineState !== MachineState.COMPLETED && cp.machineState !== MachineState.CANCELLED) {
       throw new Error(
         `archive requires completed or cancelled state, got ${cp.machineState}`,
       );
@@ -1331,7 +1316,7 @@ server.tool(
   async () => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState === "gate_halted") {
+    if (cp.machineState === MachineState.GATE_HALTED) {
       const gates = pendingGates(cp);
       const elicitGates = gates.filter(
         (nId) => cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
@@ -1361,7 +1346,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "completed") {
+    if (cp.machineState === MachineState.COMPLETED) {
       return {
         content: [
           {
@@ -1375,7 +1360,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "cancelled") {
+    if (cp.machineState === MachineState.CANCELLED) {
       return {
         content: [
           {
@@ -1389,7 +1374,7 @@ server.tool(
       };
     }
 
-    if (cp.machineState === "failed") {
+    if (cp.machineState === MachineState.FAILED) {
       return {
         content: [
           {
@@ -1563,7 +1548,7 @@ server.tool(
               ? { cancellationReason: cp.cancellationReason }
               : {}),
             ...(cp.cancelledAt ? { cancelledAt: cp.cancelledAt } : {}),
-            ...(cp.machineState === "gate_halted"
+            ...(cp.machineState === MachineState.GATE_HALTED
               ? {
                 pendingElicitGates: pendingGates(cp)
                   .filter(
@@ -1752,9 +1737,14 @@ function execWithStdin(
   args: string[],
   stdinData?: string,
   timeout = 5000,
+  cwd?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], timeout });
+    const proc = spawn(cmd, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout,
+      ...(cwd ? { cwd } : {}),
+    });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => { stdout += String(d); });
@@ -1769,6 +1759,26 @@ function execWithStdin(
     }
     proc.stdin.end();
   });
+}
+
+/** Real BrainExec wired to execWithStdin / execFileAsync. */
+const brainExec: BrainExec = {
+  withStdin: execWithStdin,
+  async exec(cmd, args, opts) {
+    return execFileAsync(cmd, args, {
+      timeout: opts?.timeout,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    });
+  },
+};
+
+/**
+ * Resolve the filesystem root for a node's repo from the checkpoint.
+ * Delegates to the pure repoRootLookup in brain-sync.ts.
+ */
+function repoRoot(repoName?: string): string | undefined {
+  if (!checkpoint) return undefined;
+  return repoRootLookup(checkpoint.repos, repoName);
 }
 
 interface BrainTask {
@@ -1951,26 +1961,16 @@ async function saveBrainSnapshot(
 // Task status sync helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Sync a graph node's task status to the brain CLI (best-effort).
+ * Delegates to syncTaskStatusCore in brain-sync.ts with the real executor.
+ */
 async function syncTaskStatus(
   taskId: string,
   action: "activate" | "block" | "close",
+  cwd?: string,
 ): Promise<void> {
-  try {
-    if (action === "close") {
-      await execFileAsync(BRAIN_CLI, ["tasks", "close", taskId], { timeout: 5000 });
-    } else {
-      const newStatus = action === "activate" ? "in_progress" : "blocked";
-      const eventJson = JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tasks_apply_event",
-        params: { task_id: taskId, event: { type: "status_changed", status: newStatus } },
-        id: 1,
-      });
-      await execWithStdin(BRAIN_CLI, ["mcp"], eventJson);
-    }
-  } catch {
-    // Best-effort — graph remains source of truth
-  }
+  return syncTaskStatusCore(taskId, action, cwd, brainExec);
 }
 
 // ---------------------------------------------------------------------------

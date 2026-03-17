@@ -19,7 +19,7 @@ import {
   serialize,
   transition,
 } from "./state.ts";
-import { EdgeType, Executor, Intent, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
+import { EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, WaveResultStatus } from "./types.ts";
 import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ function makeCheckpoint(overrides: Partial<Checkpoint> = {}): Checkpoint {
   const graph = makeGraph([makeNode("n1")]);
   const base: Checkpoint = {
     version: "1.0.0",
-    machineState: "initializing",
+    machineState: MachineState.INITIALIZING,
     graph,
     waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
     currentWaveId: null,
@@ -68,58 +68,114 @@ function makeCheckpoint(overrides: Partial<Checkpoint> = {}): Checkpoint {
 // canTransition tests
 // ---------------------------------------------------------------------------
 
-// Test 1: plan_approved is allowed in initializing state
-Deno.test("canTransition: plan_approved allowed in initializing", () => {
-  const cp = makeCheckpoint({ machineState: "initializing" });
-  const result = canTransition(cp, { type: "plan_approved" });
+// Test 1: plan_submitted is allowed in initializing state
+Deno.test("canTransition: plan_submitted allowed in initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
+  const result = canTransition(cp, { type: "plan_submitted" });
   assertEquals(result, { allowed: true });
 });
 
-// Test 2: plan_approved is rejected in dispatching state
-Deno.test("canTransition: plan_approved rejected in dispatching", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
-  const result = canTransition(cp, { type: "plan_approved" });
+// Test 2: plan_submitted is rejected in dispatching state
+Deno.test("canTransition: plan_submitted rejected in dispatching", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
+  const result = canTransition(cp, { type: "plan_submitted" });
   assertEquals(result.allowed, false);
+});
+
+// Test: plan_submitted rejected in plan_review
+Deno.test("canTransition: plan_submitted rejected in plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "plan_submitted" });
+  assertEquals(result.allowed, false);
+});
+
+// Test: plan_finalized allowed in plan_review
+Deno.test("canTransition: plan_finalized allowed in plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "plan_finalized" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test: plan_finalized rejected in initializing
+Deno.test("canTransition: plan_finalized rejected in initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
+  const result = canTransition(cp, { type: "plan_finalized" });
+  assertEquals(result.allowed, false);
+});
+
+// Test: plan_revision_requested allowed in plan_review
+Deno.test("canTransition: plan_revision_requested allowed in plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "plan_revision_requested" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test: plan_revision_requested rejected in initializing
+Deno.test("canTransition: plan_revision_requested rejected in initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
+  const result = canTransition(cp, { type: "plan_revision_requested" });
+  assertEquals(result.allowed, false);
+});
+
+// Test: cancel allowed from plan_review
+Deno.test("canTransition: cancel allowed from plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "cancel" });
+  assertEquals(result, { allowed: true });
 });
 
 // Test 3: wave_dispatched allowed in dispatching state
 Deno.test("canTransition: wave_dispatched allowed in dispatching", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
   const result = canTransition(cp, { type: "wave_dispatched", waveId: 1 });
   assertEquals(result, { allowed: true });
 });
 
 // Test 4: wave_dispatched rejected in initializing state
 Deno.test("canTransition: wave_dispatched rejected in initializing", () => {
-  const cp = makeCheckpoint({ machineState: "initializing" });
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
   const result = canTransition(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(result.allowed, false);
+});
+
+// Test: wave_dispatched rejected in plan_review
+Deno.test("canTransition: wave_dispatched rejected in plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(result.allowed, false);
+});
+
+// Test: refine rejected in plan_review
+Deno.test("canTransition: refine rejected in plan_review", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = canTransition(cp, { type: "refine" });
   assertEquals(result.allowed, false);
 });
 
 // Test 5: gate_cleared allowed in gate_halted state
 Deno.test("canTransition: gate_cleared allowed in gate_halted", () => {
-  const cp = makeCheckpoint({ machineState: "gate_halted" });
+  const cp = makeCheckpoint({ machineState: MachineState.GATE_HALTED });
   const result = canTransition(cp, { type: "gate_cleared", nodeId: "n1" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 6: gate_cleared rejected in dispatching state
 Deno.test("canTransition: gate_cleared rejected in dispatching", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
   const result = canTransition(cp, { type: "gate_cleared", nodeId: "n1" });
   assertEquals(result.allowed, false);
 });
 
 // Test 7: retry_wave allowed in failed state
 Deno.test("canTransition: retry_wave allowed in failed", () => {
-  const cp = makeCheckpoint({ machineState: "failed" });
+  const cp = makeCheckpoint({ machineState: MachineState.FAILED });
   const result = canTransition(cp, { type: "retry_wave", waveId: 1 });
   assertEquals(result, { allowed: true });
 });
 
 // Test 8: retry_wave rejected in completed state
 Deno.test("canTransition: retry_wave rejected in completed", () => {
-  const cp = makeCheckpoint({ machineState: "completed" });
+  const cp = makeCheckpoint({ machineState: MachineState.COMPLETED });
   const result = canTransition(cp, { type: "retry_wave", waveId: 1 });
   assertEquals(result.allowed, false);
 });
@@ -128,20 +184,24 @@ Deno.test("canTransition: retry_wave rejected in completed", () => {
 // transition tests
 // ---------------------------------------------------------------------------
 
-// Test 9: Full happy path through all states
-Deno.test("transition: happy path initializing -> dispatching -> completed", () => {
+// Test 9: Full happy path through all states (two-step plan approval)
+Deno.test("transition: happy path initializing -> plan_review -> dispatching -> completed", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp0 = createCheckpoint([], graph);
-  assertEquals(cp0.machineState, "initializing");
+  assertEquals(cp0.machineState, MachineState.INITIALIZING);
 
-  // plan_approved -> dispatching
-  const cp1 = transition(cp0, { type: "plan_approved" });
-  assertEquals(cp1.machineState, "dispatching");
+  // plan_submitted -> plan_review
+  const cp0b = transition(cp0, { type: "plan_submitted" });
+  assertEquals(cp0b.machineState, MachineState.PLAN_REVIEW);
+
+  // plan_finalized -> dispatching
+  const cp1 = transition(cp0b, { type: "plan_finalized" });
+  assertEquals(cp1.machineState, MachineState.DISPATCHING);
 
   // wave_dispatched
   const cp2 = transition(cp1, { type: "wave_dispatched", waveId: 1 });
   assertEquals(cp2.currentWaveId, 1);
-  assertEquals(cp2.machineState, "dispatching");
+  assertEquals(cp2.machineState, MachineState.DISPATCHING);
 
   // node_completed with PR
   const cp3 = transition(cp2, {
@@ -158,14 +218,64 @@ Deno.test("transition: happy path initializing -> dispatching -> completed", () 
 
   // wave_completed (last wave, no merge gate) -> completed
   const cp4 = transition(cp3, { type: "wave_completed", waveId: 1 });
-  assertEquals(cp4.machineState, "completed");
+  assertEquals(cp4.machineState, MachineState.COMPLETED);
+});
+
+// Test: plan_submitted: initializing → plan_review
+Deno.test("transition: plan_submitted initializing -> plan_review", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp0 = createCheckpoint([], graph);
+  const cp1 = transition(cp0, { type: "plan_submitted" });
+  assertEquals(cp1.machineState, MachineState.PLAN_REVIEW);
+});
+
+// Test: plan_finalized: plan_review → dispatching
+Deno.test("transition: plan_finalized plan_review -> dispatching", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = transition(cp, { type: "plan_finalized" });
+  assertEquals(result.machineState, MachineState.DISPATCHING);
+});
+
+// Test: plan_revision_requested: plan_review → initializing
+Deno.test("transition: plan_revision_requested plan_review -> initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = transition(cp, { type: "plan_revision_requested" });
+  assertEquals(result.machineState, MachineState.INITIALIZING);
+});
+
+// Test: Full cycle: initializing → plan_review → initializing → plan_review → dispatching
+Deno.test("transition: full revision cycle initializing -> plan_review -> initializing -> plan_review -> dispatching", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  assertEquals(cp.machineState, MachineState.INITIALIZING);
+
+  cp = transition(cp, { type: "plan_submitted" });
+  assertEquals(cp.machineState, MachineState.PLAN_REVIEW);
+
+  cp = transition(cp, { type: "plan_revision_requested" });
+  assertEquals(cp.machineState, MachineState.INITIALIZING);
+
+  cp = transition(cp, { type: "plan_submitted" });
+  assertEquals(cp.machineState, MachineState.PLAN_REVIEW);
+
+  cp = transition(cp, { type: "plan_finalized" });
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
+});
+
+// Test: cancel from plan_review → cancelled
+Deno.test("transition: cancel from plan_review -> cancelled", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW });
+  const result = transition(cp, { type: "cancel", reason: "changed mind" });
+  assertEquals(result.machineState, MachineState.CANCELLED);
+  assertEquals(result.cancellationReason, "changed mind");
 });
 
 // Test 10: Failure path -> failed state
 Deno.test("transition: failure path dispatching -> failed", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
   let cp = createCheckpoint([], graph);
-  cp = transition(cp, { type: "plan_approved" });
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
   cp = transition(cp, { type: "wave_dispatched", waveId: 1 });
   cp = transition(cp, {
     type: "node_failed",
@@ -178,14 +288,14 @@ Deno.test("transition: failure path dispatching -> failed", () => {
 
   // wave_failed -> failed machine state
   cp = transition(cp, { type: "wave_failed", waveId: 1 });
-  assertEquals(cp.machineState, "failed");
+  assertEquals(cp.machineState, MachineState.FAILED);
 });
 
 // Test 11: Retry path -> back to dispatching
 Deno.test("transition: retry_wave from failed -> dispatching", () => {
-  let cp = makeCheckpoint({ machineState: "failed" });
+  let cp = makeCheckpoint({ machineState: MachineState.FAILED });
   cp = transition(cp, { type: "retry_wave", waveId: 1 });
-  assertEquals(cp.machineState, "dispatching");
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
   assertEquals(cp.currentWaveId, 1);
 });
 
@@ -197,7 +307,7 @@ Deno.test("transition: wave_completed with merge gate -> gate_halted", () => {
     { id: 2, nodes: ["n2"], hasMergeGate: false },
   ];
   let cp = makeCheckpoint({
-    machineState: "dispatching",
+    machineState: MachineState.DISPATCHING,
     graph,
     waves,
     currentWaveId: 1,
@@ -205,7 +315,7 @@ Deno.test("transition: wave_completed with merge gate -> gate_halted", () => {
 
   // wave_completed on a non-final wave with hasMergeGate -> gate_halted
   cp = transition(cp, { type: "wave_completed", waveId: 1 });
-  assertEquals(cp.machineState, "gate_halted");
+  assertEquals(cp.machineState, MachineState.GATE_HALTED);
 });
 
 // Test 13: Final wave -> completed
@@ -216,7 +326,7 @@ Deno.test("transition: wave_completed on final wave -> completed", () => {
     { id: 2, nodes: ["n2"], hasMergeGate: false },
   ];
   let cp = makeCheckpoint({
-    machineState: "dispatching",
+    machineState: MachineState.DISPATCHING,
     graph,
     waves,
     currentWaveId: 2,
@@ -224,7 +334,7 @@ Deno.test("transition: wave_completed on final wave -> completed", () => {
 
   // wave_completed on the final wave (id 2) -> completed regardless of gate
   cp = transition(cp, { type: "wave_completed", waveId: 2 });
-  assertEquals(cp.machineState, "completed");
+  assertEquals(cp.machineState, MachineState.COMPLETED);
 });
 
 // Test 14: Partial failure in waveHistory
@@ -232,14 +342,14 @@ Deno.test("transition: partial failure recorded in waveHistory", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
   const waves: Wave[] = [{ id: 1, nodes: ["n1", "n2"], hasMergeGate: false }];
   let cp = makeCheckpoint({
-    machineState: "dispatching",
+    machineState: MachineState.DISPATCHING,
     graph,
     waves,
     currentWaveId: 1,
     waveHistory: [
       {
         waveId: 1,
-        status: "partial_failure",
+        status: WaveResultStatus.PARTIAL_FAILURE,
         completedNodes: ["n1"],
         failedNodes: ["n2"],
         prs: [],
@@ -252,7 +362,7 @@ Deno.test("transition: partial failure recorded in waveHistory", () => {
   assertEquals(cp.graph.nodes["n2"].status, NodeStatus.FAILED);
   assertEquals(cp.graph.nodes["n2"].failureReason, "Timeout");
   // waveHistory is preserved
-  assertEquals(cp.waveHistory[0].status, "partial_failure");
+  assertEquals(cp.waveHistory[0].status, WaveResultStatus.PARTIAL_FAILURE);
   assertEquals(cp.waveHistory[0].failedNodes, ["n2"]);
 });
 
@@ -262,7 +372,8 @@ Deno.test("transition: node_completed for repo-less → DONE", () => {
   // Remove repo from node
   delete (graph.nodes["n1"] as Partial<Node>).repo;
   let cp = createCheckpoint([], graph);
-  cp = transition(cp, { type: "plan_approved" });
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
   cp = transition(cp, { type: "wave_dispatched", waveId: 1 });
   cp = transition(cp, { type: "node_completed", nodeId: "n1" });
   assertEquals(cp.graph.nodes["n1"].status, NodeStatus.DONE);
@@ -383,78 +494,80 @@ Deno.test("pendingGates: returns empty array when no current wave", () => {
 
 // Test 23: cancel allowed from initializing
 Deno.test("canTransition: cancel allowed from initializing", () => {
-  const cp = makeCheckpoint({ machineState: "initializing" });
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 24: cancel allowed from dispatching
 Deno.test("canTransition: cancel allowed from dispatching", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 25: cancel allowed from gate_halted
 Deno.test("canTransition: cancel allowed from gate_halted", () => {
-  const cp = makeCheckpoint({ machineState: "gate_halted" });
+  const cp = makeCheckpoint({ machineState: MachineState.GATE_HALTED });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 26: cancel allowed from refining
 Deno.test("canTransition: cancel allowed from refining", () => {
-  const cp = makeCheckpoint({ machineState: "refining" });
+  const cp = makeCheckpoint({ machineState: MachineState.REFINING });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 27: cancel allowed from failed
 Deno.test("canTransition: cancel allowed from failed", () => {
-  const cp = makeCheckpoint({ machineState: "failed" });
+  const cp = makeCheckpoint({ machineState: MachineState.FAILED });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result, { allowed: true });
 });
 
 // Test 28: cancel rejected from completed
 Deno.test("canTransition: cancel rejected from completed", () => {
-  const cp = makeCheckpoint({ machineState: "completed" });
+  const cp = makeCheckpoint({ machineState: MachineState.COMPLETED });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result.allowed, false);
 });
 
 // Test 29: cancel rejected from cancelled
 Deno.test("canTransition: cancel rejected from cancelled", () => {
-  const cp = makeCheckpoint({ machineState: "cancelled" });
+  const cp = makeCheckpoint({ machineState: MachineState.CANCELLED });
   const result = canTransition(cp, { type: "cancel" });
   assertEquals(result.allowed, false);
 });
 
 // Test 30: transition cancel from dispatching sets cancelled state and fields
 Deno.test("transition: cancel from dispatching sets machineState, cancellationReason, cancelledAt", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
   const result = transition(cp, {
     type: "cancel",
     reason: "user requested cancellation",
   });
-  assertEquals(result.machineState, "cancelled");
+  assertEquals(result.machineState, MachineState.CANCELLED);
   assertEquals(result.cancellationReason, "user requested cancellation");
   assertEquals(typeof result.cancelledAt, "string");
 });
 
 // Test 31: transition cancel without reason leaves cancellationReason undefined
 Deno.test("transition: cancel without reason — cancellationReason is undefined", () => {
-  const cp = makeCheckpoint({ machineState: "dispatching" });
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
   const result = transition(cp, { type: "cancel" });
-  assertEquals(result.machineState, "cancelled");
+  assertEquals(result.machineState, MachineState.CANCELLED);
   assertEquals(result.cancellationReason, undefined);
 });
 
 // Test 32: no transitions out of cancelled — all event types rejected
 Deno.test("canTransition: no transitions allowed out of cancelled state", () => {
-  const cp = makeCheckpoint({ machineState: "cancelled" });
+  const cp = makeCheckpoint({ machineState: MachineState.CANCELLED });
   const events: Event[] = [
-    { type: "plan_approved" },
+    { type: "plan_submitted" },
+    { type: "plan_finalized" },
+    { type: "plan_revision_requested" },
     { type: "wave_dispatched", waveId: 1 },
     { type: "node_completed", nodeId: "n1" },
     { type: "node_failed", nodeId: "n1", reason: "err" },
@@ -505,7 +618,7 @@ Deno.test("createCheckpoint: empty repos valid", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp = createCheckpoint([], graph);
   assertEquals(cp.repos, []);
-  assertEquals(cp.machineState, "initializing");
+  assertEquals(cp.machineState, MachineState.INITIALIZING);
 });
 
 // ---------------------------------------------------------------------------
@@ -555,7 +668,8 @@ Deno.test("serialize/deserialize: round trip with session and cancel fields surv
     sessionId: "trimatrix-2026-01-01-abcd",
     sessionLabel: "test session",
   });
-  cp = transition(cp, { type: "plan_approved" });
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
   cp = transition(cp, { type: "cancel", reason: "operator override" });
 
   const json = serialize(cp);
@@ -564,7 +678,7 @@ Deno.test("serialize/deserialize: round trip with session and cancel fields surv
   assertEquals(restored.sessionId, "trimatrix-2026-01-01-abcd");
   assertEquals(restored.sessionLabel, "test session");
   assertEquals(restored.cancellationReason, "operator override");
-  assertEquals(restored.machineState, "cancelled");
+  assertEquals(restored.machineState, MachineState.CANCELLED);
 });
 
 // Test: deserialize 1.2.0 backward compat
@@ -584,7 +698,7 @@ Deno.test("deserialize: 1.2.0 backward compat", () => {
   };
   const cp = deserialize(JSON.stringify(raw));
   assertEquals(cp.version, "1.2.0");
-  assertEquals(cp.machineState, "dispatching");
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
   assertEquals(cp.repos, []);
 });
 
@@ -671,7 +785,7 @@ Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", (
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.1.0");
+  assertEquals(restored.version, "2.2.0");
 });
 
 // ---------------------------------------------------------------------------
@@ -688,7 +802,7 @@ Deno.test("transition: gate_cleared with response stores elicitResponse", () => 
   ]);
   const waves: Wave[] = [{ id: 1, nodes: ["g1"], hasMergeGate: false }];
   const cp = makeCheckpoint({
-    machineState: "gate_halted",
+    machineState: MachineState.GATE_HALTED,
     graph,
     waves,
     currentWaveId: 1,
@@ -705,7 +819,7 @@ Deno.test("transition: gate_cleared with response stores elicitResponse", () => 
     approach: "option-a",
     notes: "simpler",
   });
-  assertEquals(result.machineState, "dispatching");
+  assertEquals(result.machineState, MachineState.DISPATCHING);
 });
 
 Deno.test("transition: gate_cleared without response does not set elicitResponse", () => {
@@ -714,7 +828,7 @@ Deno.test("transition: gate_cleared without response does not set elicitResponse
   ]);
   const waves: Wave[] = [{ id: 1, nodes: ["g1"], hasMergeGate: false }];
   const cp = makeCheckpoint({
-    machineState: "gate_halted",
+    machineState: MachineState.GATE_HALTED,
     graph,
     waves,
     currentWaveId: 1,
