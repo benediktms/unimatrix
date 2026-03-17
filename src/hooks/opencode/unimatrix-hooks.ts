@@ -1,7 +1,7 @@
 /**
  * unimatrix hooks for OpenCode
  *
- * Tier 1: track-cost, warn-compaction, checkpoint-state
+ * Tier 1: track-cost, warn-compaction
  *
  * See src/hooks/SPEC.md for the shared logic specification.
  * This is the OpenCode equivalent of the Claude Code Python hooks.
@@ -234,62 +234,6 @@ export const unimatrixHooks: Plugin = async ({ $, directory }) => {
         } catch {
           // Silently ignore parse errors — not all task results have token data
         }
-      }
-    },
-
-    // -----------------------------------------------------------------
-    // event — checkpoint on compaction
-    // -----------------------------------------------------------------
-    event: async ({ event }: { event: { type: string; [key: string]: any } }) => {
-      if (event.type !== "session.compacting") return
-
-      try {
-        // Read sibling state
-        const costs = readState<CostState>("costs", sessionId, { ...EMPTY_COST })
-        const tokens = readState<TokenState>("tokens", sessionId, { ...EMPTY_TOKENS })
-
-        // Query brain for active tasks
-        let tasksMarkdown = ""
-        try {
-          const result = await $`brain tasks list --status=open --format=markdown 2>/dev/null`.text()
-          tasksMarkdown = result.trim()
-        } catch {
-          tasksMarkdown = "_Could not query brain tasks_"
-        }
-
-        // Build checkpoint markdown
-        const checkpoint = [
-          "# Compaction Checkpoint",
-          "",
-          `**Session**: ${sessionId}`,
-          `**Time**: ${new Date().toISOString()}`,
-          `**Estimated tokens used**: ${tokens.estimated_tokens}`,
-          "",
-          "## Active Tasks",
-          "",
-          tasksMarkdown || "_No active tasks_",
-          "",
-          "## Session Stats",
-          "",
-          `- **Total subagent cost**: $${costs.total_subagent_cost_usd.toFixed(4)}`,
-          `- **Agents dispatched**: ${Object.keys(costs.agents).length}`,
-          `- **By type**: ${Object.entries(costs.type_counts).map(([t, c]) => `${t}(${c})`).join(", ") || "none"}`,
-          "",
-          "## Resume",
-          "",
-          "Resume with the relevant task ID — dispatch Assimilation adjuncts for remaining tasks.",
-          "",
-        ].join("\n")
-
-        // Save as brain snapshot
-        try {
-          await $`brain records snapshot create --title "Compaction checkpoint" --tags compaction-checkpoint,session:${sessionId} --stdin <<< ${checkpoint} 2>/dev/null`
-        } catch {
-          // Fallback: write to temp file
-        }
-
-      } catch (err) {
-        console.error("[unimatrix] checkpoint-state error:", err)
       }
     },
   }

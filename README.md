@@ -332,7 +332,6 @@ Claude Code compacts (summarizes) the conversation when the context window fills
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `checkpoint-state.py` | PreCompact | Captures open tasks, active agents, and costs; saves as brain snapshot |
 | `warn-compaction.py` | PostToolUse | Estimates token usage and warns at 70%/85% thresholds before compaction hits |
 
 ### Other
@@ -421,7 +420,6 @@ unimatrix/
 │   │   └── token-economy.md      #   Token-efficient agent behavior
 │   ├── hooks/                    # Platform-specific event hooks
 │   │   ├── claude/               #   Python/Shell hooks (Claude Code)
-│   │   │   ├── checkpoint-state.py
 │   │   │   ├── warn-compaction.py
 │   │   │   ├── track-agents.py
 │   │   │   ├── track-cost.py
