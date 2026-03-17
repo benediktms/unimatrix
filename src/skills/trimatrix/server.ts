@@ -1702,39 +1702,37 @@ server.tool(
     // Persisted checkpoint sessions from brain
     try {
       const { stdout } = await execFileAsync("brain", [
-        "artifacts",
+        "snapshots",
         "list",
         "--tag",
         "trimatrix-checkpoint",
         "--json",
       ]);
+      const data = JSON.parse(stdout);
       const records: Array<{
-        recordId: string;
+        record_id: string;
         title: string;
-        updatedAt: string;
-        tags: string[];
-      }> = JSON.parse(stdout);
+        updated_at: number;
+      }> = data.snapshots ?? data;
 
-      // Group by trimatrix-session:* tag
+      // Group by session ID extracted from title prefix [session:<id>]
+      const sessionRe = /^\[session:([^\]]+)\]\s*/;
       const sessionMap = new Map<
         string,
         { recordId: string; title: string; updatedAt: string }[]
       >();
 
       for (const record of records) {
-        const sessionTag = record.tags?.find((t) =>
-          t.startsWith("trimatrix-session:")
-        );
-        const sessionKey = sessionTag
-          ? sessionTag.slice("trimatrix-session:".length)
-          : "untagged";
+        const match = record.title.match(sessionRe);
+        const sessionKey = match ? match[1] : "untagged";
+        const displayTitle = match ? record.title.slice(match[0].length) : record.title;
         if (!sessionMap.has(sessionKey)) {
           sessionMap.set(sessionKey, []);
         }
         sessionMap.get(sessionKey)!.push({
-          recordId: record.recordId,
-          title: record.title,
-          updatedAt: record.updatedAt,
+          recordId: record.record_id,
+          title: displayTitle,
+          updatedAt: new Date(record.updated_at * 1000).toISOString(),
         });
       }
 
@@ -2184,7 +2182,13 @@ server.tool(
 
       // Save brain snapshot
       const snapshotTags = ["trimatrix-checkpoint", "compaction-checkpoint"];
-      const parts = [`Compaction #${compactionNum}`];
+      if (checkpoint?.sessionId) {
+        snapshotTags.push(`trimatrix-session:${checkpoint.sessionId}`);
+      }
+
+      const parts: string[] = [];
+      if (checkpoint?.sessionLabel) parts.push(checkpoint.sessionLabel);
+      parts.push(`Compaction #${compactionNum}`);
       const counts: string[] = [];
       if (tasksInProgress.length > 0) counts.push(`${tasksInProgress.length} in-progress`);
       if (tasksOpen.length > 0) counts.push(`${tasksOpen.length} open`);
@@ -2192,7 +2196,11 @@ server.tool(
       if (counts.length > 0) parts.push(counts.join(", "));
       if (graphJson) parts.push("graph attached");
 
-      await saveBrainSnapshot(parts.join(" — "), snapshotTags, markdown);
+      // Encode sessionId in title for list-time grouping (list output lacks tags)
+      const titlePrefix = checkpoint?.sessionId ? `[session:${checkpoint.sessionId}] ` : "";
+      const title = titlePrefix + parts.join(" — ");
+
+      await saveBrainSnapshot(title, snapshotTags, markdown);
 
       result.capturedState = {
         tasksInProgress: tasksInProgress.length,
