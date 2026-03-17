@@ -337,7 +337,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 - Body is optional — use it for multi-line explanations when the "why" isn't obvious from the title
 - When making changes that affect documented surface area, **update AGENTS.md in the same commit**
 
-<!-- brain:start -->
+<!-- brain:start:e31e9d6b -->
 ## Build & Test
 
 ```bash
