@@ -833,7 +833,7 @@ server.tool(
   "dispatch_wave",
   "Activate all nodes in the specified wave and record it as the current wave.",
   {
-    waveId: z.number().int().describe("Wave index to dispatch"),
+    waveId: z.coerce.number().int().describe("Wave index to dispatch"),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -960,7 +960,7 @@ server.tool(
   {
     nodeId: z.string().describe("Node ID to complete"),
     prUrl: z.string().optional().describe("URL of the pull request, if any"),
-    prNumber: z.number().int().optional().describe(
+    prNumber: z.coerce.number().int().optional().describe(
       "Pull request number, if any",
     ),
   },
@@ -2253,7 +2253,7 @@ server.tool(
   "designate",
   "Generate Borg-style designations for one or more agents.",
   {
-    count: z.number().int().min(1).max(12).describe(
+    count: z.coerce.number().int().min(1).max(12).describe(
       "Number of agents to generate designations for (1–12)",
     ),
     role: z.nativeEnum(Role)
@@ -2262,7 +2262,7 @@ server.tool(
     trimatrix: z.boolean().optional().describe(
       "If true, use 'Trimatrix <random>' as unit instead of 'Unimatrix Zero'",
     ),
-    trimatrix_id: z.number().int().min(1).max(999).optional().describe(
+    trimatrix_id: z.coerce.number().int().min(1).max(999).optional().describe(
       "Pin a specific Trimatrix ID instead of generating a random one",
     ),
   },
