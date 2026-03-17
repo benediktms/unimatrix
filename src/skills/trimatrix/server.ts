@@ -24,7 +24,7 @@ import type {
   RepoMetadata,
 } from "./types.ts";
 import { approvalSchema, EdgeType, Executor, Intent, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
-import { designate, type Role } from "./designate.ts";
+import { designate, Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
@@ -1963,7 +1963,7 @@ server.tool(
     count: z.number().int().min(1).max(12).describe(
       "Number of agents to generate designations for (1–12)",
     ),
-    role: z.enum(["Assimilation", "Validation", "Reconnaissance", "TacticalAnalysis", "Closure"])
+    role: z.nativeEnum(Role)
       .optional()
       .describe("Agent role (determines Borg functional title)"),
     trimatrix: z.boolean().optional().describe(

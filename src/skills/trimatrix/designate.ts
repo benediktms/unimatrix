@@ -81,7 +81,7 @@ export function designate(
   trimatrix?: boolean,
   trimatrix_id?: number,
 ): DesignateResult {
-  const titleBase = ROLE_TITLES[role];
+  const titleBase = ROLE_TITLES[role] ?? ROLE_TITLES[Role.ADJUNCT];
   const uniqueOrdinals = role !== undefined && UNIQUE_ORDINAL_ROLES.has(role);
 
   let unit: string;

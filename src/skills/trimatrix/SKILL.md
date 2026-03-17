@@ -52,12 +52,12 @@ The classifier runs on every prompt. It determines **Intent** and **Tier** befor
 
 | Intent | T1 (SELF) | T2 (INDEPENDENT) | T3 (COORDINATED) |
 |---|---|---|---|
-| IMPLEMENT | Lead edits directly | Drone + Vinculum | Borg cube (partitioned) + compliance matrix |
-| INVESTIGATE | Lead reads/greps | Probe (single) | Borg sphere (Probe + Cortex) with team |
-| DIAGNOSE | Lead inspects | Vinculum (single hypothesis) | Vinculum team (adversarial, multi-hypothesis) |
-| ARCHITECT | Lead reasons | Cortex (single) | Vinculum (adversarial, multi-approach) with team |
-| REVIEW | Lead reads diff | Vinculum (single) | Compliance matrix (multi-Vinculum) with team |
-| REFACTOR | Lead edits | Drone + Vinculum | Swarm (partitioned Drones) + Vinculum |
+| IMPLEMENT | Lead edits directly | Assimilation + Tactical Analysis | Borg cube (partitioned) + compliance matrix |
+| INVESTIGATE | Lead reads/greps | Reconnaissance (single) | Borg sphere (Reconnaissance + Tactical Analysis) with team |
+| DIAGNOSE | Lead inspects | Tactical Analysis (single hypothesis) | Vinculum (adversarial, multi-hypothesis) |
+| ARCHITECT | Lead reasons | Tactical Analysis (single) | Vinculum (adversarial, multi-approach) with team |
+| REVIEW | Lead reads diff | Validation (single) | Compliance matrix (multi-Validation) with team |
+| REFACTOR | Lead edits | Assimilation + Tactical Analysis | Swarm (partitioned Assimilation) + Tactical Analysis |
 
 ### Auto-Graph Entry
 
@@ -135,7 +135,7 @@ These protocols are defined once here. Mode files reference them by name.
 
 Call `mcp__unimatrix__designate` with:
 - `count` — number of agents to designate
-- `role` — one of: `Drone`, `Vinculum`, `Probe`, `Cortex`, `Subroutine`
+- `role` — one of: `ASSIMILATION`, `VALIDATION`, `RECONNAISSANCE`, `TACTICAL_ANALYSIS`, `CLOSURE`
 - `trimatrix: true` — required for all spawned agents
 
 Assign returned designations to the Agent `name` and `description` fields.
