@@ -346,6 +346,22 @@ just test      # Test
 just build     # Build
 ```
 
+## Crate Architecture
+
+The workspace has three crates:
+
+- `cli` — Binary crate. Depends on `brain_lib`.
+- `brain_lib` — Application logic: pipelines, MCP server, ranking, parsing. Depends on `brain_persistence`.
+- `brain_persistence` — Concrete persistence: SQLite (connection pool, schema, migrations), LanceDB (vector store, optimize scheduler).
+
+### Dependency rules
+
+- `brain_lib` must NOT depend on `lancedb`, `arrow-schema`, or `arrow-array` directly — enforced by `just check-deps`
+- `brain_lib` defines persistence port traits in `brain_lib::ports` (13 traits covering LanceDB and SQLite operations)
+- Trait implementations live in `brain_lib::ports` (impl blocks for concrete types from `brain_persistence`)
+- Schema migrations live in `brain_persistence`
+- Pipelines are generic over store and DB types: `IndexPipeline<S = Store>`, `QueryPipeline<'a, S = StoreReader, D = Db>`
+
 ## Task Management
 
 This project uses `brain` for task tracking. **Always use MCP tools for task operations** — they provide structured responses and are the canonical interface for AI agents. CLI commands exist for human terminal use only.
@@ -356,10 +372,10 @@ When running as an MCP server (`brain mcp`), these tools are available:
 
 **Task tools:**
 - `tasks_apply_event` — Single tool for all task mutations. Event types: `task_created`, `task_updated`, `status_changed`, `dependency_added`, `dependency_removed`, `comment_added`, `label_added`, `label_removed`, `note_linked`, `note_unlinked`, `parent_set`. Accepts task ID as full ID or unique prefix (e.g. `BRN-01JPH`).
-- `tasks_create` — Create a task with a flat schema (no event envelope). Required param: `title`. Optional: `description`, `priority` (0-4, default 4), `task_type` (task|bug|feature|epic|spike), `assignee`, `parent` (task ID prefix), `due_ts` (ISO 8601), `defer_until` (ISO 8601), `actor` (default: mcp). Returns `{task_id, task, unblocked_task_ids}`.
-- `tasks_list` — List tasks filtered by status: `open` (default, excludes done), `ready` (no unresolved deps), `blocked` (has unresolved deps), `done`. Supports `task_ids` array for batch lookup, `limit` for pagination, `include_description` flag, and per-field filters: `priority` (0-4), `task_type`, `assignee`, `label`, `search` (FTS5 full-text search on title+description).
+- `tasks_create` — Create a task with a flat schema (no event envelope). Required param: `title`. Optional: `description`, `priority` (0-4, default 4), `task_type` (task|bug|feature|epic|spike), `assignee`, `parent` (task ID prefix), `due_ts` (ISO 8601), `defer_until` (ISO 8601), `actor` (default: mcp). For remote creation: add `brain` (target brain name or ID from registry); optionally `link_from` (local task ID) and `link_type` (depends_on|blocks|related, default: related). Returns `{task_id, task, unblocked_task_ids}` for local creation, or `{remote_task_id, remote_brain_name, remote_brain_id, local_ref_created}` for remote creation.
+- `tasks_list` — List tasks filtered by status: `open` (default, excludes done), `ready` (no unresolved deps), `blocked` (has unresolved deps), `done`, `in_progress` (exact match), `cancelled` (exact match). Supports `task_ids` array for batch lookup, `limit` for pagination, `include_description` flag, and per-field filters: `priority` (0-4), `task_type`, `assignee`, `label`, `search` (FTS5 full-text search on title+description).
 - `tasks_get` — Get full task details including relationships, comments, labels, and linked notes. Use `expand` parameter (`parent`, `children`, `blocked_by`, `blocks`) to inline related task objects.
-- `tasks_next` — Get highest-priority ready tasks sorted by priority then due date. Use for "what should I work on?" queries.
+- `tasks_next` — Get highest-priority ready tasks sorted by status (in-progress first), then priority, then due date. Use for "what should I work on?" queries.
 - `tasks_close` — Close one or more tasks by ID/prefix. Accepts a single string or array of task IDs. Returns closed tasks and newly unblocked task IDs.
 - `tasks_labels_summary` — Get all unique labels with counts and associated task IDs (short prefixes). No parameters. Use for label discovery and taxonomy overview.
 - `tasks_labels_batch` — Batch label operations. Actions: `add` (label + task_ids), `remove` (label + task_ids), `rename` (old_label + new_label), `purge` (label). Returns succeeded/failed/summary.
@@ -406,10 +422,6 @@ brain tasks show <id>          # Detailed task view
 brain tasks create --title="..." --description="..." --task-type=task --priority=2
 brain tasks update <id> --status=in_progress
 brain tasks comment <id> "comment text"
-
-# Cross-brain task creation
-brain tasks create --title="..." --brain=<NAME_OR_ID>          # Create in another brain
-brain tasks create --title="..." --brain=infra --link-from=BRN-01X --link-type=related  # Create + auto-link
 
 # Registry
 brain list                     # List registered brains

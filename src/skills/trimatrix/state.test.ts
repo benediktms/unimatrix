@@ -19,7 +19,7 @@ import {
   serialize,
   transition,
 } from "./state.ts";
-import { EdgeType, NodeStatus, NodeType } from "./types.ts";
+import { EdgeType, Executor, Intent, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
 import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,7 @@ function makeNode(id: string, overrides: Partial<Node> = {}): Node {
     label: `Node ${id}`,
     worktreeBranch: `trimatrix/${id}`,
     status: NodeStatus.PENDING,
+    executor: Executor.LEAD,
     ...overrides,
   };
 }
@@ -585,4 +586,90 @@ Deno.test("deserialize: 1.2.0 backward compat", () => {
   assertEquals(cp.version, "1.2.0");
   assertEquals(cp.machineState, "dispatching");
   assertEquals(cp.repos, []);
+});
+
+// ---------------------------------------------------------------------------
+// 2.0.0 — intent, tier, subgraphs
+// ---------------------------------------------------------------------------
+
+Deno.test("createCheckpoint: stores intent, tier, subgraphStrategy", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph, {
+    intent: Intent.IMPLEMENT,
+    tier: Tier.T2,
+    subgraphStrategy: SubgraphStrategy.INDEPENDENT,
+  });
+  assertEquals(cp.intent, Intent.IMPLEMENT);
+  assertEquals(cp.tier, Tier.T2);
+  assertEquals(cp.subgraphStrategy, SubgraphStrategy.INDEPENDENT);
+  assertEquals(cp.subgraphs, []);
+});
+
+Deno.test("createCheckpoint: without intent/tier — fields undefined", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph);
+  assertEquals(cp.intent, undefined);
+  assertEquals(cp.tier, undefined);
+  assertEquals(cp.subgraphStrategy, undefined);
+  assertEquals(cp.subgraphs, []);
+});
+
+Deno.test("deserialize: pre-2.0.0 checkpoint defaults subgraphs to []", () => {
+  const raw = {
+    version: "1.3.0",
+    machineState: "initializing",
+    graph: { nodes: { n1: makeNode("n1") }, edges: [] },
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.subgraphs, []);
+});
+
+Deno.test("deserialize: pre-2.0.0 checkpoint backfills executor on nodes", () => {
+  // Simulate a 1.3.0 checkpoint with nodes lacking executor
+  const nodeWithoutExecutor = {
+    id: "n1",
+    repo: "test-repo",
+    type: NodeType.IMPLEMENTATION,
+    label: "Node n1",
+    worktreeBranch: "trimatrix/n1",
+    status: NodeStatus.PENDING,
+    // no executor field
+  };
+  const raw = {
+    version: "1.3.0",
+    machineState: "initializing",
+    graph: { nodes: { n1: nodeWithoutExecutor }, edges: [] },
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.graph.nodes.n1.executor, Executor.LEAD);
+});
+
+Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph, {
+    intent: Intent.INVESTIGATE,
+    tier: Tier.T3,
+    subgraphStrategy: SubgraphStrategy.COORDINATED,
+  });
+  const json = serialize(cp);
+  const restored = deserialize(json);
+  assertEquals(restored.intent, Intent.INVESTIGATE);
+  assertEquals(restored.tier, Tier.T3);
+  assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
+  assertEquals(restored.subgraphs, []);
+  assertEquals(restored.version, "2.0.0");
 });

@@ -288,9 +288,6 @@ export const unimatrixHooks: Plugin = async ({ $, directory }) => {
           // Fallback: write to temp file
         }
 
-        // Write to temp for injection
-        const checkpointPath = join(tmpdir(), `unimatrix-checkpoint-${sessionId}.md`)
-        writeFileSync(checkpointPath, checkpoint)
       } catch (err) {
         console.error("[unimatrix] checkpoint-state error:", err)
       }

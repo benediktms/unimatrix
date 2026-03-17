@@ -5,8 +5,8 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { Edge, Graph, Node, Wave } from "./types.ts";
-import { EdgeType, NodeStatus } from "./types.ts";
+import type { CoordinationContract, Edge, Graph, Node, Subgraph, Wave } from "./types.ts";
+import { CoordinationMode, EdgeType, Executor, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Refinement mutation result
@@ -636,4 +636,405 @@ export function waveStatus(
   if (hasActive) return "active";
 
   return "pending";
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph computation
+// ---------------------------------------------------------------------------
+
+/** Read-only node types that never modify files. */
+const READ_ONLY_NODE_TYPES: NodeType[] = [
+  NodeType.RECON,
+  NodeType.VALIDATION,
+  NodeType.DIAGNOSIS,
+  NodeType.ANALYSIS,
+];
+
+/**
+ * Find connected components among a set of node IDs using the given edges.
+ * Returns an array of arrays, each containing the node IDs in one component.
+ */
+function connectedComponents(nodeIds: string[], edges: Edge[]): string[][] {
+  const parent = new Map<string, string>();
+  const nodeSet = new Set(nodeIds);
+
+  for (const id of nodeIds) parent.set(id, id);
+
+  function find(x: string): string {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    // Path compression
+    let cur = x;
+    while (cur !== root) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  }
+
+  function union(a: string, b: string): void {
+    parent.set(find(a), find(b));
+  }
+
+  for (const edge of edges) {
+    if (nodeSet.has(edge.from) && nodeSet.has(edge.to)) {
+      union(edge.from, edge.to);
+    }
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const id of nodeIds) {
+    const root = find(id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(id);
+  }
+
+  return [...groups.values()];
+}
+
+/**
+ * Topologically sort a subset of nodes given only intra-subset edges.
+ * Returns node IDs in dependency order.
+ */
+function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
+  const nodeSet = new Set(nodeIds);
+  const relevant = edges.filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to));
+
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  for (const id of nodeIds) {
+    inDegree.set(id, 0);
+    adj.set(id, []);
+  }
+  for (const e of relevant) {
+    adj.get(e.from)!.push(e.to);
+    inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
+  }
+
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    sorted.push(cur);
+    for (const nb of adj.get(cur) ?? []) {
+      const nd = (inDegree.get(nb) ?? 0) - 1;
+      inDegree.set(nb, nd);
+      if (nd === 0) queue.push(nb);
+    }
+  }
+
+  return sorted;
+}
+
+/**
+ * Extract `exports:<path>` and `imports:<path>` from node tags.
+ */
+function extractTaggedPaths(
+  graph: Graph,
+  nodeIds: string[],
+  prefix: string,
+): string[] {
+  const paths: string[] = [];
+  for (const id of nodeIds) {
+    const tags = graph.nodes[id]?.tags ?? [];
+    for (const tag of tags) {
+      if (tag.startsWith(`${prefix}:`)) {
+        paths.push(tag.slice(prefix.length + 1));
+      }
+    }
+  }
+  return [...new Set(paths)];
+}
+
+/**
+ * Compute subgraph partitions from the supergraph based on tier and strategy.
+ *
+ * - SELF: single subgraph containing all nodes, assigned to LEAD.
+ * - INDEPENDENT: adjunct nodes partitioned by connected component; lead nodes
+ *   form a single lead subgraph. VERIFY_COMPILE attaches to predecessor's subgraph.
+ * - COORDINATED: same partitioning as INDEPENDENT with coordination contracts.
+ */
+export function computeSubgraphs(
+  graph: Graph,
+  _waves: Wave[],
+  tier: Tier,
+  strategy: SubgraphStrategy,
+): Subgraph[] {
+  const allNodeIds = Object.keys(graph.nodes);
+  if (allNodeIds.length === 0) return [];
+
+  if (strategy === SubgraphStrategy.SELF) {
+    const sorted = topoSortSubset(allNodeIds, graph.edges);
+    return [{
+      id: "sg-lead",
+      nodes: sorted,
+      edges: [...graph.edges],
+      assignee: "LEAD",
+      executor: Executor.LEAD,
+      tier,
+      coordination: { mode: CoordinationMode.NONE },
+    }];
+  }
+
+  // Partition nodes by executor
+  const adjunctNodeIds: string[] = [];
+  const leadNodeIds: string[] = [];
+  const verifyCompileIds: string[] = [];
+
+  for (const id of allNodeIds) {
+    const node = graph.nodes[id];
+    if (node.type === NodeType.VERIFY_COMPILE) {
+      verifyCompileIds.push(id);
+    } else if (node.executor === Executor.ADJUNCT) {
+      adjunctNodeIds.push(id);
+    } else {
+      leadNodeIds.push(id);
+    }
+  }
+
+  // Build a map of DEPENDS_ON predecessors for VERIFY_COMPILE nodes
+  const verifyPredecessor = new Map<string, string>();
+  for (const vc of verifyCompileIds) {
+    for (const edge of graph.edges) {
+      if (edge.to === vc && edge.type === EdgeType.DEPENDS_ON) {
+        verifyPredecessor.set(vc, edge.from);
+        break;
+      }
+    }
+  }
+
+  // Find connected components among adjunct nodes
+  const adjunctEdges = graph.edges.filter(
+    (e) => adjunctNodeIds.includes(e.from) && adjunctNodeIds.includes(e.to),
+  );
+  const components = connectedComponents(adjunctNodeIds, adjunctEdges);
+
+  // Build a lookup: nodeId -> component index
+  const nodeToComponent = new Map<string, number>();
+  for (let i = 0; i < components.length; i++) {
+    for (const id of components[i]) {
+      nodeToComponent.set(id, i);
+    }
+  }
+
+  // Assign VERIFY_COMPILE nodes to their predecessor's component
+  for (const vc of verifyCompileIds) {
+    const pred = verifyPredecessor.get(vc);
+    if (pred !== undefined && nodeToComponent.has(pred)) {
+      const compIdx = nodeToComponent.get(pred)!;
+      components[compIdx].push(vc);
+      nodeToComponent.set(vc, compIdx);
+    } else {
+      // No adjunct predecessor — assign to lead
+      leadNodeIds.push(vc);
+    }
+  }
+
+  const subgraphs: Subgraph[] = [];
+
+  // Lead subgraph
+  if (leadNodeIds.length > 0) {
+    const leadEdges = graph.edges.filter(
+      (e) => leadNodeIds.includes(e.from) && leadNodeIds.includes(e.to),
+    );
+    const sorted = topoSortSubset(leadNodeIds, leadEdges);
+    subgraphs.push({
+      id: "sg-lead",
+      nodes: sorted,
+      edges: leadEdges,
+      assignee: "LEAD",
+      executor: Executor.LEAD,
+      tier,
+      coordination: { mode: CoordinationMode.NONE },
+    });
+  }
+
+  // Adjunct subgraphs (one per connected component)
+  for (let i = 0; i < components.length; i++) {
+    const compNodes = components[i];
+    if (compNodes.length === 0) continue;
+
+    const compSet = new Set(compNodes);
+    const compEdges = graph.edges.filter(
+      (e) => compSet.has(e.from) && compSet.has(e.to),
+    );
+    const sorted = topoSortSubset(compNodes, compEdges);
+
+    const sgId = `sg-${i + 1}`;
+
+    // Determine coordination mode
+    let coordination: CoordinationContract;
+    if (strategy === SubgraphStrategy.COORDINATED) {
+      const isReadOnly = compNodes.every((id) => {
+        const node = graph.nodes[id];
+        return READ_ONLY_NODE_TYPES.includes(node.type) ||
+          node.type === NodeType.VERIFY_COMPILE;
+      });
+
+      // Find inter-subgraph dependencies
+      const dependsOn: string[] = [];
+      for (const edge of graph.edges) {
+        if (compSet.has(edge.to) && !compSet.has(edge.from)) {
+          // Find which subgraph the source belongs to
+          const srcComp = nodeToComponent.get(edge.from);
+          if (srcComp !== undefined) {
+            const depSgId = `sg-${srcComp + 1}`;
+            if (!dependsOn.includes(depSgId)) dependsOn.push(depSgId);
+          } else if (leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")) {
+            dependsOn.push("sg-lead");
+          }
+        }
+      }
+
+      coordination = {
+        mode: isReadOnly ? CoordinationMode.ADVERSARIAL : CoordinationMode.PARTITIONED,
+        ...(dependsOn.length > 0 ? { dependsOn } : {}),
+        exports: extractTaggedPaths(graph, compNodes, "exports"),
+        imports: extractTaggedPaths(graph, compNodes, "imports"),
+      };
+      // Clean empty arrays
+      if (coordination.exports!.length === 0) delete coordination.exports;
+      if (coordination.imports!.length === 0) delete coordination.imports;
+    } else {
+      coordination = { mode: CoordinationMode.PARTITIONED };
+    }
+
+    subgraphs.push({
+      id: sgId,
+      nodes: sorted,
+      edges: compEdges,
+      assignee: "",  // Populated by caller after designation generation
+      executor: Executor.ADJUNCT,
+      tier,
+      coordination,
+    });
+  }
+
+  return subgraphs;
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph brief serialization
+// ---------------------------------------------------------------------------
+
+/**
+ * Serialize a subgraph into a markdown dispatch brief for an adjunct.
+ * The brief is the strict execution contract — the adjunct traverses nodes in order.
+ */
+export function serializeSubgraphBrief(
+  graph: Graph,
+  subgraph: Subgraph,
+): string {
+  const lines: string[] = [];
+
+  lines.push(`## Subgraph: ${subgraph.id}`);
+  lines.push(`Assignee: ${subgraph.assignee}`);
+  lines.push(`Executor: ${subgraph.executor}`);
+  lines.push(`Coordination: ${subgraph.coordination.mode}`);
+  lines.push("");
+
+  lines.push("### Traversal Order");
+  for (let i = 0; i < subgraph.nodes.length; i++) {
+    const nodeId = subgraph.nodes[i];
+    const node = graph.nodes[nodeId];
+    if (node) {
+      lines.push(`${i + 1}. [${node.type}] ${node.label} (node: ${nodeId})`);
+    }
+  }
+  lines.push("");
+
+  const coord = subgraph.coordination;
+  if (
+    coord.mode !== CoordinationMode.NONE &&
+    (coord.dependsOn?.length || coord.exports?.length || coord.imports?.length)
+  ) {
+    lines.push("### Coordination Contract");
+    if (coord.exports?.length) {
+      lines.push(`- Exports: ${coord.exports.join(", ")}`);
+    }
+    if (coord.imports?.length) {
+      lines.push(`- Imports: ${coord.imports.join(", ")}`);
+    }
+    if (coord.dependsOn?.length) {
+      lines.push(`- Depends on: ${coord.dependsOn.join(", ")}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Wave parallelism analysis
+// ---------------------------------------------------------------------------
+
+/**
+ * Group nodes within a wave into parallel execution batches.
+ *
+ * Nodes connected by STACKED edges within the wave must execute sequentially.
+ * Independent nodes form parallel groups. Returns an array of batches — each
+ * batch contains node IDs that can execute simultaneously.
+ */
+export function parallelNodesInWave(
+  graph: Graph,
+  wave: Wave,
+): string[][] {
+  if (wave.nodes.length === 0) return [];
+
+  const waveSet = new Set(wave.nodes);
+
+  // Find STACKED chains within this wave
+  const stackedEdges = graph.edges.filter(
+    (e) =>
+      e.type === EdgeType.STACKED &&
+      waveSet.has(e.from) &&
+      waveSet.has(e.to),
+  );
+
+  if (stackedEdges.length === 0) {
+    // All nodes are independent — single parallel batch
+    return [wave.nodes];
+  }
+
+  // Build adjacency for stacked chains
+  const adj = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+  for (const id of wave.nodes) {
+    adj.set(id, []);
+    inDegree.set(id, 0);
+  }
+  for (const e of stackedEdges) {
+    adj.get(e.from)!.push(e.to);
+    inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
+  }
+
+  // Find connected components to identify independent chains
+  const components = connectedComponents(wave.nodes, stackedEdges);
+
+  // For each component, topologically sort to get sequential order
+  // Components of size 1 are fully independent
+  const batches: string[][] = [];
+  const independentNodes: string[] = [];
+
+  for (const comp of components) {
+    if (comp.length === 1) {
+      independentNodes.push(comp[0]);
+    } else {
+      // This is a stacked chain — must be sequential
+      const sorted = topoSortSubset(comp, stackedEdges);
+      batches.push(sorted);
+    }
+  }
+
+  // All independent nodes form one parallel batch
+  if (independentNodes.length > 0) {
+    batches.unshift(independentNodes);
+  }
+
+  return batches;
 }

@@ -13,14 +13,17 @@ import {
   addNode,
   clearGate,
   completeNode,
+  computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
   failNode,
   nextWave,
+  parallelNodesInWave,
+  serializeSubgraphBrief,
   validate,
   waveStatus,
 } from "./graph.ts";
-import { EdgeType, NodeStatus, NodeType } from "./types.ts";
+import { CoordinationMode, EdgeType, Executor, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
 import type { Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +38,7 @@ function makeNode(overrides: Partial<Node> = {}): Node {
     label: "Node",
     worktreeBranch: "trimatrix/n",
     status: NodeStatus.PENDING,
+    executor: Executor.LEAD,
     ...overrides,
   };
 }
@@ -811,4 +815,177 @@ Deno.test("computeWavesFromRefinement: DONE nodes also excluded", () => {
   const waves = computeWavesFromRefinement(g, 0);
   assertEquals(waves.length, 1);
   assertEquals(waves[0].nodes, ["B"]);
+});
+
+// ---------------------------------------------------------------------------
+// computeSubgraphs
+// ---------------------------------------------------------------------------
+
+Deno.test("computeSubgraphs: SELF returns single subgraph with all nodes", () => {
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+  ]);
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T1, SubgraphStrategy.SELF);
+  assertEquals(sgs.length, 1);
+  assertEquals(sgs[0].id, "sg-lead");
+  assertEquals(sgs[0].executor, Executor.LEAD);
+  assertEquals(sgs[0].assignee, "LEAD");
+  assertEquals(sgs[0].coordination.mode, CoordinationMode.NONE);
+  assertEquals(sgs[0].nodes.length, 2);
+});
+
+Deno.test("computeSubgraphs: INDEPENDENT partitions adjunct and lead nodes", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", executor: Executor.ADJUNCT }),
+      makeNode({ id: "B", executor: Executor.ADJUNCT }),
+      makeNode({ id: "C", executor: Executor.LEAD, type: NodeType.VERIFY_TEST }),
+    ],
+    // Connect A and B so they form one component
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
+
+  const leadSg = sgs.find((s) => s.id === "sg-lead");
+  const adjunctSg = sgs.find((s) => s.id === "sg-1");
+  assertEquals(leadSg !== undefined, true);
+  assertEquals(adjunctSg !== undefined, true);
+  assertEquals(leadSg!.executor, Executor.LEAD);
+  assertEquals(adjunctSg!.executor, Executor.ADJUNCT);
+  assertEquals(leadSg!.nodes.includes("C"), true);
+  assertEquals(adjunctSg!.nodes.includes("A"), true);
+  assertEquals(adjunctSg!.nodes.includes("B"), true);
+});
+
+Deno.test("computeSubgraphs: INDEPENDENT keeps VERIFY_COMPILE with adjunct predecessor", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "impl", executor: Executor.ADJUNCT }),
+      makeNode({ id: "vc", executor: Executor.LEAD, type: NodeType.VERIFY_COMPILE }),
+      makeNode({ id: "test", executor: Executor.LEAD, type: NodeType.VERIFY_TEST }),
+    ],
+    [{ from: "impl", to: "vc", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
+
+  const adjunctSg = sgs.find((s) => s.executor === Executor.ADJUNCT);
+  const leadSg = sgs.find((s) => s.id === "sg-lead");
+  assertEquals(adjunctSg!.nodes.includes("vc"), true);
+  assertEquals(leadSg!.nodes.includes("test"), true);
+  assertEquals(leadSg!.nodes.includes("vc"), false);
+});
+
+Deno.test("computeSubgraphs: INDEPENDENT separates disconnected adjunct components", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", executor: Executor.ADJUNCT }),
+    makeNode({ id: "B", executor: Executor.ADJUNCT }),
+  ]);
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
+
+  const adjunctSgs = sgs.filter((s) => s.executor === Executor.ADJUNCT);
+  assertEquals(adjunctSgs.length, 2);
+});
+
+Deno.test("computeSubgraphs: COORDINATED adds ADVERSARIAL for read-only subgraphs", () => {
+  const g = makeGraph([
+    makeNode({ id: "R1", executor: Executor.ADJUNCT, type: NodeType.RECON }),
+    makeNode({ id: "R2", executor: Executor.ADJUNCT, type: NodeType.VALIDATION }),
+  ]);
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T3, SubgraphStrategy.COORDINATED);
+
+  const adjunctSgs = sgs.filter((s) => s.executor === Executor.ADJUNCT);
+  for (const sg of adjunctSgs) {
+    assertEquals(sg.coordination.mode, CoordinationMode.ADVERSARIAL);
+  }
+});
+
+Deno.test("computeSubgraphs: COORDINATED adds PARTITIONED for write subgraphs", () => {
+  const g = makeGraph([
+    makeNode({ id: "impl", executor: Executor.ADJUNCT, type: NodeType.IMPLEMENTATION }),
+  ]);
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T3, SubgraphStrategy.COORDINATED);
+
+  const adjunctSg = sgs.find((s) => s.executor === Executor.ADJUNCT);
+  assertEquals(adjunctSg!.coordination.mode, CoordinationMode.PARTITIONED);
+});
+
+Deno.test("computeSubgraphs: empty graph returns empty", () => {
+  const g = makeGraph([]);
+  const sgs = computeSubgraphs(g, [], Tier.T1, SubgraphStrategy.SELF);
+  assertEquals(sgs.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// serializeSubgraphBrief
+// ---------------------------------------------------------------------------
+
+Deno.test("serializeSubgraphBrief: produces valid markdown for adjunct subgraph", () => {
+  const g = makeGraph([
+    makeNode({ id: "impl", executor: Executor.ADJUNCT, label: "Refactor handler" }),
+    makeNode({ id: "vc", executor: Executor.ADJUNCT, type: NodeType.VERIFY_COMPILE, label: "Compile check" }),
+  ], [
+    { from: "impl", to: "vc", type: EdgeType.DEPENDS_ON },
+  ]);
+  const waves = computeWaves(g);
+  const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const adjunctSg = sgs.find((s) => s.executor === Executor.ADJUNCT)!;
+  adjunctSg.assignee = "Three of Five";
+
+  const brief = serializeSubgraphBrief(g, adjunctSg);
+  assertEquals(brief.includes("## Subgraph:"), true);
+  assertEquals(brief.includes("Three of Five"), true);
+  assertEquals(brief.includes("### Traversal Order"), true);
+  assertEquals(brief.includes("[IMPLEMENTATION]"), true);
+  assertEquals(brief.includes("[VERIFY_COMPILE]"), true);
+});
+
+// ---------------------------------------------------------------------------
+// parallelNodesInWave
+// ---------------------------------------------------------------------------
+
+Deno.test("parallelNodesInWave: all independent nodes in one batch", () => {
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+    makeNode({ id: "C" }),
+  ]);
+  const wave: Wave = { id: 1, nodes: ["A", "B", "C"], hasMergeGate: false };
+  const batches = parallelNodesInWave(g, wave);
+  assertEquals(batches.length, 1);
+  assertEquals(batches[0].length, 3);
+});
+
+Deno.test("parallelNodesInWave: STACKED nodes form sequential chain", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A" }),
+      makeNode({ id: "B" }),
+      makeNode({ id: "C" }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.STACKED }],
+  );
+  const wave: Wave = { id: 1, nodes: ["A", "B", "C"], hasMergeGate: false };
+  const batches = parallelNodesInWave(g, wave);
+  // C is independent, A→B is a chain
+  assertEquals(batches.length, 2);
+  const chainBatch = batches.find((b) => b.length === 2);
+  const independentBatch = batches.find((b) => b.length === 1);
+  assertEquals(chainBatch !== undefined, true);
+  assertEquals(independentBatch !== undefined, true);
+  assertEquals(chainBatch![0], "A");
+  assertEquals(chainBatch![1], "B");
+  assertEquals(independentBatch![0], "C");
+});
+
+Deno.test("parallelNodesInWave: empty wave returns empty", () => {
+  const g = makeGraph([]);
+  const wave: Wave = { id: 1, nodes: [], hasMergeGate: false };
+  assertEquals(parallelNodesInWave(g, wave).length, 0);
 });

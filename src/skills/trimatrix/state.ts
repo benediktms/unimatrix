@@ -4,18 +4,18 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, Graph, Node, RepoMetadata } from "./types.ts";
-import { NodeStatus } from "./types.ts";
+import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, SubgraphStrategy, Tier } from "./types.ts";
+import { Executor, NodeStatus } from "./types.ts";
 import { computeWaves } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "1.3.0";
+const VERSION = "2.0.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0"]);
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -28,7 +28,13 @@ const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0"]);
 export function createCheckpoint(
   repos: RepoMetadata[],
   graph: Graph,
-  opts?: { sessionId?: string; sessionLabel?: string },
+  opts?: {
+    sessionId?: string;
+    sessionLabel?: string;
+    intent?: Intent;
+    tier?: Tier;
+    subgraphStrategy?: SubgraphStrategy;
+  },
 ): Checkpoint {
   const now = new Date().toISOString();
   return {
@@ -42,9 +48,15 @@ export function createCheckpoint(
     refinementHistory: [],
     createdAt: now,
     updatedAt: now,
+    subgraphs: [],
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
+      : {}),
+    ...(opts?.intent !== undefined ? { intent: opts.intent } : {}),
+    ...(opts?.tier !== undefined ? { tier: opts.tier } : {}),
+    ...(opts?.subgraphStrategy !== undefined
+      ? { subgraphStrategy: opts.subgraphStrategy }
       : {}),
   };
 }
@@ -391,6 +403,16 @@ export function deserialize(json: string): Checkpoint {
   // Backward compat: sessionId, sessionLabel, cancellationReason, and cancelledAt
   // are optional fields introduced in 1.2.0. Older checkpoints simply omit them —
   // no patching required since all four are typed as optional on Checkpoint.
+
+  // Backward compat: 2.0.0 fields — subgraphs, intent, tier, subgraphStrategy,
+  // and per-node executor. Pre-2.0.0 checkpoints lack these.
+  if (!cp.subgraphs) cp.subgraphs = [];
+  for (const node of Object.values(cp.graph.nodes)) {
+    if ((node as unknown as { executor?: string }).executor === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).executor = Executor.LEAD;
+    }
+  }
 
   return cp;
 }

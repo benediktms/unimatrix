@@ -90,14 +90,6 @@
           {
             "type": "command",
             "command": "__UNIMATRIX_DIR__/src/hooks/claude/session-greeting.py"
-          },
-          {
-            "type": "command",
-            "command": "__UNIMATRIX_DIR__/src/hooks/claude/inject-checkpoint.py"
-          },
-          {
-            "type": "command",
-            "command": "__UNIMATRIX_DIR__/src/hooks/claude/learner-inject.py"
           }
         ]
       }
@@ -124,10 +116,6 @@
           {
             "type": "command",
             "command": "__UNIMATRIX_DIR__/src/hooks/claude/warn-compaction.py"
-          },
-          {
-            "type": "command",
-            "command": "__UNIMATRIX_DIR__/src/hooks/claude/learner-track.py"
           }
         ]
       }

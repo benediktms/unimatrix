@@ -18,29 +18,67 @@ Trimatrix is the single entry point for all collective operations. Every prompt 
 
 ## Intent Classifier
 
-The classifier runs on every prompt. It determines execution mode before any action is taken. Mode files contain the full execution flow — the classifier routes to them without reading them.
+The classifier runs on every prompt. It determines **Intent** and **Tier** before any action is taken. Every classified prompt enters the graph — no exceptions.
 
-| Classification | Mode File | Triggers | Legacy Aliases |
+### Intents
+
+| Intent | Triggers | Legacy Aliases |
+|---|---|---|
+| IMPLEMENT | Code changes, new features, refactoring, bulk migrations | `assemble`, `reengage`, `swarm`, `adapt` |
+| INVESTIGATE | "How does X work", "find Y", "audit Z", architectural questions | `recon`, `scan`, `analyse` |
+| DIAGNOSE | Bug reports, "why does X happen", unclear root cause | `diagnose` |
+| ARCHITECT | "Evaluate architecture options", "compare approaches for X" | `architect` |
+| REVIEW | "Review this", code review requests, validation | `comply` |
+| REFACTOR | Structural cleanup, rename operations, pattern migrations | — |
+| RESUME | References a task ID, "resume", "continue", `reengage <id>` | `reengage` |
+
+### Tiers
+
+| Tier | Complexity | Signals | SubgraphStrategy |
 |---|---|---|---|
-| TRIVIAL | (handle directly) | Single-file changes, known location, simple questions | — |
-| IMPLEMENT | (single adjunct dispatch) | Clear scope, 1-2 files, well-defined task | — |
-| PLAN_EXECUTE | `modes/plan-execute.md` | Complex multi-file tasks, unclear scope, needs decomposition | `assemble`, `reengage` |
-| INVESTIGATE | `modes/investigate.md` | "How does X work", "find Y", "audit Z", architectural questions | `recon`, `scan`, `analyse` |
-| DIAGNOSE | `modes/diagnose.md` | Bug reports, "why does X happen", unclear root cause | `diagnose` |
-| ARCHITECT | `modes/architect.md` | "Evaluate architecture options", "compare approaches for X", proposed re-architecture, significant structural shifts | `architect` |
-| REVIEW | `modes/review.md` | "Review this", code review requests, validation | `comply` |
-| ADAPT | `modes/adapt.md` | Tasks needing iterative refinement, quality gates | `adapt` |
-| SWARM | `modes/swarm.md` | Bulk changes, migrations, "rename X everywhere" | `swarm` |
-| CROSS_REPO | `modes/cross-repo.md` | Multi-repo features, `--include` flag | — |
-| RESUME | (built-in) | References a task ID, "resume", "continue", `reengage <id>` | `reengage` |
+| T1 | 0.0–0.3 | 1-2 files, known location, clear spec, simple question | SELF |
+| T2 | 0.3–0.6 | 3-8 files, independent partitions, moderate ambiguity | INDEPENDENT |
+| T3 | 0.6–1.0 | 9+ files, cross-cutting deps, high ambiguity, `--include` | COORDINATED |
+
+**Tier scoring signals:**
+- File count affected (1-2 → T1, 3-8 → T2, 9+ → T3)
+- Cross-module boundaries (single module → lower, cross-cutting → higher)
+- Ambiguity (clear spec → lower, exploratory → higher)
+- Risk profile (test file → lower, core infrastructure → higher)
+- User-specified scope markers ("quick" → T1, "thorough"/"deep dive" → T3)
+- Cross-repo (`--include`) → always T3
+
+### Intent × Tier Matrix
+
+| Intent | T1 (SELF) | T2 (INDEPENDENT) | T3 (COORDINATED) |
+|---|---|---|---|
+| IMPLEMENT | Lead edits directly | Drone + Vinculum | Borg cube (partitioned) + compliance matrix |
+| INVESTIGATE | Lead reads/greps | Probe (single) | Borg sphere (Probe + Cortex) with team |
+| DIAGNOSE | Lead inspects | Vinculum (single hypothesis) | Vinculum team (adversarial, multi-hypothesis) |
+| ARCHITECT | Lead reasons | Cortex (single) | Vinculum (adversarial, multi-approach) with team |
+| REVIEW | Lead reads diff | Vinculum (single) | Compliance matrix (multi-Vinculum) with team |
+| REFACTOR | Lead edits | Drone + Vinculum | Swarm (partitioned Drones) + Vinculum |
+
+### Auto-Graph Entry
+
+Every classified prompt initializes the trimatrix graph:
+
+1. Classify intent and tier.
+2. Call `mcp__unimatrix__init` with `intent`, `tier`, `subgraphStrategy` (derived from tier).
+3. Add nodes via `mcp__unimatrix__add_node` with appropriate `executor` (LEAD or ADJUNCT).
+4. Add edges via `mcp__unimatrix__add_edge`.
+5. Call `mcp__unimatrix__compute_waves` — auto-computes subgraphs.
+6. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs dispatched as agents.
+
+For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead traverses directly.
 
 ### Classifier Rules
 
 - Run on EVERY prompt without exception.
 - When ambiguous, ask ONE clarifying question then classify.
-- Legacy aliases are recognized and routed to the correct mode.
+- Legacy aliases are recognized and routed to the correct intent.
 - The classifier does NOT read mode files — it routes to them.
-- TRIVIAL and IMPLEMENT are handled without spawning adjuncts or creating brain tasks.
+- All intents enter the graph. T1 enters with a minimal graph (1-2 nodes, SELF strategy).
 
 ### RESUME Flow
 
@@ -116,21 +154,40 @@ After Validation adjunct PASS and task closure, present three options to user: *
 
 ### Protocol C: Verification Gate
 
-After all adjuncts in a wave complete:
-1. Run project test suite for affected areas.
-2. Run linter and formatter across changed files.
-3. Pass → proceed to review.
-4. Fail → create brain task with error output, save as artifact, dispatch single fix adjunct.
-5. Maximum 2 fix cycles. Escalate to user after 2 failures.
+Verification is split between adjuncts and the lead via node types:
+
+**Adjunct subgraphs** contain only `VERIFY_COMPILE` nodes. Adjuncts confirm the code compiles — nothing more. They do NOT run tests, lint, or format. On `VERIFY_COMPILE` failure, the adjunct reports `fail_node` with the error and stops.
+
+**Lead (post-wave)** executes `VERIFY_TEST`, `VERIFY_LINT`, and `VERIFY_FORMAT` nodes. These land in the same wave with no interdependencies — the lead runs them as parallel Bash calls in a single message.
+
+After all verification nodes pass:
+1. Pass → proceed to review.
+2. Fail → create brain task with error output, save as artifact, dispatch single fix adjunct with a new subgraph.
+3. Maximum 2 fix cycles. Escalate to user after 2 failures.
 
 ### Protocol D: Wave Dispatch Patterns
 
-| Pattern | Description | When to Use |
+Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution` (per-node executor) and `parallelBatches` (parallelism groups).
+
+| Tier | Strategy | Dispatch Pattern |
 |---|---|---|
-| Sequential | Adjuncts execute in waves; Queen monitors and passes context | Steps depend on prior results; Queen needs to re-plan between waves |
-| Sequence (relay) | Adjuncts pass handoff snapshots via brain records; Queen does not stay alive | Long chains (3+ steps) without dynamic re-planning |
-| Swarm | Parallel adjuncts, non-overlapping file partitions, no communication | Bulk changes, independent files |
-| Collaborative | Parallel adjuncts, non-overlapping files, team communication for shared interfaces | Parallel work with cross-cutting dependencies |
+| T1 | SELF | Lead traverses its own subgraph. Executes nodes directly (Bash calls, tool invocations). |
+| T2 | INDEPENDENT | Lead dispatches one Agent per adjunct subgraph. Each receives its serialized brief from `get_subgraph`. No team. |
+| T3 | COORDINATED | Lead creates team, dispatches Agents with `team_name`. Each receives its brief + coordination contract. |
+
+**Subgraph dispatch procedure (T2/T3):**
+1. Call `mcp__unimatrix__dispatch_wave` — get activated nodes with executors.
+2. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph` to retrieve the brief.
+3. Generate designations via Protocol A. Assign to subgraph `assignee`.
+4. Dispatch Agents with the brief injected in the prompt.
+5. For LEAD nodes in this wave: execute directly as parallel Bash calls.
+6. Monitor adjunct completion via `complete_node` / `fail_node` callbacks.
+
+**Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
+- Sequential → T2 with multi-wave graph
+- Sequence relay → T2 with handoff snapshots
+- Swarm → T2 INDEPENDENT with PARTITIONED coordination
+- Collaborative → T3 COORDINATED with team
 
 ### Protocol E: Task Closure
 
@@ -163,11 +220,14 @@ For modes that create brain tasks:
 6. Save plan artifact: `records_create_artifact`, `kind: "plan"`, tagged `queen-plan`
 7. Save dispatch brief: `records_create_artifact`, `kind: "dispatch-brief"`, tagged `dispatch-brief` and `epic:<id>`
 8. **Build execution graph** — construct a trimatrix graph for algorithmic wave ordering:
-   - `mcp__unimatrix__init` with `repos: []` for single-repo executions (or with repo metadata for cross-repo)
-   - `mcp__unimatrix__add_node` per subtask: `id` = brain task ID, `type` based on role (`IMPLEMENTATION`, `RECON`, `VALIDATION`, `DOCUMENTATION`), omit `repo`/`worktreeBranch` for single-repo
-   - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies (independent tasks get no edges — same wave automatically)
-   - `mcp__unimatrix__compute_waves` to validate the graph and compute wave ordering
-   - The graph enables cycle detection, optimal parallelism, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
+   - `mcp__unimatrix__init` with `intent`, `tier`, `subgraphStrategy`, and `repos: []` for single-repo (or with repo metadata for cross-repo)
+   - `mcp__unimatrix__add_node` per subtask: `id` = brain task ID, `type` based on role, `executor` = `LEAD` or `ADJUNCT`
+   - Add `VERIFY_COMPILE` nodes after each ADJUNCT implementation node (executor: `ADJUNCT`, edge: `DEPENDS_ON`)
+   - Add `VERIFY_TEST`, `VERIFY_LINT`, `VERIFY_FORMAT` nodes after all implementation waves (executor: `LEAD`, edges: `DEPENDS_ON` from implementation nodes)
+   - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies
+   - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-computes subgraphs
+   - The graph enables cycle detection, optimal parallelism, subgraph partitioning, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
+9. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
 
 **Task description format** — every subtask must be self-contained:
 

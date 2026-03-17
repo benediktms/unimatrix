@@ -6,7 +6,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, join, resolve as resolvePath } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -23,7 +23,7 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
-import { approvalSchema, EdgeType, NodeStatus, NodeType, triageSchema } from "./types.ts";
+import { approvalSchema, EdgeType, Executor, Intent, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
 import { designate, type Role } from "./designate.ts";
 import {
   activateNodes,
@@ -31,10 +31,13 @@ import {
   addNode,
   clearGate,
   completeNode,
+  computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
   failNode,
   nextWave,
+  parallelNodesInWave,
+  serializeSubgraphBrief,
   validate,
   waveStatus,
 } from "./graph.ts";
@@ -146,13 +149,28 @@ server.tool(
     sessionLabel: z.string().optional().describe(
       "Human-readable session label. Auto-generated if omitted.",
     ),
+    intent: z.nativeEnum(Intent).optional().describe(
+      "Classified intent for this execution.",
+    ),
+    tier: z.nativeEnum(Tier).optional().describe(
+      "Complexity tier: T1 (trivial), T2 (moderate), T3 (complex).",
+    ),
+    subgraphStrategy: z.nativeEnum(SubgraphStrategy).optional().describe(
+      "Subgraph partitioning strategy: SELF (lead), INDEPENDENT (adjuncts), COORDINATED (team).",
+    ),
   },
   (params) => {
     const repos = (params.repos ?? []) as RepoMetadata[];
     const emptyGraph = { nodes: {}, edges: [] };
     const sessionId = generateSessionId();
     const sessionLabel = params.sessionLabel ?? generateSessionLabel(repos);
-    checkpoint = createCheckpoint(repos, emptyGraph, { sessionId, sessionLabel });
+    checkpoint = createCheckpoint(repos, emptyGraph, {
+      sessionId,
+      sessionLabel,
+      intent: params.intent,
+      tier: params.tier,
+      subgraphStrategy: params.subgraphStrategy,
+    });
     return {
       content: [
         {
@@ -163,6 +181,11 @@ server.tool(
             repos: checkpoint.repos.map((r) => r.name),
             sessionId,
             sessionLabel,
+            ...(params.intent !== undefined ? { intent: params.intent } : {}),
+            ...(params.tier !== undefined ? { tier: params.tier } : {}),
+            ...(params.subgraphStrategy !== undefined
+              ? { subgraphStrategy: params.subgraphStrategy }
+              : {}),
           }),
         },
       ],
@@ -253,6 +276,9 @@ server.tool(
     stackedOn: z.string().optional().describe(
       "Node ID this node is stacked on within the same repository",
     ),
+    executor: z.nativeEnum(Executor).optional().describe(
+      "Who executes this node: LEAD or ADJUNCT. Defaults to LEAD.",
+    ),
   },
   (params) => {
     const cp = requireCheckpoint();
@@ -274,6 +300,7 @@ server.tool(
         ? { stackedOn: params.stackedOn }
         : {}),
       status: NodeStatus.PENDING,
+      executor: params.executor ?? Executor.LEAD,
     };
 
     const result = addNode(cp.graph, node, cp.machineState === "refining");
@@ -552,6 +579,25 @@ server.tool(
       );
       checkpoint = transitioned;
 
+      // Auto-compute subgraphs if intent and tier are set
+      if (checkpoint.intent && checkpoint.tier) {
+        const strategy = checkpoint.subgraphStrategy ?? SubgraphStrategy.SELF;
+        checkpoint = {
+          ...checkpoint,
+          subgraphs: computeSubgraphs(checkpoint.graph, checkpoint.waves, checkpoint.tier, strategy),
+        };
+        for (const sg of checkpoint.subgraphs!) {
+          for (const nodeId of sg.nodes) {
+            if (checkpoint.graph.nodes[nodeId]) {
+              checkpoint.graph.nodes[nodeId] = {
+                ...checkpoint.graph.nodes[nodeId],
+                subgraph: sg.id,
+              };
+            }
+          }
+        }
+      }
+
       return {
         content: [
           {
@@ -561,6 +607,16 @@ server.tool(
               machineState: checkpoint.machineState,
               waves: checkpoint.waves,
               refinementHistory: checkpoint.refinementHistory,
+              ...(checkpoint.subgraphs?.length
+                ? {
+                  subgraphs: checkpoint.subgraphs.map((sg) => ({
+                    id: sg.id,
+                    executor: sg.executor,
+                    nodeCount: sg.nodes.length,
+                    coordination: sg.coordination.mode,
+                  })),
+                }
+                : {}),
             }),
           },
         ],
@@ -644,6 +700,25 @@ server.tool(
     );
     checkpoint = transitioned;
 
+    // Auto-compute subgraphs if intent and tier are set
+    if (checkpoint.intent && checkpoint.tier) {
+      const strategy = checkpoint.subgraphStrategy ?? SubgraphStrategy.SELF;
+      checkpoint = {
+        ...checkpoint,
+        subgraphs: computeSubgraphs(checkpoint.graph, checkpoint.waves, checkpoint.tier, strategy),
+      };
+      for (const sg of checkpoint.subgraphs!) {
+        for (const nodeId of sg.nodes) {
+          if (checkpoint.graph.nodes[nodeId]) {
+            checkpoint.graph.nodes[nodeId] = {
+              ...checkpoint.graph.nodes[nodeId],
+              subgraph: sg.id,
+            };
+          }
+        }
+      }
+    }
+
     return {
       content: [
         {
@@ -652,6 +727,102 @@ server.tool(
             ok: true,
             machineState: checkpoint.machineState,
             waves: checkpoint.waves,
+            ...(checkpoint.subgraphs?.length
+              ? {
+                subgraphs: checkpoint.subgraphs.map((sg) => ({
+                  id: sg.id,
+                  executor: sg.executor,
+                  nodeCount: sg.nodes.length,
+                  coordination: sg.coordination.mode,
+                })),
+              }
+              : {}),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: compute_subgraphs
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "compute_subgraphs",
+  "Recompute subgraph partitions from the current graph. Use after refinement or when changing tier/strategy.",
+  {
+    tier: z.nativeEnum(Tier).describe("Execution tier"),
+    strategy: z.nativeEnum(SubgraphStrategy).describe("Subgraph partitioning strategy"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+
+    const subgraphs = computeSubgraphs(cp.graph, cp.waves, params.tier, params.strategy);
+
+    // Stamp subgraph IDs onto nodes
+    const updatedNodes = { ...cp.graph.nodes };
+    for (const sg of subgraphs) {
+      for (const nodeId of sg.nodes) {
+        if (updatedNodes[nodeId]) {
+          updatedNodes[nodeId] = { ...updatedNodes[nodeId], subgraph: sg.id };
+        }
+      }
+    }
+
+    checkpoint = {
+      ...cp,
+      graph: { ...cp.graph, nodes: updatedNodes },
+      subgraphs,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            subgraphs: subgraphs.map((sg) => ({
+              id: sg.id,
+              executor: sg.executor,
+              assignee: sg.assignee,
+              nodeCount: sg.nodes.length,
+              nodes: sg.nodes,
+              coordination: sg.coordination,
+            })),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: get_subgraph
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "get_subgraph",
+  "Retrieve a single subgraph by ID, including its serialized dispatch brief for adjunct injection.",
+  {
+    subgraphId: z.string().describe("Subgraph ID (e.g., sg-lead, sg-1)"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const sg = cp.subgraphs?.find((s) => s.id === params.subgraphId);
+    if (!sg) {
+      throw new Error(`Subgraph "${params.subgraphId}" not found.`);
+    }
+    const brief = serializeSubgraphBrief(cp.graph, sg);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            subgraph: sg,
+            brief,
           }),
         },
       ],
@@ -699,6 +870,19 @@ server.tool(
       .map((n) => syncTaskStatus(n.taskId!, "activate"));
     await Promise.all(syncPromises);
 
+    // Compute per-node execution info and parallelism groups
+    const nodeExecution = wave.nodes.map((nId) => {
+      const node = checkpoint!.graph.nodes[nId];
+      return {
+        id: nId,
+        executor: node?.executor ?? Executor.LEAD,
+        subgraph: node?.subgraph,
+        type: node?.type,
+        label: node?.label,
+      };
+    });
+    const batches = parallelNodesInWave(checkpoint.graph, wave);
+
     return {
       content: [
         {
@@ -708,6 +892,8 @@ server.tool(
             waveId: params.waveId,
             activatedNodes: wave.nodes,
             machineState: checkpoint.machineState,
+            nodeExecution,
+            parallelBatches: batches,
           }),
         },
       ],
@@ -1286,6 +1472,22 @@ server.tool(
             updatedAt: cp.updatedAt,
             ...(cp.sessionId ? { sessionId: cp.sessionId } : {}),
             ...(cp.sessionLabel ? { sessionLabel: cp.sessionLabel } : {}),
+            ...(cp.intent ? { intent: cp.intent } : {}),
+            ...(cp.tier ? { tier: cp.tier } : {}),
+            ...(cp.subgraphStrategy
+              ? { subgraphStrategy: cp.subgraphStrategy }
+              : {}),
+            ...(cp.subgraphs?.length
+              ? {
+                subgraphs: cp.subgraphs.map((sg) => ({
+                  id: sg.id,
+                  executor: sg.executor,
+                  assignee: sg.assignee,
+                  nodeCount: sg.nodes.length,
+                  coordination: sg.coordination.mode,
+                })),
+              }
+              : {}),
             ...(cp.cancellationReason
               ? { cancellationReason: cp.cancellationReason }
               : {}),
@@ -1575,16 +1777,6 @@ function buildCheckpointMarkdown(
   return sections.join("\n");
 }
 
-async function atomicWriteFile(path: string, content: string): Promise<void> {
-  const tmpPath = path + `.${Date.now()}.tmp`;
-  try {
-    await writeFile(tmpPath, content, "utf-8");
-    await rename(tmpPath, path);
-  } catch {
-    try { await unlink(tmpPath); } catch { /* ignore */ }
-  }
-}
-
 async function saveBrainSnapshot(
   title: string,
   tags: string[],
@@ -1635,10 +1827,10 @@ async function syncTaskStatus(
 
 server.tool(
   "save_checkpoint",
-  "Serialize the current checkpoint to a JSON string for persistence. When claude_session_id is provided, also captures brain tasks, agent/cost state, saves a brain snapshot, and writes a temp file for post-compaction injection.",
+  "Serialize the current checkpoint to a JSON string for persistence. When claude_session_id is provided, also captures brain tasks, agent/cost state, and saves a brain snapshot.",
   {
     claude_session_id: z.string().optional().describe(
-      "Claude Code session ID — enables capture of /tmp state files and writes temp checkpoint file for inject-checkpoint.py",
+      "Claude Code session ID — enables capture of /tmp state files and saves brain snapshot for post-compaction recovery",
     ),
   },
   async (params) => {
@@ -1709,10 +1901,6 @@ server.tool(
 
       await saveBrainSnapshot(parts.join(" — "), snapshotTags, markdown);
 
-      // Write temp file for inject-checkpoint.py
-      const checkpointPath = join(STATE_DIR, `unimatrix-checkpoint-${sid}.md`);
-      await atomicWriteFile(checkpointPath, markdown);
-
       result.capturedState = {
         tasksInProgress: tasksInProgress.length,
         tasksOpen: tasksOpen.length,
@@ -1721,7 +1909,6 @@ server.tool(
         hasCosts: costsState !== null,
         hasGraph: graphJson !== null,
         compactionNum,
-        tempFile: checkpointPath,
       };
     }
 

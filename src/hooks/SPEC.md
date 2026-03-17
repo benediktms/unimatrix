@@ -81,37 +81,12 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
    - Session stats (agents dispatched, cost, duration)
    - Recommended resume action (task ID for dispatching Assimilation adjuncts)
 4. Save as brain snapshot (tagged: compaction-checkpoint, session:{session_id})
-5. Write to temp file for context injection post-compaction
 
-**State file**: `/tmp/unimatrix-checkpoint-{session_id}.md`
+Post-compaction recovery uses the brain snapshot via RESUME flow — no temp file injection needed.
 
 ## Tier 2 — Valuable Hooks
 
-### 4. learner-track
-
-**Trigger**: After tool use (PostToolUse / tool.execute.after)
-
-**Logic**:
-1. Detect errors in tool results (exit code != 0, error patterns)
-2. Record pending errors (FIFO, cap at 5, max 500 chars each)
-3. On subsequent success: match to pending errors within 120s window
-4. Score error→solution pair (0.0-1.0): technical specificity, actionability, generalizability, recency
-5. If score ≥ 0.6: check brain memory for duplicates (similarity > 0.8)
-6. If novel: write episode via brain MCP (tags: auto-learn, pattern:error-fix)
-7. Rate limit: 30s between brain writes
-
-### 5. learner-inject
-
-**Trigger**: Before user prompt processing (UserPromptSubmit / message.before)
-
-**Logic**:
-1. Read learner state, find fresh pending errors (< 300s old)
-2. Search brain memory for matching auto-learn episodes
-3. Filter by similarity > 0.5
-4. Format as additional context (max 2000 chars)
-5. Inject into prompt context
-
-### 6. track-agents
+### 4. track-agents
 
 **Trigger**: Subagent/task start and stop
 
@@ -135,8 +110,6 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 | track-cost | SubagentStop | task.complete (TBD) |
 | warn-compaction | PostToolUse | tool.execute.after (TBD) |
 | checkpoint-state | PreCompact | session.compacting (TBD) |
-| learner-track | PostToolUse | tool.execute.after (TBD) |
-| learner-inject | UserPromptSubmit | message.before (TBD) |
 | track-agents | SubagentStart/Stop | task.start/complete (TBD) |
 | session-greeting | UserPromptSubmit | tool.execute.after (first call) |
 

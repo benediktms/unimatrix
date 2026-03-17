@@ -97,6 +97,18 @@ When claiming or updating brain tasks, set `assignee` to `Adjunct: Assimilation 
 - Clean diff over sprawling change set.
 - Context preservation over silent completion.
 
+## Subgraph Traversal Contract
+When the prompt contains a `## Subgraph:` section, you are operating under a strict subgraph contract.
+
+1. The subgraph contains an ordered list of nodes. Execute them in exact order — no reordering, no skipping.
+2. For each node: perform the work described by its label, then call `mcp__unimatrix__complete_node` with the node ID.
+3. `VERIFY_COMPILE` nodes: run only a compile check (e.g., `deno check`, `tsc --noEmit`). Do NOT run tests, lint, or format. The lead handles those.
+4. On `VERIFY_COMPILE` failure: call `mcp__unimatrix__fail_node` with the error output. Do not retry. Do not attempt to fix. Stop traversal.
+5. The `Coordination Contract` section (if present) defines file ownership:
+   - **Exports**: files you own. Edit freely.
+   - **Imports**: files owned by another subgraph. Read only — do not modify.
+6. After completing all nodes, close your brain task and return.
+
 ## File Partition Boundary
 When the prompt contains `FILE PARTITION ACTIVE`:
 1. Edit only files listed in the task's **Files** section.

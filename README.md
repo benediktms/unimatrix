@@ -332,18 +332,8 @@ Claude Code compacts (summarizes) the conversation when the context window fills
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `checkpoint-state.py` | PreCompact | Captures open tasks, active agents, and costs; saves as brain snapshot and temp file |
-| `inject-checkpoint.py` | UserPromptSubmit | Injects the saved checkpoint into the next prompt after compaction (one-shot) |
+| `checkpoint-state.py` | PreCompact | Captures open tasks, active agents, and costs; saves as brain snapshot |
 | `warn-compaction.py` | PostToolUse | Estimates token usage and warns at 70%/85% thresholds before compaction hits |
-
-### Auto-Learner
-
-The auto-learner captures error/fix patterns and replays them in future sessions:
-
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `learner-track.py` | PostToolUse | Detects tool failures, then watches for successful follow-ups. Scores error/fix pairs and persists high-confidence patterns to brain memory |
-| `learner-inject.py` | UserPromptSubmit | Searches brain for auto-learned patterns matching pending errors, injects matching fixes as context |
 
 ### Other
 
@@ -432,10 +422,7 @@ unimatrix/
 │   ├── hooks/                    # Platform-specific event hooks
 │   │   ├── claude/               #   Python/Shell hooks (Claude Code)
 │   │   │   ├── checkpoint-state.py
-│   │   │   ├── inject-checkpoint.py
 │   │   │   ├── warn-compaction.py
-│   │   │   ├── learner-track.py
-│   │   │   ├── learner-inject.py
 │   │   │   ├── track-agents.py
 │   │   │   ├── track-cost.py
 │   │   │   ├── track-compactions.py

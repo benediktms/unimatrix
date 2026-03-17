@@ -17,6 +17,10 @@ export enum NodeType {
   DOCUMENTATION = "DOCUMENTATION",
   DIAGNOSIS = "DIAGNOSIS",
   ANALYSIS = "ANALYSIS",
+  VERIFY_COMPILE = "VERIFY_COMPILE",
+  VERIFY_TEST = "VERIFY_TEST",
+  VERIFY_LINT = "VERIFY_LINT",
+  VERIFY_FORMAT = "VERIFY_FORMAT",
 }
 
 export enum NodeStatus {
@@ -33,6 +37,43 @@ export enum EdgeType {
   MERGE_GATE = "MERGE_GATE",
   STACKED = "STACKED",
   DEPENDS_ON = "DEPENDS_ON",
+}
+
+// ---------------------------------------------------------------------------
+// Intent and execution enums
+// ---------------------------------------------------------------------------
+
+export enum Intent {
+  IMPLEMENT = "IMPLEMENT",
+  INVESTIGATE = "INVESTIGATE",
+  DIAGNOSE = "DIAGNOSE",
+  ARCHITECT = "ARCHITECT",
+  REVIEW = "REVIEW",
+  REFACTOR = "REFACTOR",
+}
+
+export enum Tier {
+  T1 = "T1",
+  T2 = "T2",
+  T3 = "T3",
+}
+
+export enum SubgraphStrategy {
+  SELF = "SELF",
+  INDEPENDENT = "INDEPENDENT",
+  COORDINATED = "COORDINATED",
+}
+
+export enum CoordinationMode {
+  NONE = "NONE",
+  PARTITIONED = "PARTITIONED",
+  ADVERSARIAL = "ADVERSARIAL",
+  CROSS_REPO = "CROSS_REPO",
+}
+
+export enum Executor {
+  LEAD = "LEAD",
+  ADJUNCT = "ADJUNCT",
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +109,10 @@ export interface Node {
   prNumber?: number;
   /** Human-readable reason for failure, if status is FAILED or BLOCKED. */
   failureReason?: string;
+  /** Subgraph this node belongs to. Assigned by computeSubgraphs. */
+  subgraph?: string;
+  /** Who executes this node: the lead session or a dispatched adjunct. */
+  executor: Executor;
 }
 
 /**
@@ -95,6 +140,47 @@ export interface Graph {
   nodes: Record<string, Node>;
   /** All directed edges in the graph. */
   edges: Edge[];
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph types
+// ---------------------------------------------------------------------------
+
+/**
+ * Coordination contract governing how a subgraph interacts with sibling subgraphs.
+ */
+export interface CoordinationContract {
+  /** Coordination mode determining isolation and communication rules. */
+  mode: CoordinationMode;
+  /** Subgraph IDs that must complete before this subgraph can proceed. */
+  dependsOn?: string[];
+  /** File paths this subgraph owns (other subgraphs must not modify). */
+  exports?: string[];
+  /** File paths consumed from other subgraphs (this subgraph must not modify). */
+  imports?: string[];
+  /** Explicit merge sequence number for cross-repo ordering. */
+  mergeOrder?: number;
+}
+
+/**
+ * A partition of the supergraph assigned to a specific executor.
+ * Contains an ordered list of nodes forming the executor's strict traversal contract.
+ */
+export interface Subgraph {
+  /** Unique subgraph identifier (e.g., "sg-lead", "sg-1"). */
+  id: string;
+  /** Node IDs in topological traversal order within this subgraph. */
+  nodes: string[];
+  /** Edges that exist entirely within this subgraph. */
+  edges: Edge[];
+  /** Adjunct designation or "LEAD" for the lead session. */
+  assignee: string;
+  /** Who executes this subgraph's nodes. */
+  executor: Executor;
+  /** Execution tier governing resource allocation. */
+  tier: Tier;
+  /** Coordination rules for multi-subgraph execution. */
+  coordination: CoordinationContract;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +263,14 @@ export interface Checkpoint {
   cancellationReason?: string;
   /** ISO 8601 timestamp when this execution was cancelled, if applicable. */
   cancelledAt?: string;
+  /** Classified intent for this execution. */
+  intent?: Intent;
+  /** Complexity tier governing execution strategy. */
+  tier?: Tier;
+  /** Strategy used to partition the supergraph into subgraphs. */
+  subgraphStrategy?: SubgraphStrategy;
+  /** Computed subgraph partitions. */
+  subgraphs?: Subgraph[];
 }
 
 // ---------------------------------------------------------------------------
