@@ -32,16 +32,16 @@ The graph is already loaded (in-memory or restored from checkpoint). New brain/r
 #### Variant B: Task-Based Resume (Path B routed here)
 1. Load task via `tasks_get` with `expand: children`
 2. Load dispatch brief — `records_list` with tags `dispatch-brief` + `epic:<id>`, then `records_fetch_content`
-3a. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
+3. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
    - If not "idle" (checkpoint loaded): use the graph's wave state to determine resume point. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5 with graph-driven dispatch.
-   - If "idle" (no checkpoint): fall back to brain-task-only dispatch via `tasks_next`.
-3. Check for existing worktree — `git worktree list`
+   - If "idle" (no checkpoint): continue to step 4.
+4. Check for existing worktree — `git worktree list`
    - Exists: enter via EnterWorktree
    - Does not exist: create via EnterWorktree, link brain
-4. Check for stale `in_progress` subtasks — present to user (may need reset or close)
-5. Check for prior checkpoints — `records_list` with tags `drone-checkpoint` + `parent:<id>`
-6. Use `tasks_next` to find ready subtasks
-7. Jump to Step 5 (Dispatch)
+5. Check for stale `in_progress` subtasks — present to user (may need reset or close)
+6. Check for prior drone checkpoints — `records_list` with tags `drone-checkpoint` + `parent:<id>`
+7. Use `tasks_next` to find ready subtasks
+8. Jump to main flow Step 5 (Dispatch)
 
 ---
 
@@ -98,7 +98,10 @@ The computed waves replace manual wave structuring. The graph engine determines 
 ### Step 3b: Present Plan
 Present dispatch plan to user. Wait for explicit approval before proceeding.
 
-### Step 3c: Enter Worktree
+### Step 3c: Session Naming Gate
+After plan approval, elicit a session name. Propose a default (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Call `mcp__unimatrix__rename_session` with the confirmed label. Then call `/rename` to sync the Claude Code conversation title. Finally, `mcp__unimatrix__save_checkpoint` (with `claude_session_id`) to persist the named graph. This is the first checkpoint — required for session resumption.
+
+### Step 3d: Enter Worktree
 Use Worktree Lifecycle Protocol. Branch name sourced from dispatch plan.
 
 ### Step 4: Generate Designations

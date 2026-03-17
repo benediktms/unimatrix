@@ -1500,14 +1500,94 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: rename_session
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "rename_session",
+  "Update the session label of the active in-memory graph. Use after plan approval to give the session a human-readable name before checkpointing.",
+  {
+    sessionLabel: z.string().min(1).describe(
+      "New human-readable session label (e.g., 'auth-middleware-refactor').",
+    ),
+  },
+  (params) => {
+    if (checkpoint === null) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "No active session to rename",
+            }),
+          },
+        ],
+      };
+    }
+    checkpoint.sessionLabel = params.sessionLabel;
+    checkpoint.updatedAt = new Date().toISOString();
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            sessionId: checkpoint.sessionId,
+            sessionLabel: checkpoint.sessionLabel,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: list_sessions
 // ---------------------------------------------------------------------------
 
 server.tool(
   "list_sessions",
-  "List all trimatrix sessions grouped by session ID.",
+  "List all trimatrix sessions: the active in-memory session (if any) plus persisted checkpoint sessions from brain artifacts.",
   {},
   async () => {
+    const result: {
+      ok: boolean;
+      active: {
+        sessionId: string;
+        sessionLabel: string;
+        machineState: string;
+        intent?: string;
+        tier?: string;
+        repos: string[];
+        nodeCount: number;
+        currentWaveId: number | null;
+        updatedAt: string;
+      } | null;
+      persisted: {
+        sessionId: string;
+        checkpoints: { recordId: string; title: string; updatedAt: string }[];
+        createdAt: string;
+        updatedAt: string;
+      }[];
+    } = { ok: true, active: null, persisted: [] };
+
+    // Active in-memory session
+    if (checkpoint !== null) {
+      result.active = {
+        sessionId: checkpoint.sessionId ?? "unknown",
+        sessionLabel: checkpoint.sessionLabel ?? "unnamed",
+        machineState: checkpoint.machineState,
+        ...(checkpoint.intent ? { intent: checkpoint.intent } : {}),
+        ...(checkpoint.tier ? { tier: checkpoint.tier } : {}),
+        repos: checkpoint.repos.map((r) => r.name),
+        nodeCount: Object.keys(checkpoint.graph.nodes).length,
+        currentWaveId: checkpoint.currentWaveId,
+        updatedAt: checkpoint.updatedAt,
+      };
+    }
+
+    // Persisted checkpoint sessions from brain
     try {
       const { stdout } = await execFileAsync("brain", [
         "artifacts",
@@ -1546,8 +1626,8 @@ server.tool(
         });
       }
 
-      const sessions = Array.from(sessionMap.entries()).map(
-        ([sessionId, checkpoints]) => {
+      result.persisted = Array.from(sessionMap.entries())
+        .map(([sessionId, checkpoints]) => {
           const dates = checkpoints.map((c) => c.updatedAt).sort();
           return {
             sessionId,
@@ -1555,35 +1635,22 @@ server.tool(
             createdAt: dates[0],
             updatedAt: dates[dates.length - 1],
           };
-        },
-      );
-
-      // Sort by most recent updatedAt descending
-      sessions.sort((a, b) =>
-        b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ ok: true, sessions }),
-          },
-        ],
-      };
-    } catch (_err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              ok: false,
-              error: "Failed to query brain records",
-            }),
-          },
-        ],
-      };
+        })
+        .sort((a, b) =>
+          b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
+        );
+    } catch {
+      // Brain query failed — still return active session if present
     }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result),
+        },
+      ],
+    };
   },
 );
 

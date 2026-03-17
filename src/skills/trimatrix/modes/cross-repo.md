@@ -82,6 +82,10 @@ stacked for intra-repo).
 4d. validate — abort if invalid
 4e. compute_waves — transitions to dispatching, returns wave plan
 
+### Step 4f: Session Naming Gate
+
+Elicit session name from user. Propose a default (concise, lowercase, hyphenated). Call `rename_session` with the confirmed label, then `/rename` to sync conversation title.
+
 ### Step 5: Persist Checkpoint
 
 save_checkpoint (with `claude_session_id`) → save as brain artifact tagged:

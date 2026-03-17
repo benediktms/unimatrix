@@ -94,16 +94,32 @@ Two resume paths exist — active graph (preferred) and task-based (fallback).
 
 1. Call `mcp__unimatrix__status` to check for an in-memory graph.
 2. **If graph is active** (machineState ≠ "idle"):
-   - Display session summary: label, intent, tier, node count, current wave, repos.
-   - If `<brain-ref>` provided: resolve via `mcp__unimatrix__resolve_brains`, then `mcp__unimatrix__add_repo` + `mcp__unimatrix__brain_link` to attach the new brain/repo.
+   - Display session summary: sessionLabel, intent, tier, current wave, repos (all returned by `status`).
+   - Route by machineState — see state routing table below.
+   - If `<brain-ref>` provided and state permits refinement: resolve via `mcp__unimatrix__resolve_brains`. Use the resolved `root` path as `rootPath` for `mcp__unimatrix__add_repo` (params: `name`, `rootPath`). Then `mcp__unimatrix__brain_link` (params: `brainName`) to link the brain.
    - Call `mcp__unimatrix__refine` to re-plan with the new context. Then `compute_waves` and continue dispatching.
-3. **If idle** (no in-memory graph): query `mcp__unimatrix__list_sessions` for persisted checkpoints.
-   - **Multiple sessions found** → elicit: present a numbered list (session label, intent, repos, last updated). User picks one.
-   - **One session found** → auto-select.
-   - **Zero sessions found** → fall through to Path B (task-based).
-   - Load selected checkpoint via `mcp__unimatrix__restore_checkpoint`.
+   - **`refine` guard**: only valid when machineState is `dispatching`, `gate_halted`, or `failed`. For other states, skip refinement and route directly.
+3. **If idle** (no in-memory graph): query `mcp__unimatrix__list_sessions`.
+   - The response contains `active` (always null here since we're idle) and `persisted` (array of checkpoint sessions, each with `sessionId`, `checkpoints[]`, `createdAt`, `updatedAt`).
+   - **Multiple persisted sessions** → elicit: present a numbered list (sessionId, latest checkpoint title, last updated). User picks one.
+   - **One persisted session** → auto-select.
+   - **Zero persisted sessions** → fall through to Path B (task-based).
+   - Load selected checkpoint: fetch the most recent checkpoint's `recordId` via `records_fetch_content` to get the serialized JSON, then `mcp__unimatrix__restore_checkpoint`.
+   - Call `mcp__unimatrix__status` to read the restored state (returns sessionLabel, intent, repos, machineState).
    - If `<brain-ref>` provided: attach new brain/repo as in step 2.
-   - Call `mcp__unimatrix__status` to determine machine state → route to the appropriate mode's dispatch step.
+   - Route by machineState — see state routing table below.
+
+**State routing table** (after graph is loaded):
+
+| machineState | Action |
+|---|---|
+| `dispatching` | Route to original mode's dispatch step. Determine mode from `intent` field in `status` response. |
+| `gate_halted` | Route to cross-repo gate check (cross-repo.md Step 8). |
+| `refining` | `compute_waves` to complete pending refinement, then route as `dispatching`. |
+| `failed` | Present failed nodes to user. Offer retry/diagnose/abandon. |
+| `initializing` | Graph was never fully built. Route to original mode's planning step. |
+| `completed` | Terminal. Inform user: "Session already completed." Offer to start fresh. |
+| `cancelled` | Terminal. Inform user: "Session was cancelled." Offer to start fresh. |
 
 #### Path B: Task-Based Resume (resume <task-id>)
 
@@ -251,7 +267,9 @@ For modes that create brain tasks:
    - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies
    - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-computes subgraphs
    - The graph enables cycle detection, optimal parallelism, subgraph partitioning, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
-9. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
+9. **Session naming gate** — after plan approval, elicit a session name from the user. Propose a default (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Call `mcp__unimatrix__rename_session` with the confirmed label. Then call the built-in `/rename` command to sync the Claude Code conversation title.
+10. **Persist initial checkpoint** — call `mcp__unimatrix__save_checkpoint` (with `claude_session_id`). Required for session resumption. Without it, a session that ends before wave dispatch loses the graph.
+11. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
 
 **Task description format** — every subtask must be self-contained:
 
