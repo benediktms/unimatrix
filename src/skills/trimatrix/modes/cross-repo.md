@@ -49,6 +49,11 @@ Parse flags. Resolve all --include refs via resolve_brains. Abort on failure.
 
 ### Step 2: Resume Path (if --resume)
 
+If reached via the unified RESUME flow (SKILL.md Path A), the graph is already loaded and new
+brain/repo already attached. Skip to step 6 below.
+
+Otherwise (direct `/trimatrix cross-repo --resume`):
+
 1. Locate checkpoint artifact (by ID, brain-ref, or latest tagged trimatrix-checkpoint)
 2. Call restore_checkpoint
 3. Call status to determine machineState

@@ -30,7 +30,7 @@ The classifier runs on every prompt. It determines **Intent** and **Tier** befor
 | ARCHITECT | "Evaluate architecture options", "compare approaches for X" | `architect` |
 | REVIEW | "Review this", code review requests, validation | `comply` |
 | REFACTOR | Structural cleanup, rename operations, pattern migrations | — |
-| RESUME | References a task ID, "resume", "continue", `reengage <id>` | `reengage` |
+| RESUME | `--resume`, references a task ID, "resume", "continue", `reengage <id>` | `reengage` |
 
 ### Tiers
 
@@ -82,7 +82,31 @@ For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead trave
 
 ### RESUME Flow
 
-When a prompt matches RESUME:
+RESUME triggers on: `--resume`, "resume", "continue", "reengage", or a bare task ID reference.
+
+**Syntax:** `/trimatrix --resume [<brain-ref>]` or `/trimatrix resume <task-id>`
+
+`<brain-ref>` accepts any of: brain ID (e.g., `BRN-01`), brain alias (e.g., `my-api`), or full brain name (e.g., `my-api-service`). All formats are resolved via `mcp__unimatrix__resolve_brains`.
+
+Two resume paths exist — active graph (preferred) and task-based (fallback).
+
+#### Path A: Active Graph Resume (--resume with optional brain-ref)
+
+1. Call `mcp__unimatrix__status` to check for an in-memory graph.
+2. **If graph is active** (machineState ≠ "idle"):
+   - Display session summary: label, intent, tier, node count, current wave, repos.
+   - If `<brain-ref>` provided: resolve via `mcp__unimatrix__resolve_brains`, then `mcp__unimatrix__add_repo` + `mcp__unimatrix__brain_link` to attach the new brain/repo.
+   - Call `mcp__unimatrix__refine` to re-plan with the new context. Then `compute_waves` and continue dispatching.
+3. **If idle** (no in-memory graph): query `mcp__unimatrix__list_sessions` for persisted checkpoints.
+   - **Multiple sessions found** → elicit: present a numbered list (session label, intent, repos, last updated). User picks one.
+   - **One session found** → auto-select.
+   - **Zero sessions found** → fall through to Path B (task-based).
+   - Load selected checkpoint via `mcp__unimatrix__restore_checkpoint`.
+   - If `<brain-ref>` provided: attach new brain/repo as in step 2.
+   - Call `mcp__unimatrix__status` to determine machine state → route to the appropriate mode's dispatch step.
+
+#### Path B: Task-Based Resume (resume <task-id>)
+
 1. Extract the epic or task ID from the prompt.
 2. Call `records_list` with tags `dispatch-brief` and `epic:<id>`.
 3. Fetch the brief via `records_fetch_content`.

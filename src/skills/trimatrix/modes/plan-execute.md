@@ -16,6 +16,20 @@ Aliases: assemble, reengage
 Full flow starting at Step 1.
 
 ### Resume Entry (from reengage or RESUME classification)
+
+Two entry variants exist depending on the RESUME path taken by the classifier (see SKILL.md).
+
+#### Variant A: Active Graph Resume (Path A routed here)
+The graph is already loaded (in-memory or restored from checkpoint). New brain/repo already attached if provided.
+
+1. Call `mcp__unimatrix__status` — confirm machineState and current wave.
+2. Load epic task via `tasks_get` with `expand: children` (epic ID from graph's node metadata).
+3. Check for existing worktree — `git worktree list`
+   - Exists: enter via EnterWorktree
+   - Does not exist: create via EnterWorktree, link brain
+4. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5.
+
+#### Variant B: Task-Based Resume (Path B routed here)
 1. Load task via `tasks_get` with `expand: children`
 2. Load dispatch brief — `records_list` with tags `dispatch-brief` + `epic:<id>`, then `records_fetch_content`
 3a. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
