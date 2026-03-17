@@ -95,13 +95,15 @@ After materializing brain tasks, construct a trimatrix graph for algorithmic wav
 
 The computed waves replace manual wave structuring. The graph engine determines parallelism algorithmically.
 
-### Step 3b: Present Plan
-Present dispatch plan to user. Wait for explicit approval before proceeding.
+### Step 3b: Plan Approval and Session Naming Gate
+Present the dispatch plan and a proposed session name (concise, lowercase, hyphenated — e.g., "auth-middleware-refactor"). Elicit via `AskUserQuestion` with three options:
+- **Accept** — user approves the plan and session name. Proceed.
+- **Revise** — user provides feedback or a different name. Incorporate, re-plan if needed, re-elicit.
+- **Decline** — halt and wait for further instructions.
 
-### Step 3c: Session Naming Gate
-After plan approval, elicit a session name. Propose a default (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Call `mcp__unimatrix__rename_session` with the confirmed label. Then call `/rename` to sync the Claude Code conversation title. Finally, `mcp__unimatrix__save_checkpoint` (with `claude_session_id`) to persist the named graph. This is the first checkpoint — required for session resumption.
+On accept: call `mcp__unimatrix__rename_session` with the confirmed label, then `/rename` to sync the conversation title. Finally, `mcp__unimatrix__save_checkpoint` (with `claude_session_id`) to persist the named graph. This is the first checkpoint — required for session resumption.
 
-### Step 3d: Enter Worktree
+### Step 3c: Enter Worktree
 Use Worktree Lifecycle Protocol. Branch name sourced from dispatch plan.
 
 ### Step 4: Generate Designations

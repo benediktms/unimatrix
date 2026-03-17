@@ -84,7 +84,12 @@ stacked for intra-repo).
 
 ### Step 4f: Session Naming Gate
 
-Elicit session name from user. Propose a default (concise, lowercase, hyphenated). Call `rename_session` with the confirmed label, then `/rename` to sync conversation title.
+Present the plan and a proposed session name (concise, lowercase, hyphenated). Elicit via `AskUserQuestion` with three options:
+- **Accept** — approve plan and name. Proceed.
+- **Revise** — provide feedback or different name. Re-plan if needed, re-elicit.
+- **Decline** — halt and wait for further instructions.
+
+On accept: call `rename_session` with the confirmed label, then `/rename` to sync conversation title.
 
 ### Step 5: Persist Checkpoint
 

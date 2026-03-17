@@ -267,7 +267,11 @@ For modes that create brain tasks:
    - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies
    - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-computes subgraphs
    - The graph enables cycle detection, optimal parallelism, subgraph partitioning, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
-9. **Session naming gate** — after plan approval, elicit a session name from the user. Propose a default (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Call `mcp__unimatrix__rename_session` with the confirmed label. Then call the built-in `/rename` command to sync the Claude Code conversation title.
+9. **Session naming gate** — present the plan and a proposed session name (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Elicit via `AskUserQuestion` with three options:
+   - **Accept** — user approves the plan and session name as-is. Proceed.
+   - **Revise** — user provides revised instructions or a different session name. Incorporate feedback, re-plan if needed, re-elicit.
+   - **Decline** — user is not ready. Halt and wait for further instructions. Do not proceed.
+   On accept: call `mcp__unimatrix__rename_session` with the confirmed label, then `/rename` to sync the Claude Code conversation title.
 10. **Persist initial checkpoint** — call `mcp__unimatrix__save_checkpoint` (with `claude_session_id`). Required for session resumption. Without it, a session that ends before wave dispatch loses the graph.
 11. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
 
