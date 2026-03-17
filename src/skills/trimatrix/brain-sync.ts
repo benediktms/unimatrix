@@ -5,7 +5,7 @@
  * without a running brain CLI or MCP server.
  */
 
-import type { RepoMetadata } from "./types.ts";
+import type { EpisodeStub, RepoMetadata } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Executor abstraction
@@ -86,5 +86,100 @@ export async function syncTaskStatus(
     }
   } catch {
     // Best-effort — graph remains source of truth
+  }
+}
+
+// ---------------------------------------------------------------------------
+// writeEpisode
+// ---------------------------------------------------------------------------
+
+/**
+ * Write an episode to brain's episodic memory (best-effort).
+ * Returns the summary_id on success, null on failure.
+ */
+export async function writeEpisode(
+  goal: string,
+  actions: string[],
+  outcome: string,
+  tags: string[],
+  importance?: number,
+  cwd?: string,
+  exec?: BrainExec,
+): Promise<string | null> {
+  if (!exec) return null;
+  try {
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "memory_write_episode",
+      params: {
+        goal,
+        actions: actions.join("\n"),
+        outcome,
+        tags,
+        ...(importance !== undefined ? { importance } : {}),
+      },
+      id: 1,
+    });
+    const raw = await exec.withStdin(BRAIN_CLI, ["mcp"], rpc, 5000, cwd);
+    const parsed = JSON.parse(raw);
+    const content = parsed?.result?.content?.[0]?.text;
+    if (content) {
+      const result = JSON.parse(content);
+      return result.summary_id ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// searchEpisodes
+// ---------------------------------------------------------------------------
+
+/**
+ * Search brain's episodic memory for prior episodes (best-effort).
+ * Returns matching episode stubs, or empty array on failure.
+ */
+export async function searchEpisodes(
+  query: string,
+  tags?: string[],
+  brains?: string[],
+  budget?: number,
+  cwd?: string,
+  exec?: BrainExec,
+): Promise<EpisodeStub[]> {
+  if (!exec) return [];
+  try {
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "memory_search_minimal",
+      params: {
+        query,
+        budget_tokens: budget ?? 800,
+        ...(tags ? { tags } : {}),
+        ...(brains ? { brains } : {}),
+      },
+      id: 1,
+    });
+    const raw = await exec.withStdin(BRAIN_CLI, ["mcp"], rpc, 5000, cwd);
+    const parsed = JSON.parse(raw);
+    const content = parsed?.result?.content?.[0]?.text;
+    if (content) {
+      const result = JSON.parse(content);
+      const results: Array<Record<string, unknown>> = result.results ?? [];
+      return results
+        .filter((r) => r.kind === "episode")
+        .map((r) => ({
+          // memory_id uses format "sum:{ulid}" — strip prefix for bare summary_id
+          summary_id: String(r.memory_id ?? "").replace(/^sum:/, ""),
+          title: r.title as string,
+          tags: (r.tags as string[]) ?? [],
+          score: r.score as number | undefined,
+        }));
+    }
+    return [];
+  } catch {
+    return [];
   }
 }

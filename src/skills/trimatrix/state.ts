@@ -12,10 +12,10 @@ import { computeWaves } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0", "2.2.0"]);
+const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0", "2.2.0", "2.3.0"]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -49,6 +49,7 @@ export function createCheckpoint(
     createdAt: now,
     updatedAt: now,
     subgraphs: [],
+    episodeIds: [],
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
@@ -450,6 +451,9 @@ export function deserialize(json: string): Checkpoint {
       (node as any).executor = Executor.LEAD;
     }
   }
+
+  // Backward compat: pre-2.3.0 checkpoints lack episodeIds — default to [].
+  if (!cp.episodeIds) cp.episodeIds = [];
 
   return cp;
 }

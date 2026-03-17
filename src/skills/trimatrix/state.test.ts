@@ -772,6 +772,60 @@ Deno.test("deserialize: pre-2.0.0 checkpoint backfills executor on nodes", () =>
   assertEquals(cp.graph.nodes.n1.executor, Executor.LEAD);
 });
 
+Deno.test("deserialize: pre-2.3.0 checkpoint defaults episodeIds to []", () => {
+  const raw = {
+    version: "2.2.0",
+    machineState: "initializing",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    subgraphs: [],
+    // no episodeIds field
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.episodeIds, []);
+});
+
+Deno.test("deserialize: 2.3.0 checkpoint preserves existing episodeIds", () => {
+  const raw = {
+    version: "2.3.0",
+    machineState: "initializing",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    subgraphs: [],
+    episodeIds: ["ep-abc", "ep-def"],
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.episodeIds, ["ep-abc", "ep-def"]);
+});
+
+Deno.test("createCheckpoint: initializes episodeIds to empty array", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph);
+  assertEquals(cp.episodeIds, []);
+});
+
+Deno.test("serialize/deserialize: round trip preserves episodeIds", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph);
+  // Simulate episodes being recorded during session
+  const withEpisodes = { ...cp, episodeIds: ["ep-1", "ep-2", "ep-3"] };
+  const json = serialize(withEpisodes);
+  const restored = deserialize(json);
+  assertEquals(restored.episodeIds, ["ep-1", "ep-2", "ep-3"]);
+});
+
 Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp = createCheckpoint([], graph, {
@@ -785,7 +839,7 @@ Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", (
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.2.0");
+  assertEquals(restored.version, "2.3.0");
 });
 
 // ---------------------------------------------------------------------------

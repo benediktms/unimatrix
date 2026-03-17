@@ -51,7 +51,9 @@ import {
 } from "./state.ts";
 import {
   repoRoot as repoRootLookup,
+  searchEpisodes as searchEpisodesCore,
   syncTaskStatus as syncTaskStatusCore,
+  writeEpisode as writeEpisodeCore,
 } from "./brain-sync.ts";
 import type { BrainExec } from "./brain-sync.ts";
 
@@ -193,7 +195,7 @@ server.tool(
       "Subgraph partitioning strategy: SELF (lead), INDEPENDENT (adjuncts), COORDINATED (team).",
     ),
   },
-  (params) => {
+  async (params) => {
     const repos = (params.repos ?? []) as RepoMetadata[];
     const emptyGraph = { nodes: {}, edges: [] };
     const sessionId = generateSessionId();
@@ -205,6 +207,13 @@ server.tool(
       tier: params.tier,
       subgraphStrategy: params.subgraphStrategy,
     });
+
+    // Search for prior episodes to inform planning (best-effort)
+    const priorEpisodes = await searchPriorEpisodes(
+      sessionLabel,
+      ["trimatrix"],
+    ).then((eps) => eps.slice(0, 5));
+
     return {
       content: [
         {
@@ -220,6 +229,7 @@ server.tool(
             ...(params.subgraphStrategy !== undefined
               ? { subgraphStrategy: params.subgraphStrategy }
               : {}),
+            ...(priorEpisodes.length > 0 ? { priorEpisodes } : {}),
           }),
         },
       ],
@@ -889,6 +899,17 @@ server.tool(
       .map((n) => syncTaskStatus(n.taskId!, "activate", repoRoot(n.repo)));
     await Promise.all(syncPromises);
 
+    // Record episode for wave dispatch (best-effort, awaited to prevent race)
+    const nodeLabels = wave.nodes
+      .map((nid) => checkpoint!.graph.nodes[nid]?.label)
+      .filter(Boolean) as string[];
+    await recordEpisode(
+      `Wave ${params.waveId} dispatched for session "${checkpoint.sessionLabel ?? checkpoint.sessionId}"`,
+      nodeLabels,
+      "dispatching",
+      ["trimatrix", "wave", `session:${checkpoint.sessionId ?? "unknown"}`],
+    );
+
     // Compute per-node execution info and parallelism groups
     const nodeExecution = wave.nodes.map((nId) => {
       const node = checkpoint!.graph.nodes[nId];
@@ -985,6 +1006,18 @@ server.tool(
       }
     }
 
+    // Record episode for node completion (best-effort, awaited to prevent race)
+    {
+      const completedNode = checkpoint.graph.nodes[params.nodeId];
+      const prInfo = params.prUrl ? `PR: ${params.prUrl}` : "direct completion";
+      await recordEpisode(
+        `Node "${completedNode?.label ?? params.nodeId}" completed`,
+        [prInfo],
+        String(completedNode?.status ?? "DONE"),
+        ["trimatrix", "node-complete", `session:${checkpoint.sessionId ?? "unknown"}`],
+      );
+    }
+
     return {
       content: [
         {
@@ -1036,6 +1069,15 @@ server.tool(
     if (failedNode?.taskId) {
       await syncTaskStatus(failedNode.taskId, "block", repoRoot(failedNode.repo));
     }
+
+    // Record episode for node failure (best-effort, awaited to prevent race)
+    await recordEpisode(
+      `Node "${failedNode?.label ?? params.nodeId}" failed`,
+      [params.reason],
+      "failed",
+      ["trimatrix", "failure", `session:${checkpoint.sessionId ?? "unknown"}`],
+      0.9,
+    );
 
     // Check if wave is now fully failed
     const wave = cp.waves.find((w) => w.id === cp.currentWaveId);
@@ -1972,6 +2014,105 @@ async function syncTaskStatus(
 ): Promise<void> {
   return syncTaskStatusCore(taskId, action, cwd, brainExec);
 }
+
+/**
+ * Record an episode to brain's episodic memory and track its ID (best-effort).
+ * Appends the returned summary_id to checkpoint.episodeIds if successful.
+ */
+async function recordEpisode(
+  goal: string,
+  actions: string[],
+  outcome: string,
+  tags: string[],
+  importance?: number,
+  cwd?: string,
+): Promise<void> {
+  const summaryId = await writeEpisodeCore(
+    goal, actions, outcome, tags, importance, cwd, brainExec,
+  );
+  if (summaryId && checkpoint) {
+    checkpoint = {
+      ...checkpoint,
+      episodeIds: [...(checkpoint.episodeIds ?? []), summaryId],
+    };
+  }
+}
+
+/**
+ * Search brain's episodic memory for prior episodes (best-effort).
+ */
+async function searchPriorEpisodes(
+  query: string,
+  tags?: string[],
+  brains?: string[],
+  budget?: number,
+  cwd?: string,
+) {
+  return searchEpisodesCore(query, tags, brains, budget, cwd, brainExec);
+}
+
+// ---------------------------------------------------------------------------
+// Tool: reflect_session
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "reflect_session",
+  "Gather session episodes and return reflection source material for synthesis. Requires an active checkpoint with a sessionId.",
+  {},
+  async () => {
+    const cp = requireCheckpoint();
+    if (!cp.sessionId) {
+      throw new Error("No sessionId on checkpoint — cannot gather session episodes.");
+    }
+
+    const sessionTag = `session:${cp.sessionId}`;
+    const episodes = await searchPriorEpisodes(
+      cp.sessionLabel ?? cp.sessionId,
+      [sessionTag],
+      undefined,
+      2000,
+    );
+
+    const nodeCount = Object.keys(cp.graph.nodes).length;
+    const completedCount = Object.values(cp.graph.nodes).filter(
+      (n) => n.status === NodeStatus.DONE || n.status === NodeStatus.MERGED,
+    ).length;
+    const failedCount = Object.values(cp.graph.nodes).filter(
+      (n) => n.status === NodeStatus.FAILED,
+    ).length;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            sessionId: cp.sessionId,
+            sessionLabel: cp.sessionLabel,
+            intent: cp.intent,
+            tier: cp.tier,
+            machineState: cp.machineState,
+            nodeCount,
+            completedCount,
+            failedCount,
+            waveCount: cp.waves.length,
+            episodeIds: cp.episodeIds ?? [],
+            episodes,
+            ...(episodes.length === 0 && (cp.episodeIds ?? []).length === 0
+              ? { note: "No episodes recorded during this session. Nothing to reflect on." }
+              : {
+                reflectionPrompt:
+                  `Synthesize a reflection for session "${cp.sessionLabel ?? cp.sessionId}". ` +
+                  `Summarize key decisions, obstacles encountered, and lessons learned. ` +
+                  `Use memory_reflect with mode="commit" to persist the reflection, ` +
+                  `linking to source episode IDs: [${(cp.episodeIds ?? []).join(", ")}].`,
+              }),
+          }),
+        },
+      ],
+    };
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Tool: save_checkpoint

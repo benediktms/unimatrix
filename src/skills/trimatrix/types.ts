@@ -22,6 +22,7 @@ export enum NodeType {
   VERIFY_TEST = "VERIFY_TEST",
   VERIFY_LINT = "VERIFY_LINT",
   VERIFY_FORMAT = "VERIFY_FORMAT",
+  REFLECT = "REFLECT",
 }
 
 export enum NodeStatus {
@@ -280,6 +281,8 @@ export interface Checkpoint {
   subgraphStrategy?: SubgraphStrategy;
   /** Computed subgraph partitions. */
   subgraphs?: Subgraph[];
+  /** Episode summary_ids written during this session (episodic memory). */
+  episodeIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +357,24 @@ export interface PrInfo {
   base: string;
   /** Whether this PR has been merged. */
   merged: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Episodic memory types
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact stub returned by brain's memory_search_minimal for episode results.
+ */
+export interface EpisodeStub {
+  /** Brain summary_id (ULID). */
+  summary_id: string;
+  /** Episode title (goal text). */
+  title: string;
+  /** Tags attached to the episode. */
+  tags: string[];
+  /** Relevance score from search (0–1). */
+  score?: number;
 }
 
 // ---------------------------------------------------------------------------
