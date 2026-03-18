@@ -1,6 +1,6 @@
 # Unimatrix
 
-A multi-agent orchestration framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [OpenCode](https://opencode.ai) that coordinates specialized AI agents to plan, implement, review, and analyze software engineering tasks.
+A multi-agent orchestration framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [OpenCode](https://opencode.ai) that coordinates specialized AI agents to plan, implement, review, and analyze software engineering tasks. The project is distinctly **Star Trek Borg-themed** — agents are adjuncts of the collective, the lead session is the Borg Queen, and all terminology (assimilation, compliance, regeneration alcoves, etc.) reflects that aesthetic.
 
 Unimatrix extends both platforms with a collective of agents — each with a distinct role, model, and set of capabilities — orchestrated through `/trimatrix`, event hooks, and persistent task tracking via [Brain](https://github.com/benediktms/brain).
 
@@ -238,7 +238,7 @@ Restart your editor/CLI after installation to pick up changes.
 
 All workflows route through `/trimatrix`. The intent classifier determines the mode automatically based on the prompt.
 
-### Plan-Execute (formerly `/assemble`)
+### Plan-Execute
 
 The primary workflow for complex, multi-step tasks:
 
@@ -273,7 +273,7 @@ flowchart TD
     Fix --> Review
 ```
 
-### Adapt (formerly `/adapt`)
+### Adapt
 
 For tasks that need multiple passes to converge:
 
@@ -285,7 +285,7 @@ flowchart LR
     Val -->|BLOCK| Escalate([Escalate])
 ```
 
-### Swarm (formerly `/swarm`)
+### Swarm
 
 For applying the same kind of change across many files:
 
@@ -298,7 +298,7 @@ flowchart TD
     A1 & A2 & A3 --> Review["Validation reviews<br/>aggregate changes"]
 ```
 
-### Investigate (formerly `/recon`, `/analyse`)
+### Investigate
 
 For understanding a codebase area before making changes:
 
@@ -311,7 +311,7 @@ flowchart TD
     R1 & R2 & TA -->|results linked to brain tasks| Synthesis["Synthesized findings<br/>returned to user"]
 ```
 
-### Diagnose (formerly `/diagnose`)
+### Diagnose
 
 For bugs with unclear root cause — adversarial hypothesis testing:
 

@@ -1,6 +1,6 @@
 # unimatrix
 
-A modular, dual-platform agent framework for Claude Code and OpenCode.
+A modular, dual-platform agent framework for Claude Code and OpenCode. The project is distinctly **Star Trek Borg-themed** — all naming, terminology, and personality follow Borg collective aesthetics.
 
 ## Structure
 
