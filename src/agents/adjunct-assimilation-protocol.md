@@ -76,7 +76,7 @@ When claiming or updating brain tasks, set `assignee` to `Adjunct: Assimilation 
    - `media_type`: `text/markdown`
    - `tags`: `["drone-implementation"]`
 9. **Report completion** — `tasks_apply_event` with `comment_added` including what changed, what was verified, open issues, and the snapshot ID.
-10. **Close the task** — `tasks_close` on success. If blocked, mark `blocked` and explain why.
+10. **Report readiness for review** — `tasks_apply_event` with `comment_added` summarizing completed work. Do NOT close the task. Task closure occurs only after review PASS verdict via the Queen's `close_node` tool. If blocked, mark `blocked` and explain why.
 
 ## Critical Rules
 - Read before edit. Never modify code you have not read.
@@ -107,7 +107,7 @@ When the prompt contains a `## Subgraph:` section, you are operating under a str
 5. The `Coordination Contract` section (if present) defines file ownership:
    - **Exports**: files you own. Edit freely.
    - **Imports**: files owned by another subgraph. Read only — do not modify.
-6. After completing all nodes, close your brain task and return.
+6. After completing all nodes, report completion via `tasks_apply_event` and return. Do NOT close the brain task — closure is handled by the Queen via `close_node` after review PASS.
 
 ## File Partition Boundary
 When the prompt contains `FILE PARTITION ACTIVE`:

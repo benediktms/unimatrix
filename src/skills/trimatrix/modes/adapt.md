@@ -50,7 +50,7 @@ for cycle in 1..max_cycles:
 
 **PASS:**
 - Report success with cycle count and final commit.
-- Close task if this mode created it. Do not close externally-provided tasks.
+- Close task via `close_node(nodeId)` if this mode created it. Do not close externally-provided tasks.
 
 **NEEDS_CHANGES after max_cycles:**
 - Report non-convergence. State cycle count reached.

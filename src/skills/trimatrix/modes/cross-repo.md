@@ -135,7 +135,7 @@ Enumerate failed nodes. Present options:
 
 ### Step 10: Completion
 
-Close all brain tasks. Remove per-node worktrees. Report PRs created.
+After Validation PASS: call `close_node(nodeId)` for each completed node, then close epic via `tasks_close`. Remove per-node worktrees. Report PRs created.
 
 ## Node Worktree Convention
 

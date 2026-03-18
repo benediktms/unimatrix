@@ -53,6 +53,6 @@ Use Verification Gate Protocol. Run after all adjuncts complete (or all non-bloc
 Dispatch one Validation adjunct with parent epic task ID. Scope: full swarm output.
 
 ### 7. Handle Verdict
-- **PASS:** Task Closure Protocol (close all subtasks, then epic). Report completion with partition summary.
+- **PASS:** Task Closure Protocol — call `close_node(nodeId)` for each completed node, then close epic via `tasks_close`. Report completion with partition summary.
 - **NEEDS_CHANGES:** Identify which partitions require fixes. Spawn targeted fix adjuncts per affected partition. Re-run Verification Gate and Review.
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.

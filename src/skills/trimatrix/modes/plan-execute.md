@@ -20,9 +20,9 @@ Full flow starting at Step 1.
 Two entry variants exist depending on the RESUME path taken by the classifier (see SKILL.md).
 
 #### Variant A: Active Graph Resume (Path A routed here)
-The graph is already loaded (in-memory or restored from checkpoint). New brain/repo already attached if provided.
+The graph is already loaded (in-memory or restored from checkpoint). New brain/repo already attached if provided. User has already confirmed intent via SKILL.md Resume Assessment Step.
 
-1. Call `mcp__unimatrix__status` — confirm machineState and current wave.
+1. Call `mcp__unimatrix__status` — confirm machineState and current wave. Present assessment summary (completed/pending/failed nodes, wave progress, PRs created).
 2. Load epic task via `tasks_get` with `expand: children` (epic ID from graph's node metadata).
 3. Check for existing worktree — `git worktree list`
    - Exists: enter via EnterWorktree
@@ -30,10 +30,12 @@ The graph is already loaded (in-memory or restored from checkpoint). New brain/r
 4. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5.
 
 #### Variant B: Task-Based Resume (Path B routed here)
+User has already confirmed intent via SKILL.md Resume Assessment Step (if checkpoint was restored).
+
 1. Load task via `tasks_get` with `expand: children`
 2. Load dispatch brief — `records_list` with tags `dispatch-brief` + `epic:<id>`, then `records_fetch_content`
 3. Check for trimatrix checkpoint — call `mcp__unimatrix__status`:
-   - If not "idle" (checkpoint loaded): use the graph's wave state to determine resume point. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5 with graph-driven dispatch.
+   - If not "idle" (checkpoint loaded): present assessment summary (completed/pending/failed nodes, wave progress). Use the graph's wave state to determine resume point. Call `mcp__unimatrix__next_wave` to find the next ready wave. Skip to Step 5 with graph-driven dispatch.
    - If "idle" (no checkpoint): continue to step 4.
 4. Check for existing worktree — `git worktree list`
    - Exists: enter via EnterWorktree

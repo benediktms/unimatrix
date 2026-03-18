@@ -420,17 +420,16 @@ Minimize token consumption across the collective:
 Task closure is not optional. Orphaned open tasks pollute the brain and cause `/reengage` to re-dispatch completed work. Every task must reach a terminal state (`done` or `cancelled`).
 
 ### Assimilation Adjunct Responsibility
-- Assimilation adjuncts **must** close their own task via `tasks_close` as their final action (step 10 in the Assimilation adjunct process).
-- An Assimilation adjunct that commits, comments, but does not close its task has **not completed its directive**.
-- If an Assimilation adjunct fails to close its task (crash, timeout, tool error), the Queen is responsible for closing it.
+- Assimilation adjuncts **never** close tasks. They report completion via `tasks_apply_event` with a `comment_added` event summarizing their work.
+- After completing all nodes, the adjunct's task should remain `in_progress` (awaiting review).
+- Premature closure by an adjunct is a protocol violation. If an adjunct closes its own task, the Queen notes the violation.
 
 ### Queen Responsibility
-- After each wave completes (all Assimilation adjuncts return), the Queen **must** run `tasks_list` filtered by the epic's parent ID and verify every subtask in that wave is closed.
-- Any subtask still in `in_progress` or `open` after its Assimilation adjunct has returned is an anomaly. The Queen closes it immediately with a comment noting the Assimilation adjunct failed to self-close.
-- After the final wave and Validation adjunct PASS, the Queen **must**:
-  1. Run `tasks_list` filtered by parent to get all subtasks.
-  2. Verify every subtask is closed. Close any that are not.
-  3. Close the epic itself via `tasks_close`.
-  4. Only then offer merge/keep/discard to the user.
-- **An epic with open subtasks must never be closed.** Close all children first, then the parent.
+- After each wave completes (all Assimilation adjuncts return), the Queen **must** run `tasks_list` filtered by the epic's parent ID and verify all subtasks are `in_progress` (awaiting review).
+- After Validation adjunct PASS verdict, the Queen **must**:
+  1. Call `close_node(nodeId)` for each completed node. This validates the task ID and closes the individual brain task. Fails loudly on error.
+  2. After all nodes are closed, close the epic task directly via `tasks_close`.
+  3. Only then offer merge/keep/discard to the user.
+- **An epic with open subtasks must never be closed.** Close all children first via `close_node`, then the parent.
 - **Work is not complete until every task — subtasks and epic — is closed.** Do not report completion to the user while any task remains open.
+- If `close_node` fails for any node, investigate and resolve before proceeding. Do not silently skip closure.
