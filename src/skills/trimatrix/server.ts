@@ -2006,14 +2006,18 @@ async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
   try {
     const serialized = JSON.stringify(cp);
     const waveId = cp.currentWaveId ?? "latest";
-    const title = `checkpoint:${cp.sessionId ?? "unknown"}:wave-${waveId}:${cp.machineState}`;
+    const sessionId = cp.sessionId ?? "unknown";
+    const title = `[session:${sessionId}] checkpoint:${sessionId}:wave-${waveId}:${cp.machineState}`;
     const rpc = JSON.stringify({
       jsonrpc: "2.0",
-      method: "records_save_snapshot",
+      method: "tools/call",
       params: {
-        title,
-        data: serialized,
-        tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`, `state:${cp.machineState}`],
+        name: "records_save_snapshot",
+        arguments: {
+          title,
+          text: serialized,
+          tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`, `state:${cp.machineState}`],
+        },
       },
       id: 1,
     });
