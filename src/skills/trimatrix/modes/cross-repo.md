@@ -93,7 +93,7 @@ On accept: call `rename_session` with the confirmed label, then `/rename` to syn
 
 ### Step 5: Persist Checkpoint
 
-save_checkpoint (with `claude_session_id`) → save as brain artifact tagged:
+save_checkpoint → save as brain artifact tagged:
 - trimatrix-checkpoint
 - trimatrix-repo:<name> (one tag per repo)
 - trimatrix-session:<sessionId>

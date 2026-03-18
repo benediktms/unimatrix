@@ -272,7 +272,7 @@ For modes that create brain tasks:
    - **Revise** — user provides revised instructions or a different session name. Incorporate feedback, re-plan if needed, re-elicit.
    - **Decline** — user is not ready. Halt and wait for further instructions. Do not proceed.
    On accept: call `mcp__unimatrix__rename_session` with the confirmed label, then `/rename` to sync the Claude Code conversation title.
-10. **Persist initial checkpoint** — call `mcp__unimatrix__save_checkpoint` (with `claude_session_id`). Required for session resumption. Without it, a session that ends before wave dispatch loses the graph.
+10. **Persist initial checkpoint** — call `mcp__unimatrix__save_checkpoint`. Required for session resumption. Without it, a session that ends before wave dispatch loses the graph. Optionally pass `runtime_state_key` to capture `/tmp` agent/cost/compaction state as enrichment.
 11. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
 
 **Task description format** — every subtask must be self-contained:

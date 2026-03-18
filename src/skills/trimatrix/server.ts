@@ -1660,9 +1660,18 @@ server.tool(
 
 server.tool(
   "list_sessions",
-  "List all trimatrix sessions: the active in-memory session (if any) plus persisted checkpoint sessions from brain artifacts.",
+  "List all trimatrix sessions: the active in-memory session (if any) plus persisted checkpoint sessions across all brains.",
   {},
   async () => {
+    type CheckpointEntry = { recordId: string; title: string; updatedAt: string };
+    type SessionEntry = {
+      sessionId: string;
+      brain: string;
+      checkpoints: CheckpointEntry[];
+      createdAt: string;
+      updatedAt: string;
+    };
+
     const result: {
       ok: boolean;
       active: {
@@ -1676,13 +1685,9 @@ server.tool(
         currentWaveId: number | null;
         updatedAt: string;
       } | null;
-      persisted: {
-        sessionId: string;
-        checkpoints: { recordId: string; title: string; updatedAt: string }[];
-        createdAt: string;
-        updatedAt: string;
-      }[];
-    } = { ok: true, active: null, persisted: [] };
+      persisted: SessionEntry[];
+      errors: string[];
+    } = { ok: true, active: null, persisted: [], errors: [] };
 
     // Active in-memory session
     if (checkpoint !== null) {
@@ -1699,13 +1704,32 @@ server.tool(
       };
     }
 
-    // Persisted checkpoint sessions from brain
+    // Build prefix → brain name map (best-effort)
+    const prefixMap = new Map<string, string>();
+    try {
+      const { stdout: lsOut } = await execFileAsync("brain", ["ls", "--json"]);
+      const brains: { brains: Array<{ name: string; prefix: string }> } =
+        JSON.parse(lsOut);
+      for (const b of brains.brains) prefixMap.set(b.prefix, b.name);
+    } catch {
+      // Best-effort — brain field falls back to raw prefix
+    }
+
+    function brainFromRecordId(recordId: string): string {
+      const prefix = recordId.split("-")[0];
+      return prefixMap.get(prefix) ?? prefix;
+    }
+
+    // Single unscoped query against unified DB — returns all brains' checkpoints
+    const home = Deno.env.get("HOME") ?? "";
+    const unifiedDb = join(home, ".brain", "brain.db");
+    const sessionRe = /^\[session:([^\]]+)\]\s*/;
+
     try {
       const { stdout } = await execFileAsync("brain", [
-        "snapshots",
-        "list",
-        "--tag",
-        "trimatrix-checkpoint",
+        "--sqlite-db", unifiedDb,
+        "snapshots", "list",
+        "--tag", "trimatrix-checkpoint",
         "--json",
       ]);
       const data = JSON.parse(stdout);
@@ -1716,10 +1740,9 @@ server.tool(
       }> = data.snapshots ?? data;
 
       // Group by session ID extracted from title prefix [session:<id>]
-      const sessionRe = /^\[session:([^\]]+)\]\s*/;
       const sessionMap = new Map<
         string,
-        { recordId: string; title: string; updatedAt: string }[]
+        { brain: string; checkpoints: CheckpointEntry[] }
       >();
 
       for (const record of records) {
@@ -1727,31 +1750,42 @@ server.tool(
         const sessionKey = match ? match[1] : "untagged";
         const displayTitle = match ? record.title.slice(match[0].length) : record.title;
         if (!sessionMap.has(sessionKey)) {
-          sessionMap.set(sessionKey, []);
+          // Brain attribution uses the first record's prefix; cross-brain
+          // sessions (rare) will only report the originating brain.
+          sessionMap.set(sessionKey, {
+            brain: brainFromRecordId(record.record_id),
+            checkpoints: [],
+          });
         }
-        sessionMap.get(sessionKey)!.push({
+        sessionMap.get(sessionKey)!.checkpoints.push({
           recordId: record.record_id,
           title: displayTitle,
           updatedAt: new Date(record.updated_at * 1000).toISOString(),
         });
       }
 
-      result.persisted = Array.from(sessionMap.entries())
-        .map(([sessionId, checkpoints]) => {
+      result.persisted = Array.from(sessionMap.entries()).map(
+        ([sessionId, { brain, checkpoints }]) => {
           const dates = checkpoints.map((c) => c.updatedAt).sort();
           return {
             sessionId,
+            brain,
             checkpoints,
             createdAt: dates[0],
             updatedAt: dates[dates.length - 1],
           };
-        })
-        .sort((a, b) =>
-          b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
-        );
-    } catch {
-      // Brain query failed — still return active session if present
+        },
+      );
+    } catch (e) {
+      result.errors.push(
+        `snapshot query failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
+
+    // Sort: most recently updated first
+    result.persisted.sort((a, b) =>
+      b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0
+    );
 
     return {
       content: [
@@ -2118,100 +2152,97 @@ server.tool(
 
 server.tool(
   "save_checkpoint",
-  "Serialize the current checkpoint to a JSON string for persistence. When claude_session_id is provided, also captures brain tasks, agent/cost state, and saves a brain snapshot.",
+  "Serialize the current checkpoint to a JSON string for persistence. Always captures graph state, brain tasks, and saves a brain snapshot. When runtime_state_key is provided, also captures /tmp state files (agents, costs, compactions) as optional enrichment.",
   {
+    runtime_state_key: z.string().optional().describe(
+      "Key for locating /tmp runtime state files (e.g. Claude Code session ID). Enables capture of agent/cost/compaction state as optional enrichment.",
+    ),
+    // Backward compatibility: accept claude_session_id as alias
     claude_session_id: z.string().optional().describe(
-      "Claude Code session ID — enables capture of /tmp state files and saves brain snapshot for post-compaction recovery",
+      "Deprecated — use runtime_state_key instead. Kept for backward compatibility.",
     ),
   },
   async (params) => {
-    // Graph checkpoint (may be null if no graph initialized)
-    let graphJson: string | null = null;
-    if (checkpoint) {
-      graphJson = serialize(checkpoint);
-    } else if (!params.claude_session_id) {
-      // Original behavior: require checkpoint when no session ID
+    if (!checkpoint) {
       throw new Error(
         "No checkpoint loaded. Call init or restore_checkpoint first.",
       );
     }
 
-    const result: Record<string, unknown> = {};
-    if (graphJson) {
-      result.checkpoint = graphJson;
-      if (checkpoint?.sessionId) result.sessionId = checkpoint.sessionId;
-      if (checkpoint?.sessionLabel) result.sessionLabel = checkpoint.sessionLabel;
-    }
+    const graphJson = serialize(checkpoint);
 
-    // Enhanced checkpoint with session state
-    if (params.claude_session_id) {
-      const sid = params.claude_session_id;
+    const result: Record<string, unknown> = {
+      checkpoint: graphJson,
+      sessionId: checkpoint.sessionId ?? undefined,
+      sessionLabel: checkpoint.sessionLabel ?? undefined,
+    };
 
-      // Query brain tasks
-      const [tasksInProgress, tasksOpen, tasksBlocked] = await Promise.all([
-        queryBrainTasks("in_progress"),
-        queryBrainTasks("open"),
-        queryBrainBlockedTasks(),
+    // Always query brain tasks
+    const [tasksInProgress, tasksOpen, tasksBlocked] = await Promise.all([
+      queryBrainTasks("in_progress"),
+      queryBrainTasks("open"),
+      queryBrainBlockedTasks(),
+    ]);
+
+    // Runtime state files — optional enrichment keyed by runtime_state_key
+    const runtimeKey = params.runtime_state_key ?? params.claude_session_id;
+    let agentsState: Record<string, unknown> | null = null;
+    let costsState: Record<string, unknown> | null = null;
+    let compactionsState: Record<string, unknown> | null = null;
+
+    if (runtimeKey) {
+      [agentsState, costsState, compactionsState] = await Promise.all([
+        readJsonFile(join(STATE_DIR, `unimatrix-agents-${runtimeKey}.json`)),
+        readJsonFile(join(STATE_DIR, `unimatrix-costs-${runtimeKey}.json`)),
+        readJsonFile(join(STATE_DIR, `unimatrix-compactions-${runtimeKey}.json`)),
       ]);
-
-      // Read /tmp state files
-      const agentsState = await readJsonFile(
-        join(STATE_DIR, `unimatrix-agents-${sid}.json`),
-      );
-      const costsState = await readJsonFile(
-        join(STATE_DIR, `unimatrix-costs-${sid}.json`),
-      );
-      const compactionsState = await readJsonFile(
-        join(STATE_DIR, `unimatrix-compactions-${sid}.json`),
-      );
-
-      const compactionNum = compactionsState
-        ? Number(compactionsState.compaction_count ?? 1)
-        : 1;
-
-      // Build unified markdown checkpoint
-      const markdown = buildCheckpointMarkdown({
-        compactionNum,
-        tasksInProgress,
-        tasksOpen,
-        tasksBlocked,
-        agentsState,
-        costsState,
-        graphJson,
-      });
-
-      // Save brain snapshot
-      const snapshotTags = ["trimatrix-checkpoint", "compaction-checkpoint"];
-      if (checkpoint?.sessionId) {
-        snapshotTags.push(`trimatrix-session:${checkpoint.sessionId}`);
-      }
-
-      const parts: string[] = [];
-      if (checkpoint?.sessionLabel) parts.push(checkpoint.sessionLabel);
-      parts.push(`Compaction #${compactionNum}`);
-      const counts: string[] = [];
-      if (tasksInProgress.length > 0) counts.push(`${tasksInProgress.length} in-progress`);
-      if (tasksOpen.length > 0) counts.push(`${tasksOpen.length} open`);
-      if (tasksBlocked.length > 0) counts.push(`${tasksBlocked.length} blocked`);
-      if (counts.length > 0) parts.push(counts.join(", "));
-      if (graphJson) parts.push("graph attached");
-
-      // Encode sessionId in title for list-time grouping (list output lacks tags)
-      const titlePrefix = checkpoint?.sessionId ? `[session:${checkpoint.sessionId}] ` : "";
-      const title = titlePrefix + parts.join(" — ");
-
-      await saveBrainSnapshot(title, snapshotTags, markdown);
-
-      result.capturedState = {
-        tasksInProgress: tasksInProgress.length,
-        tasksOpen: tasksOpen.length,
-        tasksBlocked: tasksBlocked.length,
-        hasAgents: agentsState !== null,
-        hasCosts: costsState !== null,
-        hasGraph: graphJson !== null,
-        compactionNum,
-      };
     }
+
+    const compactionNum = compactionsState
+      ? Number(compactionsState.compaction_count ?? 1)
+      : 1;
+
+    // Build unified markdown checkpoint
+    const markdown = buildCheckpointMarkdown({
+      compactionNum,
+      tasksInProgress,
+      tasksOpen,
+      tasksBlocked,
+      agentsState,
+      costsState,
+      graphJson,
+    });
+
+    // Save brain snapshot — always
+    const snapshotTags = ["trimatrix-checkpoint", "compaction-checkpoint"];
+    if (checkpoint.sessionId) {
+      snapshotTags.push(`trimatrix-session:${checkpoint.sessionId}`);
+    }
+
+    const parts: string[] = [];
+    if (checkpoint.sessionLabel) parts.push(checkpoint.sessionLabel);
+    parts.push(`Compaction #${compactionNum}`);
+    const counts: string[] = [];
+    if (tasksInProgress.length > 0) counts.push(`${tasksInProgress.length} in-progress`);
+    if (tasksOpen.length > 0) counts.push(`${tasksOpen.length} open`);
+    if (tasksBlocked.length > 0) counts.push(`${tasksBlocked.length} blocked`);
+    if (counts.length > 0) parts.push(counts.join(", "));
+    parts.push("graph attached");
+
+    const titlePrefix = checkpoint.sessionId ? `[session:${checkpoint.sessionId}] ` : "";
+    const title = titlePrefix + parts.join(" — ");
+
+    await saveBrainSnapshot(title, snapshotTags, markdown);
+
+    result.capturedState = {
+      tasksInProgress: tasksInProgress.length,
+      tasksOpen: tasksOpen.length,
+      tasksBlocked: tasksBlocked.length,
+      hasAgents: agentsState !== null,
+      hasCosts: costsState !== null,
+      hasGraph: true,
+      compactionNum,
+    };
 
     return {
       content: [

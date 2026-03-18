@@ -930,3 +930,85 @@ Deno.test("pendingGates: returns BLOCKED ELICIT_GATE nodes in current wave", () 
   const result = pendingGates(cp);
   assertEquals(result, ["g1"]);
 });
+
+// ---------------------------------------------------------------------------
+// Checkpoint persistence decoupling tests
+// ---------------------------------------------------------------------------
+
+Deno.test("serialize: checkpoint always produces valid JSON without session fields", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const cp = createCheckpoint(
+    [{ name: "test-repo", root: "/repos/test", worktrees: [] }],
+    graph,
+  );
+  // No sessionId or sessionLabel set
+  const json = serialize(cp);
+  const raw = JSON.parse(json);
+  assertEquals(raw.version, cp.version);
+  assertEquals(Object.keys(raw.graph.nodes).length, 2);
+  assertEquals(raw.sessionId, undefined);
+  assertEquals(raw.sessionLabel, undefined);
+});
+
+Deno.test("serialize: checkpoint with session fields includes them", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint(
+    [{ name: "test-repo", root: "/repos/test", worktrees: [] }],
+    graph,
+    { sessionId: "test-session-123", sessionLabel: "my-session" },
+  );
+  const json = serialize(cp);
+  const raw = JSON.parse(json);
+  assertEquals(raw.sessionId, "test-session-123");
+  assertEquals(raw.sessionLabel, "my-session");
+});
+
+Deno.test("deserialize: round trip without session fields preserves graph", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const cp = createCheckpoint(
+    [{ name: "test-repo", root: "/repos/test", worktrees: [] }],
+    graph,
+  );
+  const json = serialize(cp);
+  const restored = deserialize(json);
+  assertEquals(Object.keys(restored.graph.nodes).length, 2);
+  assertEquals(restored.graph.nodes["n1"].id, "n1");
+  assertEquals(restored.graph.nodes["n2"].id, "n2");
+  assertEquals(restored.machineState, MachineState.INITIALIZING);
+});
+
+Deno.test("deserialize: round trip with session fields preserves both graph and session", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint(
+    [{ name: "test-repo", root: "/repos/test", worktrees: [] }],
+    graph,
+    { sessionId: "sess-abc", sessionLabel: "label-abc" },
+  );
+  const json = serialize(cp);
+  const restored = deserialize(json);
+  assertEquals(restored.sessionId, "sess-abc");
+  assertEquals(restored.sessionLabel, "label-abc");
+  assertEquals(Object.keys(restored.graph.nodes).length, 1);
+});
+
+Deno.test("deserialize: backward compat — old checkpoint without runtime state fields restores cleanly", () => {
+  // Simulate a pre-decoupling checkpoint (1.0.0) with no session fields
+  const raw = {
+    version: "1.0.0",
+    machineState: "initializing",
+    graph: {
+      nodes: { n1: { id: "n1", repo: "r", type: "IMPLEMENTATION", label: "N1", worktreeBranch: "b", status: "PENDING" } },
+      edges: [],
+    },
+    waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const restored = deserialize(JSON.stringify(raw));
+  assertEquals(restored.machineState, "initializing");
+  assertEquals(Object.keys(restored.graph.nodes).length, 1);
+  assertEquals(restored.sessionId, undefined);
+});
