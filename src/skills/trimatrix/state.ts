@@ -124,11 +124,11 @@ export function canTransition(
       return { allowed: true };
 
     case "execution_completed":
-      if (machineState !== MachineState.DISPATCHING) {
+      if (machineState !== MachineState.DISPATCHING && machineState !== MachineState.FAILED) {
         return {
           allowed: false,
           reason:
-            `execution_completed requires dispatching state, got ${machineState}`,
+            `execution_completed requires dispatching or failed state, got ${machineState}`,
         };
       }
       return { allowed: true };

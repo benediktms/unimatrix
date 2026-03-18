@@ -67,4 +67,7 @@ export const SIDE_EFFECT_POLICY: Partial<Record<Event["type"], SideEffectSpec[]>
   cancel: [
     { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
   ],
+  execution_completed: [
+    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+  ],
 };

@@ -1024,3 +1024,43 @@ Deno.test("deserialize: backward compat — old checkpoint without runtime state
   assertEquals(Object.keys(restored.graph.nodes).length, 1);
   assertEquals(restored.sessionId, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// execution_completed transition tests
+// ---------------------------------------------------------------------------
+
+Deno.test("canTransition: execution_completed allowed from dispatching", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
+  const result = canTransition(cp, { type: "execution_completed" });
+  assertEquals(result, { allowed: true });
+});
+
+Deno.test("canTransition: execution_completed allowed from failed", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.FAILED });
+  const result = canTransition(cp, { type: "execution_completed" });
+  assertEquals(result, { allowed: true });
+});
+
+Deno.test("canTransition: execution_completed rejected from initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
+  const result = canTransition(cp, { type: "execution_completed" });
+  assertEquals(result.allowed, false);
+});
+
+Deno.test("canTransition: execution_completed rejected from completed", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.COMPLETED });
+  const result = canTransition(cp, { type: "execution_completed" });
+  assertEquals(result.allowed, false);
+});
+
+Deno.test("transition: execution_completed from dispatching produces completed", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
+  const result = transition(cp, { type: "execution_completed" });
+  assertEquals(result.machineState, MachineState.COMPLETED);
+});
+
+Deno.test("transition: execution_completed from failed produces completed", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.FAILED });
+  const result = transition(cp, { type: "execution_completed" });
+  assertEquals(result.machineState, MachineState.COMPLETED);
+});

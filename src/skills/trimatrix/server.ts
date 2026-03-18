@@ -1441,6 +1441,69 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: complete
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "complete",
+  "Complete the trimatrix execution. Transitions from dispatching or failed to completed state and persists a final checkpoint. Returns node status summary with warnings for any non-terminal nodes.",
+  {},
+  async () => {
+    const cp = requireCheckpoint();
+    const check = canTransition(cp, { type: "execution_completed" });
+    if (!check.allowed) throw new Error(`Cannot complete: ${check.reason}`);
+
+    const TERMINAL_STATUSES = new Set([
+      NodeStatus.DONE,
+      NodeStatus.MERGED,
+      NodeStatus.PR_CREATED,
+      NodeStatus.FAILED,
+    ]);
+    const nodes = Object.values(cp.graph.nodes);
+    const statusCounts: Record<string, number> = {};
+    const nonTerminalNodes: Array<{ id: string; label: string; status: string }> = [];
+
+    for (const node of nodes) {
+      statusCounts[node.status] = (statusCounts[node.status] ?? 0) + 1;
+      if (!TERMINAL_STATUSES.has(node.status)) {
+        nonTerminalNodes.push({ id: node.id, label: node.label, status: node.status });
+      }
+    }
+
+    const warnings: string[] = [];
+    if (nonTerminalNodes.length > 0) {
+      warnings.push(
+        `${nonTerminalNodes.length} node(s) in non-terminal state: ${nonTerminalNodes.map((n) => `${n.id}(${n.status})`).join(", ")}`,
+      );
+    }
+
+    const result = await transitionWithEffects(cp, { type: "execution_completed" });
+    checkpoint = result.checkpoint;
+    if (result.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            machineState: checkpoint.machineState,
+            sessionId: checkpoint.sessionId,
+            sessionLabel: checkpoint.sessionLabel,
+            nodeCount: nodes.length,
+            statusCounts,
+            waveCount: checkpoint.waves.length,
+            ...(warnings.length > 0 ? { warnings } : {}),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: archive
 // ---------------------------------------------------------------------------
 
