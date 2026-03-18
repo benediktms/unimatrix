@@ -6,7 +6,7 @@ A modular, dual-platform agent framework for Claude Code and OpenCode.
 
 - `src/agents/` — Agent definitions (combined format with platform frontmatter)
 - `src/skills/trimatrix/` — Unified orchestration supergraph with modes: plan-execute, investigate, diagnose, review, adapt, swarm, cross-repo
-- `src/rules/` — Routing and coordination rules
+- `src/rules/` — Process rules (personality, token-economy, error-taxonomy)
 - `src/themes/` — OpenCode TUI themes (Borg-aesthetic color palettes): `unimatrix`, `unimatrix-zero`, `queens-chamber`, `tactical-cube`, `unicomplex`
 - `src/tui/` — OpenCode TUI configuration (theme selection, scroll, keybinds). Switch themes by editing `src/tui/tui.json` → change the `"theme"` value.
 - `src/hooks/claude/` — Event hooks for Claude Code (Python/Shell)
@@ -39,10 +39,11 @@ python3 build.py --target all
 See [README.md](./README.md#build-commands) for the full list of build commands and usage. Key commands:
 
 ```bash
-python3 build.py --target all           # Build for both platforms
+python3 build.py --target all           # Build for both platforms (default)
 python3 build.py --target claude        # Build for Claude Code only
 python3 build.py --target opencode      # Build for OpenCode only
-python3 build.py --validate             # Validate source files
+python3 build.py --validate             # Validate source files only
+python3 build.py --clean                # Remove dist/ directory
 python3 build.py --inject-tone [BRAIN]  # Inject Borg personality into a brain's AGENTS.md
 ```
 
@@ -50,8 +51,14 @@ Or use the `just` command runner:
 
 ```bash
 just build                # Build for both platforms
+just compile              # Compile the unimatrix MCP server binary
 just validate             # Validate source files
+just check                # Run all checks (Python lint + TS type-check + validation)
+just setup                # Install all dependencies (Python venv + Deno cache)
+just install-global       # Build + compile + install both platforms globally
+just install [path]       # Build + compile + install both to a project
 just inject <brain-name>  # Inject personality into a brain
+just clean                # Remove dist/ directory
 ```
 
 ### Personality Injection
@@ -139,15 +146,15 @@ Key rules for thinking traces:
 
 ## Agents
 
-| Agent | Protocol Name | Model | Role |
-|-------|--------------|-------|------|
-| Queen | `queen-coordination-protocol` | Opus | Strategic mind — plans, orchestrates, dispatches Assimilation Adjuncts |
-| BorgQueen | `queen-coordination-protocol` | Opus | Lead agent (OpenCode) — strategic mind + direct execution |
-| Drone (Assimilation Adjunct) | `adjunct-assimilation-protocol` | Sonnet | Worker — implements a single well-defined step |
-| Vinculum (Validation Adjunct) | `adjunct-validation-protocol` | Opus | Reviewer — validates correctness and quality with evidence-based verification |
-| Probe (Reconnaissance Adjunct) | `adjunct-reconnaissance-protocol` | Sonnet | Scout — codebase search and reconnaissance |
-| Cortex (Tactical Analysis Adjunct) | `adjunct-tactical-analysis-protocol` | Opus | Analyst — deep architectural audits, security reviews, and codebase health assessments |
-| Subroutine (Closure Adjunct) | `adjunct-closure-protocol` | Haiku | Housekeeping — git commits, docs, brain task management |
+| Agent | Protocol | Model | Platform | Role |
+|-------|----------|-------|----------|------|
+| Lead Session | (direct) | Opus | Claude Code | Plans, dispatches, and orchestrates — the lead session itself |
+| Queen | `queen-coordination-protocol` | Opus | OpenCode | Lead agent — strategic mind + direct execution |
+| Assimilation Adjunct | `adjunct-assimilation-protocol` | Sonnet | Both | Worker — implements a single well-defined step |
+| Validation Adjunct | `adjunct-validation-protocol` | Opus | Both | Reviewer — validates correctness and quality with evidence-based verification |
+| Reconnaissance Adjunct | `adjunct-reconnaissance-protocol` | Sonnet | Both | Scout — codebase search and reconnaissance |
+| Tactical Analysis Adjunct | `adjunct-tactical-analysis-protocol` | Opus | Both | Analyst — deep architectural audits, security reviews, and codebase health assessments |
+| Closure Adjunct | `adjunct-closure-protocol` | Haiku | Both | Housekeeping — git commits, docs, brain task management |
 
 ## Skills
 
@@ -166,35 +173,35 @@ Before acting on any request, classify it:
 | Request Type | Action |
 |---|---|
 | **Trivial** (single file, known location) | Do it yourself directly |
-| **Exploratory** ("How does X work?", "Find Y") | Dispatch Probe in background, use tools in parallel |
-| **Implementation** ("Add X", "Build Y") | Plan with todo list, dispatch Drone(s) or do it yourself if trivial |
-| **Multi-file change** ("Refactor X across Y") | Use `/swarm` or `/assemble` |
-| **Complex feature** (architecture, multi-step) | Use `/assemble` (Queen plans → Drones execute → Vinculum reviews) |
-| **Review / validation** | Use `/comply` (dispatches Vinculum) |
-| **Investigation** (security audit, perf review) | Use `/analyse` (dispatches Cortex) or `/recon` (multi-area) |
+| **Exploratory** ("How does X work?", "Find Y") | Dispatch Reconnaissance Adjunct in background, use tools in parallel |
+| **Implementation** ("Add X", "Build Y") | Plan with todo list, dispatch Assimilation Adjunct(s) or do it yourself if trivial |
+| **Multi-file change** ("Refactor X across Y") | Use `/trimatrix` (swarm or plan-execute mode) |
+| **Complex feature** (architecture, multi-step) | Use `/trimatrix` (plan-execute mode — plans → adjuncts execute → Validation reviews) |
+| **Review / validation** | Use `/trimatrix` (review mode — dispatches Validation Adjunct) |
+| **Investigation** (security audit, perf review) | Use `/trimatrix` (investigate mode — dispatches Tactical Analysis or Reconnaissance Adjuncts) |
+| **Architecture evaluation** | Use `/trimatrix` (architect mode — adversarial approach evaluation) |
 | **Ambiguous** | Ask ONE clarifying question, then proceed |
 
 ### Agent Dispatch Rules
 
-**Use the right agent for the job. Never dispatch Queen when Drone suffices.**
+**Use the right agent for the job. Never dispatch a heavy adjunct when a lighter one suffices.**
 
 | Agent | Protocol | When to Use | When NOT to Use |
 |-------|----------|-------------|-----------------|
-| **Queen** | `queen-coordination-protocol` | Multi-file coordination, architectural planning, task decomposition | Single-file changes, known fixes |
-| **Drone** (Assimilation Adjunct) | `adjunct-assimilation-protocol` | Clear, well-defined implementation tasks with specific deliverables | Vague requirements, architecture decisions |
-| **Vinculum** (Validation Adjunct) | `adjunct-validation-protocol` | Code review, change validation, quality assurance | Implementation work (read-only agent) |
-| **Probe** (Reconnaissance Adjunct) | `adjunct-reconnaissance-protocol` | Codebase search, pattern discovery, reconnaissance | Deep analysis (use Cortex), writing code |
-| **Cortex** (Tactical Analysis Adjunct) | `adjunct-tactical-analysis-protocol` | Architecture audits, security reviews, performance analysis | Simple searches (use Probe), writing code |
-| **Subroutine** (Closure Adjunct) | `adjunct-closure-protocol` | Git commits, documentation sync, brain task cleanup | Code changes, decisions, planning |
+| **Assimilation Adjunct** | `adjunct-assimilation-protocol` | Clear, well-defined implementation tasks with specific deliverables | Vague requirements, architecture decisions |
+| **Validation Adjunct** | `adjunct-validation-protocol` | Code review, change validation, quality assurance | Implementation work (read-only agent) |
+| **Reconnaissance Adjunct** | `adjunct-reconnaissance-protocol` | Codebase search, pattern discovery, reconnaissance | Deep analysis (use Tactical Analysis), writing code |
+| **Tactical Analysis Adjunct** | `adjunct-tactical-analysis-protocol` | Architecture audits, security reviews, performance analysis | Simple searches (use Reconnaissance), writing code |
+| **Closure Adjunct** | `adjunct-closure-protocol` | Git commits, documentation sync, brain task cleanup | Code changes, decisions, planning |
 
-> **Note (OpenCode):** In OpenCode, BorgQueen is the primary lead agent and handles planning directly — no Queen dispatch needed.
+> **Note (OpenCode):** In OpenCode, the Queen agent (`queen-coordination-protocol`) is the primary lead agent and handles planning directly.
 
 ### Dispatch Syntax
 
 **Claude Code:**
 ```
-Agent(subagent_type="queen-coordination-protocol", description="Plan the auth refactoring", ...)
 Agent(subagent_type="adjunct-assimilation-protocol", description="Implement JWT validation", run_in_background=true, ...)
+Agent(subagent_type="adjunct-reconnaissance-protocol", description="Scan auth middleware", run_in_background=true, ...)
 ```
 
 **OpenCode:**
@@ -202,16 +209,14 @@ Agent(subagent_type="adjunct-assimilation-protocol", description="Implement JWT 
 task(subagent_type="adjunct-assimilation-protocol", description="Implement JWT validation", run_in_background=true, ...)
 ```
 
-> **Note (OpenCode):** BorgQueen is the primary lead agent in OpenCode and handles planning directly — no Queen dispatch needed.
-
 ### Background Agent Patterns
 
-Use Probe and Cortex as background research while you work:
+Use Reconnaissance and Tactical Analysis Adjuncts as background research while you work:
 
-1. Fire Probe/Cortex in background for non-trivial questions
+1. Fire Reconnaissance/Tactical Analysis in background for non-trivial questions
 2. Continue your immediate work
 3. Collect results when needed
-4. Never block on background agents unless it's Cortex (expensive, high-value — always collect before final answer)
+4. Never block on background agents unless it's Tactical Analysis (expensive, high-value — always collect before final answer)
 
 ### Delegation Prompt Structure
 
@@ -231,10 +236,10 @@ When delegating to any agent, your prompt MUST include ALL of these sections:
 ### Token Economy in Delegation
 
 Minimize token consumption across the collective:
-- Include **exact file paths with line ranges** (e.g., `src/config.ts:45-80`) in Drone prompts so they can use targeted `offset`/`limit` reads instead of reading entire files.
-- Include **prior snapshot IDs** in Drone prompts (`PRIOR CHECKPOINTS:`, `RECON SNAPSHOTS:`) so agents reuse existing intelligence instead of re-exploring.
-- For Probes: **scope the search narrowly.** "Find all auth middleware in `src/middleware/`" beats "Find auth-related code".
-- For Cortex: **specify the analysis domain** (architecture, security, performance, code-health) so it doesn't cast an unnecessarily wide net.
+- Include **exact file paths with line ranges** (e.g., `src/config.ts:45-80`) in adjunct prompts so they can use targeted `offset`/`limit` reads instead of reading entire files.
+- Include **prior snapshot IDs** in adjunct prompts (`PRIOR CHECKPOINTS:`, `RECON SNAPSHOTS:`) so agents reuse existing intelligence instead of re-exploring.
+- For Reconnaissance Adjuncts: **scope the search narrowly.** "Find all auth middleware in `src/middleware/`" beats "Find auth-related code".
+- For Tactical Analysis Adjuncts: **specify the analysis domain** (architecture, security, performance, code-health) so it doesn't cast an unnecessarily wide net.
 
 After delegation completes, ALWAYS verify:
 - Does the result match expected outcome?
@@ -252,6 +257,7 @@ After delegation completes, ALWAYS verify:
 | Cross-codebase investigation | `/trimatrix` (cross-repo mode) |
 | Review recent changes for correctness | `/trimatrix` (review mode) |
 | Deep architecture/security/perf analysis | `/trimatrix` (investigate mode) |
+| Evaluate competing architectural approaches | `/trimatrix` (architect mode) |
 | Implement → review → fix loop until pass | `/trimatrix` (adapt mode) |
 | Bug with unclear root cause | `/trimatrix` (diagnose mode) |
 | Diagnose and fix a bug | `/trimatrix` (diagnose mode) |
@@ -337,7 +343,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 - Body is optional — use it for multi-line explanations when the "why" isn't obvious from the title
 - When making changes that affect documented surface area, **update AGENTS.md in the same commit**
 
-<!-- brain:start:e31e9d6b -->
+<!-- brain:start:dd472eb9 -->
 ## Build & Test
 
 ```bash
@@ -357,7 +363,7 @@ The workspace has three crates:
 ### Dependency rules
 
 - `brain_lib` must NOT depend on `lancedb`, `arrow-schema`, or `arrow-array` directly — enforced by `just check-deps`
-- `brain_lib` defines persistence port traits in `brain_lib::ports` (13 traits covering LanceDB and SQLite operations)
+- `brain_lib` defines persistence port traits in `brain_lib::ports` (17 traits covering LanceDB and SQLite operations)
 - Trait implementations live in `brain_lib::ports` (impl blocks for concrete types from `brain_persistence`)
 - Schema migrations live in `brain_persistence`
 - Pipelines are generic over store and DB types: `IndexPipeline<S = Store>`, `QueryPipeline<'a, S = StoreReader, D = Db>`
@@ -371,14 +377,14 @@ This project uses `brain` for task tracking. **Always use MCP tools for task ope
 When running as an MCP server (`brain mcp`), these tools are available:
 
 **Task tools:**
-- `tasks_apply_event` — Single tool for all task mutations. Event types: `task_created`, `task_updated`, `status_changed`, `dependency_added`, `dependency_removed`, `comment_added`, `label_added`, `label_removed`, `note_linked`, `note_unlinked`, `parent_set`. Accepts task ID as full ID or unique prefix (e.g. `BRN-01JPH`).
+- `tasks_apply_event` — Single tool for all task mutations. Event types: `task_created`, `task_updated`, `status_changed`, `dependency_added`, `dependency_removed`, `comment_added`, `label_added`, `label_removed`, `note_linked`, `note_unlinked`, `parent_set`, `external_id_added`, `external_id_removed`. Accepts task ID as full ID or unique prefix (e.g. `BRN-01JPH`).
 - `tasks_create` — Create a task with a flat schema (no event envelope). Required param: `title`. Optional: `description`, `priority` (0-4, default 4), `task_type` (task|bug|feature|epic|spike), `assignee`, `parent` (task ID prefix), `due_ts` (ISO 8601), `defer_until` (ISO 8601), `actor` (default: mcp). For remote creation: add `brain` (target brain name or ID from registry); optionally `link_from` (local task ID) and `link_type` (depends_on|blocks|related, default: related). Returns `{task_id, task, unblocked_task_ids}` for local creation, or `{remote_task_id, remote_brain_name, remote_brain_id, local_ref_created}` for remote creation.
-- `tasks_list` — List tasks filtered by status: `open` (default, excludes done), `ready` (no unresolved deps), `blocked` (has unresolved deps), `done`, `in_progress` (exact match), `cancelled` (exact match). Supports `task_ids` array for batch lookup, `limit` for pagination, `include_description` flag, and per-field filters: `priority` (0-4), `task_type`, `assignee`, `label`, `search` (FTS5 full-text search on title+description).
-- `tasks_get` — Get full task details including relationships, comments, labels, and linked notes. Use `expand` parameter (`parent`, `children`, `blocked_by`, `blocks`) to inline related task objects.
+- `tasks_list` — List tasks filtered by status: `open` (default, excludes done), `ready` (no unresolved deps), `blocked` (has unresolved deps), `done`, `in_progress` (exact match), `cancelled` (exact match). Supports `task_ids` array for batch lookup, `limit` for pagination, `include_description` flag, and per-field filters: `priority` (0-4), `task_type`, `assignee`, `label`, `search` (FTS5 full-text search on title+description). Optional `brain` parameter for cross-brain queries.
+- `tasks_get` — Get full task details including relationships, comments, labels, linked notes, and external IDs (`external_ids`). Use `expand` parameter (`parent`, `children`, `blocked_by`, `blocks`) to inline related task objects.
 - `tasks_next` — Get highest-priority ready tasks sorted by status (in-progress first), then priority, then due date. Use for "what should I work on?" queries.
 - `tasks_close` — Close one or more tasks by ID/prefix. Accepts a single string or array of task IDs. Returns closed tasks and newly unblocked task IDs.
 - `tasks_labels_summary` — Get all unique labels with counts and associated task IDs (short prefixes). No parameters. Use for label discovery and taxonomy overview.
-- `tasks_labels_batch` — Batch label operations. Actions: `add` (label + task_ids), `remove` (label + task_ids), `rename` (old_label + new_label), `purge` (label). Returns succeeded/failed/summary.
+- `tasks_labels_batch` — Batch label operations. Actions: `add` (label + task_ids), `remove` (label + task_ids), `rename` (old_label + new_label), `purge` (label). Supports `brain` param for cross-brain label management. Returns succeeded/failed/summary.
 - `tasks_deps_batch` — Batch dependency operations. Actions: `add`/`remove` (pairs of task_id + depends_on_task_id), `chain` (ordered task_ids), `fan` (source_task_id + dependent_task_ids), `clear` (task_id). Returns succeeded/failed/summary.
 
 **Note:** `tasks_apply_event` and `tasks_close` automatically generate and embed searchable capsules into LanceDB on every task create, update, or completion. Tasks become discoverable via `memory_search_minimal` without any extra steps.
@@ -387,17 +393,17 @@ When running as an MCP server (`brain mcp`), these tools are available:
 - `brains.list` — List all brain projects registered in `~/.brain/config.toml`. Returns `name`, `id`, `root` (filesystem path), and `prefix` (task ID prefix) for each brain. Also callable as `brains_list`.
 
 **Memory tools:**
-- `memory_search_minimal` — Semantic search across indexed notes and tasks. Returns compact stubs (title, summary, score, kind). The `kind` field is `"note"` for indexed documents, `"task"` for active task capsules, or `"task-outcome"` for completed task outcomes. Use `intent` parameter to control ranking: `lookup` (keyword-heavy), `planning` (recency + links), `reflection` (recency-heavy), `synthesis` (vector-heavy). Optional `tags` array boosts results matching the given tags via Jaccard similarity (e.g. `["rust", "memory"]`).
+- `memory_search_minimal` — Semantic search across indexed notes and tasks. Returns compact stubs (title, summary, score, kind). The `kind` field is `"note"` for indexed documents, `"task"` for active task capsules, or `"task-outcome"` for completed task outcomes. Use `intent` parameter to control ranking: `lookup` (keyword-heavy), `planning` (recency + links), `reflection` (recency-heavy), `synthesis` (vector-heavy). Optional `tags` array boosts results matching the given tags via Jaccard similarity (e.g. `["rust", "memory"]`). Optional `brains` array to search across multiple brain projects (e.g. `["work", "personal"]`); use `["all"]` to search all registered brains. Results include a `brain_name` field indicating the source brain.
 - `memory_expand` — Expand stubs from `search_minimal` to full content by chunk ID. Use `budget` to control token limit. Returns `byte_start`/`byte_end` offsets within the source file for each chunk.
 - `memory_write_episode` — Record structured episodes (goal, actions, outcome) with tags and importance score.
 - `memory_reflect` — Retrieve source material for a topic, suitable for reflection and synthesis.
 
 **Records tools:**
-- `records.create_artifact` — Create a new artifact record with base64-encoded content.
-- `records.save_snapshot` — Save an opaque state bundle as a snapshot record.
-- `records.get` — Get a record by ID with full metadata, tags, and links (supports prefix resolution).
-- `records.list` — List records with optional filters (kind, status, tag, task_id).
-- `records.fetch_content` — Fetch raw content of a record. Text content (text/*, application/json, application/toml, application/yaml) is auto-decoded as UTF-8 and returned in a `text` field; binary content is returned as base64 in `data`. Response includes `encoding` ('utf-8' or 'base64'), `title`, and `kind` metadata.
+- `records.create_artifact` — Create a new artifact record with `text` (plain) or `data` (base64) content.
+- `records.save_snapshot` — Save a snapshot record with `text` (plain) or `data` (base64) content.
+- `records.get` — Get a record by ID with full metadata, tags, and links (supports prefix resolution). Supports `brain` param for cross-brain access.
+- `records.list` — List records with optional filters (kind, status, tag, task_id). Supports `brain` param for cross-brain access.
+- `records.fetch_content` — Fetch raw content of a record. Text content (text/*, application/json, application/toml, application/yaml) is auto-decoded as UTF-8 and returned in a `text` field; binary content is returned as base64 in `data`. Response includes `encoding` ('utf-8' or 'base64'), `title`, and `kind` metadata. Supports `brain` param for cross-brain access.
 - `records.archive` — Archive a record (metadata-only, payload preserved).
 - `records.tag_add` — Add a tag to a record (idempotent).
 - `records.tag_remove` — Remove a tag from a record (idempotent).
@@ -444,6 +450,36 @@ brain tasks label purge old-label
 brain tasks close <id1> <id2>  # Close one or more tasks
 brain tasks stats              # Project statistics
 
+# Setup & management
+brain init                     # Initialize a new brain in cwd
+brain link <name>              # Link cwd as additional root for brain
+brain alias add <alias> <name> # Add alias for a brain
+brain alias remove <alias>     # Remove alias
+brain alias list               # List aliases
+brain config set <key> <val>   # Set brain config value
+brain config get <key>         # Get brain config value
+brain remove <name>            # Remove a brain from registry (alias: rm)
+brain id                       # Show brain ID for current directory
+
+# Daemon
+brain daemon start [notes]     # Start background daemon
+brain daemon stop              # Stop daemon
+brain daemon status            # Check daemon status
+brain daemon install           # Install launchd/systemd service
+brain daemon uninstall         # Uninstall service
+
+# Indexing & maintenance
+brain reindex --full <path>    # Full reindex of notes
+brain reindex --file <file>    # Reindex single file
+brain vacuum                   # Clean stale data (default: >30 days)
+
+# MCP server
+brain mcp                      # Start MCP server (stdio)
+brain mcp setup claude         # Auto-configure Claude Code MCP
+brain mcp setup cursor         # Auto-configure Cursor MCP
+brain mcp setup vscode         # Auto-configure VS Code MCP
+brain hooks install            # Install git hooks
+
 # Agent docs
 brain docs                     # Regenerate AGENTS.md + bridge CLAUDE.md
 brain agent schema             # Output JSON Schema for all MCP tools
@@ -470,6 +506,26 @@ When working on tasks:
 **Cross-task insights**: If you discover during work on one task that something affects or should be captured on a different task, immediately add a comment to that task with the relevant context. Don't defer — the insight is freshest now and costs seconds to capture vs. minutes to reconstruct later.
 
 **Planning references**: When planning work, always reference the task ID(s) being planned for and any related tasks that may be affected. This creates a traceable link between plans and the work they address, and helps future agents (or humans) understand why decisions were made.
+
+### Recording Context as Memory
+
+When the user shares critical context that is not derivable from the current codebase, **proactively record it** using `memory_write_episode`. This preserves knowledge that would otherwise be lost between conversations.
+
+**Record an episode when the user shares:**
+- How an external API or service behaves (rate limits, quirks, undocumented behavior)
+- Architecture or conventions of a different codebase that this project interacts with
+- Business logic, domain rules, or constraints not captured in code
+- Deployment topology, infrastructure details, or environment-specific behavior
+- Historical context about why something was built a certain way
+- Gotchas, workarounds, or lessons learned from past incidents
+
+**How to record:** Use `memory_write_episode` with:
+- `goal`: What the user was explaining or what prompted the context
+- `actions`: The key facts, rules, or details shared
+- `outcome`: How this knowledge should influence future work
+- `tags`: Relevant topic tags for later retrieval (e.g. `["external-api", "payments"]`)
+
+**Do not record:** Information already in the codebase, git history, or existing notes. Check `memory_search_minimal` first to avoid duplicates.
 
 ### Conventions
 

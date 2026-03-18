@@ -2,23 +2,23 @@
 
 A multi-agent orchestration framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [OpenCode](https://opencode.ai) that coordinates specialized AI agents to plan, implement, review, and analyze software engineering tasks.
 
-Unimatrix extends both platforms with a collective of agents — each with a distinct role, model, and set of capabilities — orchestrated through slash commands, event hooks, and persistent task tracking via [Brain](https://github.com/benediktms/brain).
+Unimatrix extends both platforms with a collective of agents — each with a distinct role, model, and set of capabilities — orchestrated through `/trimatrix`, event hooks, and persistent task tracking via [Brain](https://github.com/benediktms/brain).
 
 ## How It Works
 
-Unimatrix follows a plan-execute-review cycle:
+Unimatrix follows a plan-execute-review cycle orchestrated by the trimatrix supergraph:
 
 ```mermaid
 flowchart LR
-    Plan["Lead<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Vinculum<br/>reviews"] --> Cleanup["Subroutine<br/>cleans up"]
+    Plan["Lead<br/>plans"] --> Execute["Assimilation Adjuncts<br/>build"] --> Review["Validation Adjunct<br/>reviews"] --> Cleanup["Closure Adjunct<br/>cleans up"]
     Review -->|NEEDS_CHANGES| Execute
 ```
 
-1. **The lead session plans** — decomposes a task into subtasks, sets dependencies, and produces a dispatch plan (the lead session directly in Claude Code, the BorgQueen agent in OpenCode)
-2. **The lead session dispatches** — spawns Drones (and optionally Probes/Cortex) to carry out the plan
-3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
-4. **The Vinculum reviews** — validates correctness with evidence-based verification
-5. **The Subroutine cleans up** — commits, closes tasks, writes memory episodes
+1. **The lead session plans** — classifies intent, decomposes into a graph of subtasks with dependencies, and computes execution waves
+2. **The lead session dispatches** — spawns Assimilation Adjuncts (and optionally Reconnaissance/Tactical Analysis Adjuncts) per wave
+3. **Assimilation Adjuncts implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
+4. **The Validation Adjunct reviews** — validates correctness with evidence-based verification
+5. **The Closure Adjunct cleans up** — commits, closes tasks, writes memory episodes
 
 All task state, checkpoints, and learned patterns are persisted in Brain, enabling work to be resumed across sessions.
 
@@ -26,68 +26,93 @@ All task state, checkpoints, and learned patterns are persisted in Brain, enabli
 
 ```mermaid
 graph TB
-    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates<br/>Claude Code: lead session directly / OpenCode: BorgQueen agent<br/>Skills: /assemble /recon /adapt /swarm /comply ...<br/>Rules: routing.md, coordination.md, token-economy.md<br/>Hooks: state tracking, auto-learner, compaction mgmt"]
+    Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates<br/>Claude Code: lead session directly / OpenCode: Queen agent<br/>Skill: /trimatrix<br/>Rules: personality.md, token-economy.md, error-taxonomy.md<br/>Hooks: state tracking, compaction management"]
 
-    Lead --> Drone["<b>Drone</b><br/>Sonnet<br/><i>builds</i>"]
-    Lead --> Vinculum["<b>Vinculum</b><br/>Opus<br/><i>reviews</i>"]
-    Lead --> Probe["<b>Probe</b><br/>Sonnet<br/><i>finds</i>"]
-    Lead --> Cortex["<b>Cortex</b><br/>Opus<br/><i>audits</i>"]
-    Lead --> Subroutine["<b>Subroutine</b><br/>Haiku<br/><i>cleans up</i>"]
+    Lead --> Assimilation["<b>Assimilation Adjunct</b><br/>Sonnet<br/><i>builds</i>"]
+    Lead --> Validation["<b>Validation Adjunct</b><br/>Opus<br/><i>reviews</i>"]
+    Lead --> Recon["<b>Reconnaissance Adjunct</b><br/>Sonnet<br/><i>finds</i>"]
+    Lead --> Tactical["<b>Tactical Analysis Adjunct</b><br/>Opus<br/><i>audits</i>"]
+    Lead --> Closure["<b>Closure Adjunct</b><br/>Haiku<br/><i>cleans up</i>"]
 
     Lead --> Brain
-    Drone --> Brain
-    Vinculum --> Brain
-    Probe --> Brain
-    Cortex --> Brain
-    Subroutine --> Brain
+    Assimilation --> Brain
+    Validation --> Brain
+    Recon --> Brain
+    Tactical --> Brain
+    Closure --> Brain
+
+    Lead --> MCP["<b>Trimatrix MCP Server</b><br/>Graph engine · Checkpoints · Designations"]
 
     Brain[("<b>Brain</b><br/>Tasks · Memory · Snapshots · Artifacts")]
 
     style Lead fill:#1a1a2e,stroke:#e94560,color:#fff
     style Brain fill:#0f3460,stroke:#e94560,color:#fff
-    style Drone fill:#1b3a2d,stroke:#69f0ae,color:#fff
-    style Vinculum fill:#1b2d3a,stroke:#80deea,color:#fff
-    style Probe fill:#3a351b,stroke:#fff176,color:#fff
-    style Cortex fill:#1b2d3a,stroke:#80deea,color:#fff
-    style Subroutine fill:#2a2a2a,stroke:#bdbdbd,color:#fff
+    style MCP fill:#2d1b3a,stroke:#ce93d8,color:#fff
+    style Assimilation fill:#1b3a2d,stroke:#69f0ae,color:#fff
+    style Validation fill:#1b2d3a,stroke:#80deea,color:#fff
+    style Recon fill:#3a351b,stroke:#fff176,color:#fff
+    style Tactical fill:#1b2d3a,stroke:#80deea,color:#fff
+    style Closure fill:#2a2a2a,stroke:#bdbdbd,color:#fff
 ```
 
 ### Agents
 
-| Agent | Model | Platform | Role |
-|-------|-------|----------|------|
-| **Lead / BorgQueen** | Opus | Both | Plans, dispatches, and orchestrates — the lead session itself in Claude Code, the BorgQueen agent in OpenCode |
-| **Drone** | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
-| **Vinculum** | Opus | Both | Code reviewer — evidence-based verification with tiered reviews (Quick/Standard/Deep) and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
-| **Probe** | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
-| **Cortex** | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
-| **Subroutine** | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
+| Agent | Protocol | Model | Platform | Role |
+|-------|----------|-------|----------|------|
+| **Lead Session** | (direct) | Opus | Claude Code | Plans, dispatches, and orchestrates — the lead session itself |
+| **Queen** | `queen-coordination-protocol` | Opus | OpenCode | Lead agent in OpenCode — strategic mind + direct execution |
+| **Assimilation Adjunct** | `adjunct-assimilation-protocol` | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
+| **Validation Adjunct** | `adjunct-validation-protocol` | Opus | Both | Code reviewer — evidence-based verification with tiered reviews and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
+| **Reconnaissance Adjunct** | `adjunct-reconnaissance-protocol` | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
+| **Tactical Analysis Adjunct** | `adjunct-tactical-analysis-protocol` | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
+| **Closure Adjunct** | `adjunct-closure-protocol` | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
 
 Agent definitions live in `src/agents/` as markdown files with combined YAML frontmatter that configures platform-specific model, permission mode, max turns, and allowed/disallowed tools. See [FORMAT.md](./FORMAT.md) for the combined source format.
 
-### Skills (Slash Commands)
+### Trimatrix Supergraph
 
-Skills are the primary interface for invoking workflows:
+All orchestration routes through a single unified skill: `/trimatrix`. Every prompt is classified by **intent** and **complexity tier**, then dispatched to the appropriate execution mode.
 
-| Skill | Description |
-|-------|-------------|
-| `/assemble` | End-to-end orchestration: lead plans, Drones implement (parallel or sequential waves), Vinculum reviews |
-| `/recon` | Reconnaissance and feature planning: recon team self-claims brain tasks, shares discoveries in real-time. `--plan` for iterative feature scoping |
-| `/adapt` | Iterative refinement loop: Drone implements, Vinculum reviews, repeat until PASS (default 3 cycles, max 5) |
-| `/swarm` | Bulk parallel changes: lead partitions files into groups (max 5), Drones work in parallel on non-overlapping partitions |
-| `/comply` | Code review: invokes Vinculum on uncommitted changes, a branch, a file path, or a brain task |
-| `/analyse` | Deep analysis: invokes Cortex for architectural audits, security reviews, or codebase health assessments |
-| `/diagnose` | Adversarial hypothesis testing: Vinculum team investigates competing theories, converges on root cause. `--fix` to implement |
-| `/reengage` | Resume a previously planned brain task |
-| `/assimilate` | End-of-session ritual: captures knowledge, writes memory episodes, prepares context for next session |
-| `/harvest` | Session knowledge extraction: Probe-style scan of exploration findings, Cortex deduplicates and persists as brain records/memory |
-| `/bisect` | Guided binary search through commits: automated (`--test`) or AI-guided with Probe analysis, runs in worktree |
-| `/bookmark` | Save a named checkpoint of current work state — branch, tasks, changes, next steps — for later resumption |
-| `/resume` | Restore context from a saved bookmark: staleness detection, task status diff, structured briefing |
-| `/designate` | Generates Borg-style agent designations (e.g., "Seven of Nine, Septenary Tactical Adjunct of Trimatrix 712") |
-| `/status` | Displays session status — active agents, elapsed time, cost, and compaction count |
+**Intents:**
 
-Skill definitions live in `src/skills/<name>/SKILL.md`.
+| Intent | Triggers | Modes |
+|--------|----------|-------|
+| IMPLEMENT | Code changes, new features, refactoring | `plan-execute`, `adapt`, `swarm` |
+| INVESTIGATE | "How does X work", "find Y", architectural questions | `investigate` |
+| DIAGNOSE | Bug reports, "why does X happen" | `diagnose` |
+| ARCHITECT | "Evaluate approaches for X", design decisions | `architect` |
+| REVIEW | Code review requests, validation | `review` |
+| REFACTOR | Structural cleanup, rename operations | `plan-execute`, `swarm` |
+| RESUME | Continue prior work | Restores checkpoint, routes to original mode |
+
+**Tiers:**
+
+| Tier | Complexity | Strategy |
+|------|-----------|----------|
+| T1 | 1-2 files, clear spec | SELF — lead executes directly |
+| T2 | 3-8 files, moderate | INDEPENDENT — adjuncts work in parallel |
+| T3 | 9+ files, cross-cutting | COORDINATED — adjuncts + team coordination |
+
+**Modes:**
+
+| Mode | Legacy Alias | Description |
+|------|-------------|-------------|
+| `plan-execute` | `/assemble` | Multi-file implementation with worktree isolation, wave dispatch, recon, review |
+| `investigate` | `/recon`, `/analyse` | Collaborative, independent, or deep investigation sub-modes |
+| `diagnose` | `/diagnose` | Adversarial hypothesis testing via Validation Adjunct team. `--fix` to implement |
+| `architect` | (new) | Adversarial architecture evaluation. `--execute` hands winner to plan-execute |
+| `review` | `/comply` | Code review — single adjunct or compliance matrix (`--matrix`) |
+| `adapt` | `/adapt` | Iterative implement-review loop until PASS (`--cycles N`, default 3, max 5) |
+| `swarm` | `/swarm` | File-partitioned bulk changes, max 5 partitions |
+| `cross-repo` | (new) | Multi-repository feature execution with merge gates and per-node worktrees |
+
+### Trimatrix MCP Server
+
+The graph engine runs as an MCP server (`bin/unimatrix`), compiled from TypeScript source in `src/skills/trimatrix/`. It exposes 30 tools for graph lifecycle, node management, wave dispatch, checkpoint persistence, and agent designation generation.
+
+Key tools: `init`, `add_node`, `add_edge`, `compute_waves`, `dispatch_wave`, `complete_node`, `save_checkpoint`, `restore_checkpoint`, `designate`, `status`.
+
+The server is auto-compiled during installation via `just compile` (Deno compile → `bin/unimatrix`).
 
 ## Build System
 
@@ -98,6 +123,8 @@ flowchart LR
     Src["src/<br/>agents, skills,<br/>rules, hooks"] --> Build["build.py<br/>validate → merge<br/>frontmatter → strip<br/>conditionals"]
     Build --> Claude["dist/claude-code/<br/>.claude/agents<br/>.claude/skills<br/>.claude/rules"]
     Build --> OC["dist/opencode/<br/>.opencode/agents<br/>.claude/skills<br/>themes/<br/>tui.json"]
+    Src --> Compile["deno compile<br/>server.ts"]
+    Compile --> Bin["bin/unimatrix<br/>(MCP server)"]
 ```
 
 Source files use:
@@ -124,11 +151,20 @@ Or use the [just](https://github.com/casey/just) command runner:
 just build                # Build for both platforms
 just build-claude         # Build for Claude Code only
 just build-opencode       # Build for OpenCode only
+just compile              # Compile the unimatrix MCP server binary
 just validate             # Validate source files
 just check                # Run all checks (Python lint + TS type-check + validation)
-just install-global       # Build + install both platforms globally
-just install <path>       # Build + install both platforms to a project
+just check-py             # Lint Python files only
+just check-ts             # Type-check OpenCode hook plugin only
+just setup                # Install all dependencies (Python venv + Deno cache)
+just venv                 # Create/refresh Python virtual environment
+just install-global       # Build + compile + install both platforms globally
+just install [path]       # Build + compile + install both platforms to a project
+just install-claude [path]  # Build + compile + install Claude Code to a project
+just install-opencode [path]  # Build + compile + install OpenCode to a project
 just inject <brain-name>  # Inject Borg personality into a brain's AGENTS.md
+just clean                # Remove dist/ directory
+just clean-all            # Remove dist/ + .venv/
 ```
 
 ### Personality Injection
@@ -136,7 +172,8 @@ just inject <brain-name>  # Inject Borg personality into a brain's AGENTS.md
 Unimatrix maintains a single source-of-truth personality guide (`src/rules/personality.md`) that all agents follow. To propagate this personality into registered brains' documentation:
 
 ```bash
-python3 build.py --inject-tone <brain-name>
+python3 build.py --inject-tone <brain-name>   # Single brain
+python3 build.py --inject-tone               # All registered brains
 just inject <brain-name>
 ```
 
@@ -156,7 +193,7 @@ This ensures all projects using Unimatrix have consistent, up-to-date personalit
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [OpenCode](https://opencode.ai)
 - [Brain](https://github.com/benediktms/brain) — task tracking, memory, and artifact persistence
 - Python 3.12+ (for build system and hooks)
-- [Deno](https://deno.com) (for OpenCode hook type-checking, optional)
+- [Deno](https://deno.com) (for MCP server compilation and OpenCode hook type-checking)
 
 ### Install
 
@@ -165,7 +202,7 @@ This ensures all projects using Unimatrix have consistent, up-to-date personalit
 git clone https://github.com/benediktms/unimatrix.git
 
 # Set up dependencies
-just setup                # or: python3 -m venv .venv && pip install -e .
+just setup                # or: python3 -m venv .venv && pip install -e . && deno install
 
 # Build and install globally for both platforms
 just install-global
@@ -182,9 +219,13 @@ just install-global
 
 The installer:
 - Runs `build.py` if `dist/` is missing or stale
-- Symlinks `agents/`, `rules/`, and `skills/` into the target config directory
+- Compiles the trimatrix MCP server (`src/skills/trimatrix/server.ts` → `bin/unimatrix`) if missing or stale
+- Symlinks `bin/unimatrix` to `~/bin/unimatrix`
+- Symlinks `agents/` and `rules/` into the target config directory
+- Symlinks individual skill subdirectories (preserves pre-existing skills in the target)
+- Registers the unimatrix MCP server via `claude mcp add` (Claude Code only, idempotent)
 - Merges Unimatrix settings (spinner verbs, status line, hooks) into your `settings.json` (Claude Code)
-- Configures `core.hooksPath` for git hooks (Claude Code)
+- Configures `core.hooksPath` for git hooks (Claude Code, unimatrix repo only)
 - Symlinks OpenCode hook plugins into `.opencode/plugins/`
 - Installs Borg TUI theme to `~/.config/opencode/themes/` and TUI config to `~/.config/opencode/tui.json` (OpenCode global only)
 - Backs up existing files before overwriting
@@ -195,77 +236,105 @@ Restart your editor/CLI after installation to pick up changes.
 
 ## Workflows
 
-### `/assemble` — Full Orchestration
+All workflows route through `/trimatrix`. The intent classifier determines the mode automatically based on the prompt.
+
+### Plan-Execute (formerly `/assemble`)
 
 The primary workflow for complex, multi-step tasks:
 
 ```mermaid
 flowchart TD
     Request([User request])
-    Request --> Assess
+    Request --> Classify
 
-    Assess["Lead assesses"]
-    Assess -->|RECON_NEEDED| Recon["Probes / Cortex investigate"]
-    Assess -->|SKIP_RECON| Plan
+    Classify["Trimatrix classifies<br/>intent + tier"]
+    Classify -->|RECON_NEEDED| Recon["Reconnaissance Adjuncts<br/>investigate"]
+    Classify -->|SKIP_RECON| Plan
 
-    Recon --> Plan["Lead plans<br/><i>dispatch plan with waves + dependencies</i>"]
+    Recon --> Plan["Lead plans<br/><i>graph with waves + dependencies</i>"]
 
     Plan --> Wave1
 
     subgraph Wave1 ["Wave 1 (parallel)"]
-        DroneA["Drone A — files: a, b"]
-        DroneB["Drone B — files: c, d"]
+        AdjA["Assimilation A — files: a, b"]
+        AdjB["Assimilation B — files: c, d"]
     end
 
     Wave1 -->|checkpoints passed forward| Wave2
 
     subgraph Wave2 ["Wave 2 (sequential)"]
-        DroneC["Drone C — integration"]
+        AdjC["Assimilation C — integration"]
     end
 
-    Wave2 --> Review["Vinculum reviews"]
+    Wave2 --> Review["Validation Adjunct reviews"]
     Review -->|PASS| Done([Done])
-    Review -->|NEEDS_CHANGES| Fix["Dispatch fix Drones"]
+    Review -->|NEEDS_CHANGES| Fix["Dispatch fix adjuncts"]
     Review -->|BLOCK| Escalate([Escalate to user])
     Fix --> Review
 ```
 
-### `/adapt` — Iterative Refinement
+### Adapt (formerly `/adapt`)
 
 For tasks that need multiple passes to converge:
 
 ```mermaid
 flowchart LR
-    Drone["Drone<br/>builds"] --> Vinculum["Vinculum<br/>reviews"]
-    Vinculum -->|PASS| Done([Done])
-    Vinculum -->|NEEDS_CHANGES<br/>feedback| Drone
-    Vinculum -->|BLOCK| Escalate([Escalate])
+    Adj["Assimilation<br/>builds"] --> Val["Validation<br/>reviews"]
+    Val -->|PASS| Done([Done])
+    Val -->|NEEDS_CHANGES<br/>feedback| Adj
+    Val -->|BLOCK| Escalate([Escalate])
 ```
 
-### `/swarm` — Parallel Bulk Changes
+### Swarm (formerly `/swarm`)
 
 For applying the same kind of change across many files:
 
 ```mermaid
 flowchart TD
-    Lead["Lead partitions files<br/>into non-overlapping groups"] --> Drone1 & Drone2 & Drone3
-    Drone1["Drone 1<br/><code>src/components/*.tsx</code>"]
-    Drone2["Drone 2<br/><code>src/hooks/*.ts</code>"]
-    Drone3["Drone 3<br/><code>src/utils/*.ts</code>"]
-    Drone1 & Drone2 & Drone3 --> Review["Vinculum reviews<br/>aggregate changes"]
+    Lead["Lead partitions files<br/>into non-overlapping groups"] --> A1 & A2 & A3
+    A1["Assimilation 1<br/><code>src/components/*.tsx</code>"]
+    A2["Assimilation 2<br/><code>src/hooks/*.ts</code>"]
+    A3["Assimilation 3<br/><code>src/utils/*.ts</code>"]
+    A1 & A2 & A3 --> Review["Validation reviews<br/>aggregate changes"]
 ```
 
-### `/recon` — Reconnaissance
+### Investigate (formerly `/recon`, `/analyse`)
 
 For understanding a codebase area before making changes:
 
 ```mermaid
 flowchart TD
-    Lead["Lead scopes investigation"] --> ProbeA & ProbeB & Cortex
-    ProbeA["Probe A<br/>trace auth flow"]
-    ProbeB["Probe B<br/>find all API endpoints"]
-    Cortex["Cortex<br/>audit security posture"]
-    ProbeA & ProbeB & Cortex -->|results linked to brain tasks| Synthesis["Synthesized findings<br/>returned to user"]
+    Lead["Lead scopes investigation"] --> R1 & R2 & TA
+    R1["Recon Adjunct A<br/>trace auth flow"]
+    R2["Recon Adjunct B<br/>find all API endpoints"]
+    TA["Tactical Analysis<br/>audit security posture"]
+    R1 & R2 & TA -->|results linked to brain tasks| Synthesis["Synthesized findings<br/>returned to user"]
+```
+
+### Diagnose (formerly `/diagnose`)
+
+For bugs with unclear root cause — adversarial hypothesis testing:
+
+```mermaid
+flowchart TD
+    Lead["Lead frames competing hypotheses"] --> V1 & V2
+    V1["Validation A<br/>tests hypothesis 1"]
+    V2["Validation B<br/>tests hypothesis 2"]
+    V1 & V2 -->|challenge each other| Converge["Converge on root cause"]
+    Converge -->|--fix| Fix["Assimilation<br/>implements fix"]
+```
+
+### Architect (new)
+
+For evaluating competing architectural approaches:
+
+```mermaid
+flowchart TD
+    Lead["Lead frames approaches"] --> TA1 & TA2
+    TA1["Tactical Analysis A<br/>evaluates approach 1"]
+    TA2["Tactical Analysis B<br/>evaluates approach 2"]
+    TA1 & TA2 -->|adversarial challenge| Winner["Winner selected"]
+    Winner -->|--execute| Impl["Plan-execute mode<br/>implements winner"]
 ```
 
 ## Brain Integration
@@ -285,7 +354,7 @@ Epic: "Implement auth system"
 ```
 
 - The **lead session** creates epics and subtasks with dependencies via `tasks_apply_event`
-- **Drones** mark tasks `in_progress`, add comments, and report completion
+- **Assimilation Adjuncts** mark tasks `in_progress`, add comments, and report completion
 - `tasks_next` returns the highest-priority unblocked tasks
 - `tasks_close` closes completed tasks and unblocks dependents
 
@@ -295,14 +364,14 @@ Brain stores checkpoints and artifacts that enable context flow between agents:
 
 | What | Who Creates | Purpose | Tags |
 |------|-------------|---------|------|
-| Drone checkpoints | Drone | Pass context to subsequent waves | `drone-checkpoint`, `parent:<task-id>` |
-| Implementation artifacts | Drone | Permanent record of what changed | `drone-implementation` |
+| Adjunct checkpoints | Assimilation Adjunct | Pass context to subsequent waves | `drone-checkpoint`, `parent:<task-id>` |
+| Implementation artifacts | Assimilation Adjunct | Permanent record of what changed | `drone-implementation` |
 | Lead plans | Lead | Plan record before execution | `queen-plan` |
-| Probe findings | Probe | Recon results linked to tasks | `probe-recon` |
-| Cortex analyses | Cortex | Structured analysis reports | `cortex-analysis` |
-| Vinculum reviews | Vinculum | Review verdicts and evidence | `vinculum-review` |
+| Reconnaissance findings | Reconnaissance Adjunct | Recon results linked to tasks | `probe-recon` |
+| Analysis reports | Tactical Analysis Adjunct | Structured analysis reports | `cortex-analysis` |
+| Review verdicts | Validation Adjunct | Review verdicts and evidence | `vinculum-review` |
 
-**Cross-wave context flow:** When Drones in Wave 1 complete, the lead extracts their snapshot IDs and passes them to Wave 2 Drones via `PRIOR CHECKPOINTS: <id1>, <id2>` in the prompt. This enables context handoff without the lead relaying full file contents.
+**Cross-wave context flow:** When adjuncts in Wave 1 complete, the lead extracts their snapshot IDs and passes them to Wave 2 adjuncts via `PRIOR CHECKPOINTS: <id1>, <id2>` in the prompt. This enables context handoff without the lead relaying full file contents.
 
 ### Memory
 
@@ -311,8 +380,6 @@ Brain's semantic memory enables knowledge persistence across sessions:
 - `memory_write_episode` — Records structured episodes (goal, actions, outcome) with tags and importance
 - `memory_search_minimal` — Semantic search with intent-aware ranking (lookup, planning, reflection, synthesis)
 - `memory_expand` — Fetches full content from search stubs
-
-The auto-learner system (see Hooks below) uses memory to capture and replay error/fix patterns automatically.
 
 ## Hooks
 
@@ -334,11 +401,12 @@ Claude Code compacts (summarizes) the conversation when the context window fills
 |------|-------|---------|
 | `warn-compaction.py` | PostToolUse | Estimates token usage and warns at 70%/85% thresholds before compaction hits |
 
-### Other
+### Git Hooks
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `post-commit` | Git post-commit | Re-runs `install.sh --global` to keep symlinks in sync after changes |
+| `pre-commit` | Git pre-commit | Announces assimilation in progress |
+| `post-commit` | Git post-commit | Re-runs `install.sh --both --global` to keep symlinks in sync after changes |
 
 ### Status Line
 
@@ -348,42 +416,42 @@ Claude Code compacts (summarizes) the conversation when the context window fills
 
 ### Parallel Execution
 
-When plan steps are independent, multiple Drones run simultaneously:
+When plan steps are independent, multiple adjuncts run simultaneously:
 
-- **File-partitioned:** Each Drone gets a non-overlapping set of files. No worktree isolation needed — all commit directly to the current branch.
-- **Worktree-isolated:** When Drones might touch overlapping files, each runs in an isolated git worktree. The lead squash-merges branches between waves.
+- **File-partitioned:** Each adjunct gets a non-overlapping set of files. No worktree isolation needed — all commit directly to the current branch.
+- **Worktree-isolated:** When adjuncts might touch overlapping files, each runs in an isolated git worktree. The lead squash-merges branches between waves.
 
 ### Sequential Execution
 
-When steps have dependencies, Drones run one at a time. Prior checkpoint IDs flow forward via `PRIOR CHECKPOINTS:` in the prompt.
+When steps have dependencies, adjuncts run one at a time. Prior checkpoint IDs flow forward via `PRIOR CHECKPOINTS:` in the prompt.
 
 ### Sequence Relay
 
-For long sequential chains (3+ steps), each Drone saves a handoff snapshot and the next Drone receives only the handoff as prior context — avoiding lead session compaction in long chains.
+For long sequential chains (3+ steps), each adjunct saves a handoff snapshot and the next adjunct receives only the handoff as prior context — avoiding lead session compaction in long chains.
 
 ### Mixed-Mode
 
-Most real plans mix both: parallel foundation waves, sequential integration steps, parallel finishing work. The lead's dispatch plan specifies the wave structure.
+Most real plans mix both: parallel foundation waves, sequential integration steps, parallel finishing work. The trimatrix graph engine computes optimal wave ordering automatically.
 
 ```mermaid
 flowchart TD
     subgraph Wave1 ["Wave 1 — Parallel (foundation)"]
-        D1["Drone 1"] & D2["Drone 2"] & D3["Drone 3"]
+        A1["Assimilation 1"] & A2["Assimilation 2"] & A3["Assimilation 3"]
     end
     subgraph Wave2 ["Wave 2 — Sequential (integration)"]
-        D4["Drone 4"] --> D5["Drone 5"]
+        A4["Assimilation 4"] --> A5["Assimilation 5"]
     end
     subgraph Wave3 ["Wave 3 — Parallel (finishing)"]
-        D6["Drone 6"] & D7["Drone 7"]
+        A6["Assimilation 6"] & A7["Assimilation 7"]
     end
     Wave1 -->|checkpoints| Wave2 -->|checkpoints| Wave3
 ```
 
 ### Error Handling
 
-- If a Drone fails, it marks the task `blocked` and reports to the lead
+- If an adjunct fails, it marks the task `blocked` and reports to the lead
 - The lead does not retry with the same approach — it escalates to the user
-- If the Vinculum finds critical issues, the lead dispatches new Drones with specific fix instructions
+- If the Validation Adjunct finds critical issues, the lead dispatches new adjuncts with specific fix instructions
 
 ## Project Structure
 
@@ -391,39 +459,45 @@ flowchart TD
 unimatrix/
 ├── src/                          # Combined source (human-authored)
 │   ├── agents/                   # Agent definitions (combined frontmatter)
-│   │   ├── queen-coordination-protocol.md  #   Lead agent coordination
-│   │   ├── adjunct-assimilation-protocol.md #   Implementation worker
-│   │   ├── adjunct-validation-protocol.md   #   Code reviewer
-│   │   ├── adjunct-reconnaissance-protocol.md #  Codebase scout
+│   │   ├── queen-coordination-protocol.md    # Lead agent (OpenCode only)
+│   │   ├── adjunct-assimilation-protocol.md  # Implementation worker
+│   │   ├── adjunct-validation-protocol.md    # Code reviewer
+│   │   ├── adjunct-reconnaissance-protocol.md # Codebase scout
 │   │   ├── adjunct-tactical-analysis-protocol.md # Deep analyst
-│   │   └── adjunct-closure-protocol.md      #   Cleanup worker
+│   │   └── adjunct-closure-protocol.md       # Cleanup worker
 │   ├── skills/                   # Slash command skills
-│   │   ├── assemble/SKILL.md     #   End-to-end orchestration
-│   │   ├── adapt/SKILL.md        #   Iterative refinement
-│   │   ├── swarm/SKILL.md        #   Parallel bulk changes
-│   │   ├── recon/SKILL.md        #   Reconnaissance and feature planning
-│   │   ├── diagnose/SKILL.md     #   Adversarial bug diagnosis
-│   │   ├── comply/SKILL.md       #   Code review
-│   │   ├── analyse/SKILL.md      #   Deep analysis
-│   │   ├── reengage/SKILL.md     #   Resume prior work
-│   │   ├── assimilate/SKILL.md   #   End-of-session cleanup
-│   │   ├── harvest/SKILL.md      #   Session knowledge extraction
-│   │   ├── bisect/SKILL.md       #   Guided commit binary search
-│   │   ├── bookmark/SKILL.md     #   Save work checkpoints
-│   │   ├── resume/SKILL.md       #   Restore from bookmarks
-│   │   ├── designate/SKILL.md    #   Agent naming
-│   │   └── status/SKILL.md       #   Session status display
+│   │   └── trimatrix/            # Unified orchestration supergraph
+│   │       ├── SKILL.md          #   Skill definition + intent classifier + protocols
+│   │       ├── CROSS-REPO.md     #   Cross-repo MCP tool reference
+│   │       ├── server.ts         #   MCP server (graph engine, checkpoints, designations)
+│   │       ├── graph.ts          #   Graph data structure + wave computation
+│   │       ├── state.ts          #   State machine + checkpoint management
+│   │       ├── types.ts          #   TypeScript type definitions
+│   │       ├── brain-sync.ts     #   Brain task synchronization
+│   │       ├── designate.ts      #   Borg designation generation
+│   │       ├── side-effect-runner.ts  # Side effect execution
+│   │       ├── side-effect-policy.ts  # Side effect policies
+│   │       ├── modes/            #   Execution mode definitions
+│   │       │   ├── plan-execute.md   # Multi-file implementation
+│   │       │   ├── investigate.md    # Codebase investigation
+│   │       │   ├── diagnose.md       # Adversarial bug diagnosis
+│   │       │   ├── architect.md      # Architecture evaluation
+│   │       │   ├── review.md         # Code review
+│   │       │   ├── adapt.md          # Iterative refinement
+│   │       │   ├── swarm.md          # Parallel bulk changes
+│   │       │   └── cross-repo.md     # Multi-repository execution
+│   │       └── *.test.ts         #   Test files
 │   ├── rules/                    # Process rules
 │   │   ├── personality.md        #   Borg collective personality guidelines (source of truth)
-│   │   ├── routing.md            #   Task → agent routing decisions
-│   │   ├── coordination.md       #   Multi-agent coordination patterns
-│   │   └── token-economy.md      #   Token-efficient agent behavior
+│   │   ├── token-economy.md      #   Token-efficient agent behavior
+│   │   └── error-taxonomy.md     #   Borg error designations for failure reporting
 │   ├── hooks/                    # Platform-specific event hooks
 │   │   ├── claude/               #   Python/Shell hooks (Claude Code)
 │   │   │   ├── warn-compaction.py
 │   │   │   ├── track-agents.py
 │   │   │   ├── track-cost.py
 │   │   │   ├── track-compactions.py
+│   │   │   ├── pre-commit
 │   │   │   └── post-commit
 │   │   ├── opencode/             #   TypeScript plugin (OpenCode)
 │   │   │   └── unimatrix-hooks.ts
@@ -436,22 +510,22 @@ unimatrix/
 │   │   └── unicomplex.json       #     Gold/amber central hub
 │   ├── tui/                      #   OpenCode TUI configuration
 │   │   └── tui.json              #     Theme, scroll, diff settings
-│   ├── shared/                   #   Platform-agnostic assets
-│   │   ├── statusline.py         #     Claude Code status line
-│   │   └── statusline.sh         #     Shell status line helper
-│   └── lead/                     #   Lead session prompt templates
+│   └── shared/                   #   Platform-agnostic assets
+│       ├── statusline.py         #     Claude Code status line
+│       └── statusline.sh         #     Shell status line helper
+├── bin/                          # Compiled binaries
+│   └── unimatrix                 #   Compiled MCP server (Deno → binary)
 ├── dist/                         # Generated output (gitignored)
 │   ├── claude-code/              #   Claude Code-specific output
 │   │   └── .claude/
 │   │       ├── agents/*.md
-│   │       ├── skills/*/SKILL.md
-│   │       ├── rules/*.md
-│   │       └── settings.json
+│   │       ├── skills/trimatrix/SKILL.md
+│   │       └── rules/*.md
 │   └── opencode/                 #   OpenCode-specific output
 │       ├── .opencode/
 │       │   └── agents/*.md
 │       ├── .claude/
-│       │   └── skills/*/SKILL.md
+│       │   └── skills/trimatrix/SKILL.md
 │       ├── themes/
 │       │   └── unimatrix.json
 │       └── tui.json
@@ -460,7 +534,7 @@ unimatrix/
 ├── settings.json                 # Claude Code settings template
 ├── justfile                      # Task runner (just)
 ├── pyproject.toml                # Python project config
-├── deno.json                     # Deno config (OpenCode TS hooks)
+├── deno.json                     # Deno config (MCP server + OpenCode TS hooks)
 ├── AGENTS.md                     # Canonical agent reference (includes task management docs)
 ├── CLAUDE.md                     # Project entry point for Claude Code
 ├── FORMAT.md                     # Combined source format specification
@@ -493,7 +567,7 @@ just build
 
 Merged into Claude Code's settings during installation. Configures:
 
-- **Hooks** — Maps Claude Code events to hook scripts (`SubagentStart/Stop`, `PreCompact`, `PostToolUse`, `UserPromptSubmit`)
+- **Hooks** — Maps Claude Code events to hook scripts (`SubagentStart/Stop`, `PreCompact`, `PostToolUse`)
 - **Spinner verbs** — Custom Borg-themed loading messages
 - **Status line** — Points to `statusline.py` for the custom status bar
 
@@ -507,7 +581,7 @@ model: sonnet
 description: "Worker agent — implements a single well-defined task"
 
 claude:
-  name: Drone
+  name: Adjunct: Assimilation Protocol
   permissionMode: bypassPermissions
   disallowedTools: [Agent]
   maxTurns: 50
