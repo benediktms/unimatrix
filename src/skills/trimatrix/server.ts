@@ -1421,6 +1421,9 @@ server.tool(
 
     const cancelResult = await transitionWithEffects(cp, { type: "cancel", reason: params.reason });
     checkpoint = cancelResult.checkpoint;
+    if (cancelResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
+    }
     return {
       content: [
         {
@@ -1801,6 +1804,7 @@ server.tool(
     type SessionEntry = {
       sessionId: string;
       brain: string;
+      machineState: string | null;
       checkpoints: CheckpointEntry[];
       createdAt: string;
       updatedAt: string;
@@ -1898,18 +1902,26 @@ server.tool(
         });
       }
 
-      result.persisted = Array.from(sessionMap.entries()).map(
-        ([sessionId, { brain, checkpoints }]) => {
+      const TERMINAL_STATES = new Set(["completed", "cancelled"]);
+
+      result.persisted = Array.from(sessionMap.entries())
+        .map(([sessionId, { brain, checkpoints }]) => {
           const dates = checkpoints.map((c) => c.updatedAt).sort();
+          // Extract machineState from the latest checkpoint title
+          // Title format: checkpoint:<sessionId>:wave-<waveId>:<machineState>
+          const latest = checkpoints.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
+          const titleParts = latest.title.split(":");
+          const machineState = titleParts.length >= 4 ? titleParts[titleParts.length - 1] : null;
           return {
             sessionId,
             brain,
+            machineState,
             checkpoints,
             createdAt: dates[0],
             updatedAt: dates[dates.length - 1],
           };
-        },
-      );
+        })
+        .filter((s) => !s.machineState || !TERMINAL_STATES.has(s.machineState));
     } catch (e) {
       result.errors.push(
         `snapshot query failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -1994,14 +2006,14 @@ async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
   try {
     const serialized = JSON.stringify(cp);
     const waveId = cp.currentWaveId ?? "latest";
-    const title = `checkpoint:${cp.sessionId ?? "unknown"}:wave-${waveId}`;
+    const title = `checkpoint:${cp.sessionId ?? "unknown"}:wave-${waveId}:${cp.machineState}`;
     const rpc = JSON.stringify({
       jsonrpc: "2.0",
       method: "records_save_snapshot",
       params: {
         title,
         data: serialized,
-        tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`],
+        tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`, `state:${cp.machineState}`],
       },
       id: 1,
     });

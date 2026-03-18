@@ -64,4 +64,7 @@ export const SIDE_EFFECT_POLICY: Partial<Record<Event["type"], SideEffectSpec[]>
   wave_failed: [
     { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
   ],
+  cancel: [
+    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+  ],
 };
