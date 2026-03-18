@@ -6,13 +6,14 @@
  * computeWavesFromRefinement.
  */
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import {
   activateNodes,
   addEdge,
   addNode,
   clearGate,
   completeNode,
+  updateNode,
   computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
@@ -336,10 +337,10 @@ Deno.test("nextWave: gate not cleared → returns null", () => {
 });
 
 Deno.test("nextWave: gate cleared (A merged) → returns wave 2", () => {
-  // A merged → B's MERGE_GATE dependency is satisfied.
+  // A merged with prUrl → B's MERGE_GATE dependency is satisfied.
   const g = makeGraph(
     [
-      makeNode({ id: "A", status: NodeStatus.MERGED }),
+      makeNode({ id: "A", status: NodeStatus.MERGED, prUrl: "https://github.com/o/r/pull/1", prNumber: 1 }),
       makeNode({ id: "B", status: NodeStatus.PENDING }),
     ],
     [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
@@ -411,12 +412,11 @@ Deno.test("nextWave: wave completion includes DONE nodes", () => {
 // completeNode, failNode, clearGate — immutability checks
 // ---------------------------------------------------------------------------
 
-Deno.test("completeNode: sets PR_CREATED when PR info supplied", () => {
+Deno.test("completeNode: sets PR_CREATED when node has prUrl", () => {
   const original = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
-  const updated = completeNode(original, "A", {
-    url: "https://gh.example/pr/1",
-    number: 1,
-  });
+  // Attach PR metadata first via updateNode
+  const withPr = updateNode(original, "A", { prUrl: "https://gh.example/pr/1", prNumber: 1 });
+  const updated = completeNode(withPr, "A");
   assertEquals(updated.nodes["A"].status, NodeStatus.PR_CREATED);
   assertEquals(updated.nodes["A"].prUrl, "https://gh.example/pr/1");
   assertEquals(updated.nodes["A"].prNumber, 1);
@@ -441,13 +441,29 @@ Deno.test("completeNode: repo-less → DONE", () => {
   assertEquals(updated.nodes["A"].status, NodeStatus.DONE);
 });
 
-Deno.test("completeNode: repo-less with PR → PR_CREATED", () => {
+Deno.test("completeNode: repo-less with prUrl → PR_CREATED", () => {
   const g = makeGraph([
     makeNode({ id: "A", status: NodeStatus.ACTIVE }),
   ]);
   delete (g.nodes["A"] as Partial<Node>).repo;
-  const updated = completeNode(g, "A", { url: "https://gh.example/pr/2", number: 2 });
+  const withPr = updateNode(g, "A", { prUrl: "https://gh.example/pr/2", prNumber: 2 });
+  const updated = completeNode(withPr, "A");
   assertEquals(updated.nodes["A"].status, NodeStatus.PR_CREATED);
+});
+
+Deno.test("updateNode: patches metadata without changing status", () => {
+  const original = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
+  const updated = updateNode(original, "A", { prUrl: "https://gh.example/pr/3", prNumber: 3 });
+  assertEquals(updated.nodes["A"].status, NodeStatus.ACTIVE);
+  assertEquals(updated.nodes["A"].prUrl, "https://gh.example/pr/3");
+  assertEquals(updated.nodes["A"].prNumber, 3);
+  // Original is not mutated
+  assertEquals(original.nodes["A"].prUrl, undefined);
+});
+
+Deno.test("updateNode: throws on missing node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
+  assertThrows(() => updateNode(g, "NONEXISTENT", { prUrl: "https://gh.example/pr/1" }), Error, "not found");
 });
 
 Deno.test("failNode: sets FAILED status and failureReason", () => {

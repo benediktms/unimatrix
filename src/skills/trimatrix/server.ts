@@ -37,6 +37,7 @@ import {
   failNode,
   nextWave,
   parallelNodesInWave,
+  updateNode,
   serializeSubgraphBrief,
   validate,
   waveStatus,
@@ -47,15 +48,14 @@ import {
   deserialize,
   pendingGates,
   serialize,
-  transition,
 } from "./state.ts";
 import {
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
   syncTaskStatus as syncTaskStatusCore,
-  writeEpisode as writeEpisodeCore,
 } from "./brain-sync.ts";
 import type { BrainExec } from "./brain-sync.ts";
+import { createEffectRunner } from "./side-effect-runner.ts";
 
 // ---------------------------------------------------------------------------
 // In-memory checkpoint store
@@ -323,14 +323,28 @@ server.tool(
     executor: z.nativeEnum(Executor).optional().describe(
       "Who executes this node: LEAD or ADJUNCT. Defaults to LEAD.",
     ),
+    taskId: z.string().optional().describe(
+      "Brain task ID to associate with this node. Validated against brain CLI.",
+    ),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
       throw new Error(
         `add_node requires initializing or refining state, got ${cp.machineState}`,
       );
+    }
+
+    // Validate taskId exists in brain if provided
+    if (params.taskId) {
+      try {
+        await execFileAsync(BRAIN_CLI, ["tasks", "get", params.taskId, "--json"], { timeout: 5000 });
+      } catch {
+        throw new Error(
+          `Task ID "${params.taskId}" does not exist in brain — cannot associate with node "${params.id}"`,
+        );
+      }
     }
 
     const node = {
@@ -343,6 +357,7 @@ server.tool(
       ...(params.stackedOn !== undefined
         ? { stackedOn: params.stackedOn }
         : {}),
+      ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
       status: NodeStatus.PENDING,
       executor: params.executor ?? Executor.LEAD,
     };
@@ -422,7 +437,7 @@ server.tool(
   "refine",
   "Enter refining state to add new nodes, edges, or repos to an in-progress execution. Call compute_waves when done to apply the changes and resume dispatching.",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, { type: "refine" });
@@ -430,8 +445,8 @@ server.tool(
       throw new Error(`Cannot enter refining state: ${check.reason}`);
     }
 
-    const transitioned = transition(cp, { type: "refine" });
-    checkpoint = transitioned;
+    const result = await transitionWithEffects(cp, { type: "refine" });
+    checkpoint = result.checkpoint;
 
     return {
       content: [
@@ -613,7 +628,7 @@ server.tool(
         addedRepos,
       };
 
-      const transitioned = transition(
+      const refinementResult = await transitionWithEffects(
         {
           ...cp,
           waves: mergedWaves,
@@ -621,7 +636,7 @@ server.tool(
         },
         { type: "refinement_approved" },
       );
-      checkpoint = applySubgraphs(transitioned);
+      checkpoint = applySubgraphs(refinementResult.checkpoint);
 
       return {
         content: [
@@ -656,11 +671,11 @@ server.tool(
 
     const waves = computeWaves(cp.graph);
 
-    const transitioned = transition(
+    const planResult = await transitionWithEffects(
       { ...cp, waves },
       { type: "plan_submitted" },
     );
-    checkpoint = transitioned;
+    checkpoint = planResult.checkpoint;
 
     return {
       content: [
@@ -685,7 +700,7 @@ server.tool(
   "finalize_plan",
   "Approve the wave plan and transition from plan_review to dispatching. Auto-computes subgraphs if intent and tier are set.",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, { type: "plan_finalized" });
@@ -693,7 +708,8 @@ server.tool(
       throw new Error(`Cannot finalize plan: ${check.reason}`);
     }
 
-    checkpoint = applySubgraphs(transition(cp, { type: "plan_finalized" }));
+    const finalizeResult = await transitionWithEffects(cp, { type: "plan_finalized" });
+    checkpoint = applySubgraphs(finalizeResult.checkpoint);
 
     return {
       content: [
@@ -728,7 +744,7 @@ server.tool(
   "revise_plan",
   "Request plan revision — transition from plan_review back to initializing for edits.",
   {},
-  () => {
+  async () => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, { type: "plan_revision_requested" });
@@ -736,7 +752,8 @@ server.tool(
       throw new Error(`Cannot revise plan: ${check.reason}`);
     }
 
-    checkpoint = transition(cp, { type: "plan_revision_requested" });
+    const reviseResult = await transitionWithEffects(cp, { type: "plan_revision_requested" });
+    checkpoint = reviseResult.checkpoint;
 
     return {
       content: [
@@ -882,33 +899,18 @@ server.tool(
       }
     }
 
-    const transitioned = transition(
+    const dispatchResult = await transitionWithEffects(
       { ...cp, graph: updatedGraph },
       { type: "wave_dispatched", waveId: params.waveId },
     );
+    if (dispatchResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(dispatchResult.checkpoint);
+    }
 
     // Enter gate_halted if this wave contains elicit gates
     checkpoint = elicitGateIds.length > 0
-      ? { ...transitioned, machineState: MachineState.GATE_HALTED }
-      : transitioned;
-
-    // Sync task status for activated nodes (best-effort)
-    const syncPromises = wave.nodes
-      .map((nid) => checkpoint!.graph.nodes[nid])
-      .filter((n) => n?.taskId)
-      .map((n) => syncTaskStatus(n.taskId!, "activate", repoRoot(n.repo)));
-    await Promise.all(syncPromises);
-
-    // Record episode for wave dispatch (best-effort, awaited to prevent race)
-    const nodeLabels = wave.nodes
-      .map((nid) => checkpoint!.graph.nodes[nid]?.label)
-      .filter(Boolean) as string[];
-    await recordEpisode(
-      `Wave ${params.waveId} dispatched for session "${checkpoint.sessionLabel ?? checkpoint.sessionId}"`,
-      nodeLabels,
-      "dispatching",
-      ["trimatrix", "wave", `session:${checkpoint.sessionId ?? "unknown"}`],
-    );
+      ? { ...dispatchResult.checkpoint, machineState: MachineState.GATE_HALTED }
+      : dispatchResult.checkpoint;
 
     // Compute per-node execution info and parallelism groups
     const nodeExecution = wave.nodes.map((nId) => {
@@ -956,66 +958,43 @@ server.tool(
 
 server.tool(
   "complete_node",
-  "Mark a node as completed. Provide prUrl and prNumber to record a PR; omit to mark as merged directly.",
+  "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion.",
   {
     nodeId: z.string().describe("Node ID to complete"),
-    prUrl: z.string().optional().describe("URL of the pull request, if any"),
-    prNumber: z.coerce.number().int().optional().describe(
-      "Pull request number, if any",
-    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
 
+    // Enforce PR reference on nodes with outgoing MERGE_GATE edges
+    const node = cp.graph.nodes[params.nodeId];
+    const hasMergeGateOut = cp.graph.edges.some(
+      (e) => e.from === params.nodeId && e.type === EdgeType.MERGE_GATE,
+    );
+    if (hasMergeGateOut && (!node?.prUrl || !node?.prNumber)) {
+      throw new Error(
+        `Node "${params.nodeId}" has outgoing MERGE_GATE edges — set prUrl and prNumber via update_node first`,
+      );
+    }
+
     const check = canTransition(cp, {
       type: "node_completed",
       nodeId: params.nodeId,
-      prUrl: params.prUrl,
-      prNumber: params.prNumber,
     });
     if (!check.allowed) {
       throw new Error(`Cannot complete node: ${check.reason}`);
     }
 
-    const pr = params.prUrl !== undefined && params.prNumber !== undefined
-      ? { url: params.prUrl, number: params.prNumber }
-      : undefined;
-
-    const updatedGraph = completeNode(cp.graph, params.nodeId, pr);
-    const transitioned = transition(
+    const updatedGraph = completeNode(cp.graph, params.nodeId);
+    const completeResult = await transitionWithEffects(
       { ...cp, graph: updatedGraph },
       {
         type: "node_completed",
         nodeId: params.nodeId,
-        prUrl: params.prUrl,
-        prNumber: params.prNumber,
       },
     );
-    checkpoint = transitioned;
-
-    // Sync task status (best-effort)
-    const node = checkpoint.graph.nodes[params.nodeId];
-    if (node?.taskId) {
-      const cwd = repoRoot(node.repo);
-      const nodeStatus = node.status;
-      if (nodeStatus === NodeStatus.DONE || nodeStatus === NodeStatus.MERGED) {
-        await syncTaskStatus(node.taskId, "close", cwd);
-      } else if (nodeStatus === NodeStatus.PR_CREATED) {
-        // PR created but not yet merged — keep as in_progress
-        await syncTaskStatus(node.taskId, "activate", cwd);
-      }
-    }
-
-    // Record episode for node completion (best-effort, awaited to prevent race)
-    {
-      const completedNode = checkpoint.graph.nodes[params.nodeId];
-      const prInfo = params.prUrl ? `PR: ${params.prUrl}` : "direct completion";
-      await recordEpisode(
-        `Node "${completedNode?.label ?? params.nodeId}" completed`,
-        [prInfo],
-        String(completedNode?.status ?? "DONE"),
-        ["trimatrix", "node-complete", `session:${checkpoint.sessionId ?? "unknown"}`],
-      );
+    checkpoint = completeResult.checkpoint;
+    if (completeResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
     }
 
     return {
@@ -1027,6 +1006,104 @@ server.tool(
             nodeId: params.nodeId,
             status: checkpoint.graph.nodes[params.nodeId]?.status,
             machineState: checkpoint.machineState,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_node
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "update_node",
+  "Update metadata on a node without changing its status. Use to attach PR info (prUrl, prNumber) before calling complete_node.",
+  {
+    nodeId: z.string().describe("Node ID to update"),
+    prUrl: z.string().optional().describe("URL of the pull request"),
+    prNumber: z.coerce.number().int().optional().describe("Pull request number"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+
+    const patch: { prUrl?: string; prNumber?: number } = {};
+    if (params.prUrl !== undefined) patch.prUrl = params.prUrl;
+    if (params.prNumber !== undefined) patch.prNumber = params.prNumber;
+
+    const updatedGraph = updateNode(cp.graph, params.nodeId, patch);
+    checkpoint = { ...cp, graph: updatedGraph, updatedAt: new Date().toISOString() };
+    await saveCheckpointToBrain(checkpoint);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            prUrl: checkpoint.graph.nodes[params.nodeId]?.prUrl,
+            prNumber: checkpoint.graph.nodes[params.nodeId]?.prNumber,
+            status: checkpoint.graph.nodes[params.nodeId]?.status,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: close_node
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "close_node",
+  "Close a node's brain task. Node must be in a completed status (DONE, MERGED, or PR_CREATED with merged PR). Fails loudly on error.",
+  {
+    nodeId: z.string().describe("Node ID to close"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+
+    const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+    if (!node.taskId) {
+      throw new Error(`Node "${params.nodeId}" has no associated taskId — cannot close`);
+    }
+
+    // Guard: node must be in a completed status
+    const completedStatuses = [NodeStatus.DONE, NodeStatus.MERGED, NodeStatus.PR_CREATED];
+    if (!completedStatuses.includes(node.status)) {
+      throw new Error(
+        `Node "${params.nodeId}" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`,
+      );
+    }
+
+    // Validate task exists in brain
+    try {
+      await execFileAsync(BRAIN_CLI, ["tasks", "get", node.taskId, "--json"], { timeout: 5000 });
+    } catch {
+      throw new Error(
+        `Task "${node.taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
+      );
+    }
+
+    // Close the task — must succeed
+    const cwd = repoRoot(node.repo);
+    await syncTaskStatus(node.taskId, "close", cwd);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            taskId: node.taskId,
+            closed: true,
           }),
         },
       ],
@@ -1058,26 +1135,14 @@ server.tool(
     }
 
     const updatedGraph = failNode(cp.graph, params.nodeId, params.reason);
-    const transitioned = transition(
+    const failResult = await transitionWithEffects(
       { ...cp, graph: updatedGraph },
       { type: "node_failed", nodeId: params.nodeId, reason: params.reason },
     );
-    checkpoint = transitioned;
-
-    // Sync task status (best-effort)
-    const failedNode = checkpoint.graph.nodes[params.nodeId];
-    if (failedNode?.taskId) {
-      await syncTaskStatus(failedNode.taskId, "block", repoRoot(failedNode.repo));
+    checkpoint = failResult.checkpoint;
+    if (failResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
     }
-
-    // Record episode for node failure (best-effort, awaited to prevent race)
-    await recordEpisode(
-      `Node "${failedNode?.label ?? params.nodeId}" failed`,
-      [params.reason],
-      "failed",
-      ["trimatrix", "failure", `session:${checkpoint.sessionId ?? "unknown"}`],
-      0.9,
-    );
 
     // Check if wave is now fully failed
     const wave = cp.waves.find((w) => w.id === cp.currentWaveId);
@@ -1089,10 +1154,14 @@ server.tool(
           waveId: wave.id,
         });
         if (waveCheck.allowed) {
-          checkpoint = transition(checkpoint, {
+          const waveFailResult = await transitionWithEffects(checkpoint, {
             type: "wave_failed",
             waveId: wave.id,
           });
+          checkpoint = waveFailResult.checkpoint;
+          if (waveFailResult.shouldSaveCheckpoint) {
+            await saveCheckpointToBrain(checkpoint);
+          }
         }
       }
     }
@@ -1158,14 +1227,14 @@ server.tool(
 
 server.tool(
   "clear_gate",
-  "Clear a gate on a node. For ELICIT_GATE nodes, pass the user's structured response. Auto-advances to dispatching state if all gates in the current wave are cleared.",
+  "Clear a gate on a node. For MERGE_GATE: verifies PR is merged via gh CLI before clearing. For ELICIT_GATE: pass the user's structured response. Auto-advances to dispatching if all gates cleared.",
   {
     nodeId: z.string().describe("Node ID to clear gate for"),
     response: z.record(z.unknown()).optional().describe(
       "Structured response from user elicitation. Required for ELICIT_GATE nodes.",
     ),
   },
-  (params) => {
+  async (params) => {
     const cp = requireCheckpoint();
 
     const check = canTransition(cp, {
@@ -1176,17 +1245,81 @@ server.tool(
       throw new Error(`Cannot clear gate: ${check.reason}`);
     }
 
-    // Apply gate_cleared via state machine (handles auto-advance internally)
-    const transitioned = transition(cp, {
+    // Check if this node is gated by a MERGE_GATE edge — verify PR merge status
+    const mergeGateEdges = cp.graph.edges.filter(
+      (e) => e.to === params.nodeId && e.type === EdgeType.MERGE_GATE,
+    );
+
+    for (const edge of mergeGateEdges) {
+      const sourceNode = cp.graph.nodes[edge.from];
+      if (!sourceNode) continue;
+
+      if (!sourceNode.prUrl || !sourceNode.prNumber) {
+        throw new Error(
+          `Source node "${edge.from}" of MERGE_GATE has no PR reference — cannot verify merge status`,
+        );
+      }
+
+      // Extract owner/repo from PR URL (e.g., https://github.com/owner/repo/pull/123)
+      const prUrlMatch = sourceNode.prUrl.match(/github\.com\/([^/]+\/[^/]+)\/pull\//);
+      if (!prUrlMatch) {
+        throw new Error(
+          `Cannot parse repository from PR URL: ${sourceNode.prUrl}`,
+        );
+      }
+      const repoSlug = prUrlMatch[1];
+
+      try {
+        const { stdout } = await execFileAsync("gh", [
+          "pr", "view", String(sourceNode.prNumber),
+          "--repo", repoSlug,
+          "--json", "state",
+        ], { timeout: 10000 });
+        const prState = JSON.parse(stdout);
+        if (prState.state !== "MERGED") {
+          throw new Error(
+            `PR #${sourceNode.prNumber} in ${repoSlug} is not merged (state: ${prState.state}). Cannot clear merge gate.`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("Cannot clear merge gate")) {
+          throw err;
+        }
+        throw new Error(
+          `Failed to verify merge status for PR #${sourceNode.prNumber}: ${err}`,
+        );
+      }
+
+      // Update source node status to MERGED since PR is confirmed merged
+      if (sourceNode.status !== NodeStatus.MERGED) {
+        checkpoint = {
+          ...cp,
+          graph: {
+            ...cp.graph,
+            nodes: {
+              ...cp.graph.nodes,
+              [edge.from]: { ...sourceNode, status: NodeStatus.MERGED },
+            },
+          },
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    }
+
+    // Apply gate_cleared via state machine with effects
+    const cpForTransition = checkpoint ?? cp;
+    const gateResult = await transitionWithEffects(cpForTransition, {
       type: "gate_cleared",
       nodeId: params.nodeId,
       response: params.response,
     });
+    if (gateResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(gateResult.checkpoint);
+    }
 
-    // Also update the graph via the pure graph helper (state.ts handles it inline,
-    // but we call clearGate to keep graph consistent with the helper contract)
-    const updatedGraph = clearGate(transitioned.graph, params.nodeId);
-    checkpoint = { ...transitioned, graph: updatedGraph };
+    // Also update the graph via the pure graph helper
+    const updatedGraph = clearGate(gateResult.checkpoint.graph, params.nodeId);
+    checkpoint = { ...gateResult.checkpoint, graph: updatedGraph };
 
     const node = checkpoint.graph.nodes[params.nodeId];
     return {
@@ -1286,7 +1419,8 @@ server.tool(
       }
     }
 
-    checkpoint = transition(cp, { type: "cancel", reason: params.reason });
+    const cancelResult = await transitionWithEffects(cp, { type: "cancel", reason: params.reason });
+    checkpoint = cancelResult.checkpoint;
     return {
       content: [
         {
@@ -1846,6 +1980,37 @@ const brainExec: BrainExec = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Side-effect runner (wired to brainExec)
+// ---------------------------------------------------------------------------
+
+const transitionWithEffects = createEffectRunner({ brainExec });
+
+/**
+ * Persist the current checkpoint to brain snapshots (best-effort).
+ * Called when the side-effect runner signals shouldSaveCheckpoint.
+ */
+async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
+  try {
+    const serialized = JSON.stringify(cp);
+    const waveId = cp.currentWaveId ?? "latest";
+    const title = `checkpoint:${cp.sessionId ?? "unknown"}:wave-${waveId}`;
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "records_save_snapshot",
+      params: {
+        title,
+        data: serialized,
+        tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`],
+      },
+      id: 1,
+    });
+    await brainExec.withStdin("brain", ["mcp"], rpc, 10000);
+  } catch (err) {
+    console.error("[trimatrix] checkpoint save failed:", err);
+  }
+}
+
 /**
  * Resolve the filesystem root for a node's repo from the checkpoint.
  * Delegates to the pure repoRootLookup in brain-sync.ts.
@@ -2047,28 +2212,6 @@ async function syncTaskStatus(
   return syncTaskStatusCore(taskId, action, cwd, brainExec);
 }
 
-/**
- * Record an episode to brain's episodic memory and track its ID (best-effort).
- * Appends the returned summary_id to checkpoint.episodeIds if successful.
- */
-async function recordEpisode(
-  goal: string,
-  actions: string[],
-  outcome: string,
-  tags: string[],
-  importance?: number,
-  cwd?: string,
-): Promise<void> {
-  const summaryId = await writeEpisodeCore(
-    goal, actions, outcome, tags, importance, cwd, brainExec,
-  );
-  if (summaryId && checkpoint) {
-    checkpoint = {
-      ...checkpoint,
-      episodeIds: [...(checkpoint.episodeIds ?? []), summaryId],
-    };
-  }
-}
 
 /**
  * Search brain's episodic memory for prior episodes (best-effort).

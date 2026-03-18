@@ -113,6 +113,7 @@ export function canTransition(
     case "node_failed":
     case "wave_completed":
     case "wave_failed":
+    case "review_passed":
       if (machineState !== MachineState.DISPATCHING) {
         return {
           allowed: false,
@@ -246,9 +247,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       if (!node) return { ...checkpoint, updatedAt: now };
       const updatedNode: Node = {
         ...node,
-        status: event.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
-        ...(event.prUrl !== undefined ? { prUrl: event.prUrl } : {}),
-        ...(event.prNumber !== undefined ? { prNumber: event.prNumber } : {}),
+        status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
       };
       return {
         ...checkpoint,
@@ -375,6 +374,13 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       return {
         ...checkpoint,
         machineState: MachineState.DISPATCHING,
+        updatedAt: now,
+      };
+
+    case "review_passed":
+      // Identity transition — no state change, recorded for audit trail
+      return {
+        ...checkpoint,
         updatedAt: now,
       };
 

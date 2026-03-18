@@ -308,7 +308,7 @@ export function nextWave(
         const sourceNode = graph.nodes[edge.from];
         if (!sourceNode) return false;
         if (edge.type === EdgeType.MERGE_GATE) {
-          return sourceNode.status === MERGE_GATE_SATISFIED;
+          return sourceNode.status === MERGE_GATE_SATISFIED && !!sourceNode.prUrl;
         }
         if (edge.type === EdgeType.DEPENDS_ON) {
           return DEPENDS_ON_SATISFIED.includes(sourceNode.status);
@@ -346,21 +346,42 @@ export function clearGate(graph: Graph, nodeId: string): Graph {
 
 /**
  * Mark a node as completed.
- * - With PR info: status becomes PR_CREATED.
- * - Without PR info and node has repo: status becomes MERGED.
- * - Without PR info and no repo (single-repo): status becomes DONE.
+ * - If node already has prUrl: status becomes PR_CREATED.
+ * - Without prUrl and node has repo: status becomes MERGED.
+ * - Without prUrl and no repo (single-repo): status becomes DONE.
  */
 export function completeNode(
   graph: Graph,
   nodeId: string,
-  pr?: { url: string; number: number },
 ): Graph {
   const node = graph.nodes[nodeId];
   if (!node) return graph;
   const updated: Node = {
     ...node,
-    status: pr ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
-    ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
+    status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
+  };
+  return {
+    ...graph,
+    nodes: { ...graph.nodes, [nodeId]: updated },
+  };
+}
+
+/**
+ * Update metadata on a node without changing its status.
+ * Patches prUrl and/or prNumber onto an existing node.
+ * Throws if the node does not exist.
+ */
+export function updateNode(
+  graph: Graph,
+  nodeId: string,
+  patch: { prUrl?: string; prNumber?: number },
+): Graph {
+  const node = graph.nodes[nodeId];
+  if (!node) throw new Error(`Node "${nodeId}" not found`);
+  const updated: Node = {
+    ...node,
+    ...(patch.prUrl !== undefined ? { prUrl: patch.prUrl } : {}),
+    ...(patch.prNumber !== undefined ? { prNumber: patch.prNumber } : {}),
   };
   return {
     ...graph,

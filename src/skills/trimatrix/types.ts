@@ -539,18 +539,14 @@ export type Event =
   | { type: "plan_finalized" }
   | { type: "plan_revision_requested" }
   | { type: "wave_dispatched"; waveId: number }
-  | {
-    type: "node_completed";
-    nodeId: string;
-    prUrl?: string;
-    prNumber?: number;
-  }
+  | { type: "node_completed"; nodeId: string }
   | { type: "node_failed"; nodeId: string; reason: string }
   | { type: "gate_cleared"; nodeId: string; response?: Record<string, unknown> }
   | { type: "wave_completed"; waveId: number }
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }
   | { type: "retry_wave"; waveId: number }
+  | { type: "review_passed"; nodeId?: string }
   | { type: "refine" }
   | { type: "refinement_approved" }
   | { type: "cancel"; reason?: string };

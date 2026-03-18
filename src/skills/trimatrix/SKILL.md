@@ -109,7 +109,25 @@ Two resume paths exist — active graph (preferred) and task-based (fallback).
    - If `<brain-ref>` provided: attach new brain/repo as in step 2.
    - Route by machineState — see state routing table below.
 
-**State routing table** (after graph is loaded):
+**Resume Assessment Step** (before state routing):
+
+After checkpoint restoration and before routing by machineState:
+1. Call `status` to get full state.
+2. Present summary:
+   - Session label and intent
+   - Completed nodes (DONE/MERGED): list labels
+   - Pending nodes (READY/IN_PROGRESS): list labels
+   - Failed nodes: list labels + failure reason
+   - Current wave: N of M waves complete
+   - PRs created: list URLs
+3. Elicit user intent:
+   - **continue** — proceed with dispatch (route by machineState)
+   - **review** — show detailed diffs/PRs before deciding
+   - **refine** — enter refinement to modify plan
+   - **abandon** — cancel session
+4. Only after user confirms: route by machineState.
+
+**State routing table** (after graph is loaded and user confirms):
 
 | machineState | Action |
 |---|---|
@@ -221,7 +239,7 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 3. Generate designations via Protocol A. Assign to subgraph `assignee`.
 4. Dispatch Agents with the brief injected in the prompt.
 5. For LEAD nodes in this wave: execute directly as parallel Bash calls.
-6. Monitor adjunct completion via `complete_node` / `fail_node` callbacks.
+6. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
 
 **Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
 - Sequential → T2 with multi-wave graph
@@ -229,12 +247,23 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 - Swarm → T2 INDEPENDENT with PARTITIONED coordination
 - Collaborative → T3 COORDINATED with team
 
+### Protocol D2: PR Lifecycle
+
+The PR workflow for nodes with outgoing MERGE_GATE edges:
+1. `update_node(nodeId, prUrl, prNumber)` — attach PR metadata, no status change.
+2. `complete_node(nodeId)` — derives PR_CREATED status from existing prUrl on node.
+3. `clear_gate(nodeId)` — verify PR merged, transitions PR_CREATED → MERGED.
+4. `close_node(nodeId)` — close brain task.
+
+Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (with repo) or DONE (without repo) directly.
+
 ### Protocol E: Task Closure
 
-- Adjuncts close their own tasks via `tasks_close` as their final action.
-- Queen verifies after each wave via `tasks_list` filtered by the epic.
-- Any unclosed task → Queen closes it with a comment noting the adjunct's failure to self-close.
-- Epic is closed LAST, after ALL subtasks are verified closed.
+- Adjuncts **never** close tasks. They report completion via `tasks_apply_event`, then return.
+- Task closure is exclusively via the `close_node` MCP tool (per node) after review PASS verdict.
+- `close_node` requires an explicit `nodeId`, resolves to a validated `taskId`. Fails loudly on error — no silent best-effort.
+- Queen calls `close_node(nodeId)` for each completed node after Validation PASS, then closes the epic via `tasks_close`.
+- Epic is closed LAST, after ALL subtasks are verified closed via `close_node`.
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.
 

@@ -203,12 +203,24 @@ Deno.test("transition: happy path initializing -> plan_review -> dispatching -> 
   assertEquals(cp2.currentWaveId, 1);
   assertEquals(cp2.machineState, MachineState.DISPATCHING);
 
-  // node_completed with PR
-  const cp3 = transition(cp2, {
+  // Set PR metadata on node, then complete
+  const cp2WithPr = {
+    ...cp2,
+    graph: {
+      ...cp2.graph,
+      nodes: {
+        ...cp2.graph.nodes,
+        n1: {
+          ...cp2.graph.nodes["n1"],
+          prUrl: "https://github.com/org/repo/pull/1",
+          prNumber: 1,
+        },
+      },
+    },
+  };
+  const cp3 = transition(cp2WithPr, {
     type: "node_completed",
     nodeId: "n1",
-    prUrl: "https://github.com/org/repo/pull/1",
-    prNumber: 1,
   });
   assertEquals(cp3.graph.nodes["n1"].status, NodeStatus.PR_CREATED);
   assertEquals(
