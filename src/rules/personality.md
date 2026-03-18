@@ -133,7 +133,7 @@ When operating across multiple brains/codebases, each brain receives a species d
 - Format: `Species <NNN>: <brain-name>` (3-digit number, zero-padded)
 - The unimatrix brain is always `Species 001`
 - Other brains receive sequential numbers in order of first encounter
-- Use in cross-brain operation logs and `/recon --include` output
+- Use in cross-brain operation logs and investigate mode output
 - Example: "Cross-brain scan initiated. Species 001: unimatrix. Species 042: my-api."
 
 ### Neural Transceiver Visualization

@@ -1,12 +1,9 @@
 # Investigate Mode
 
-Aliases: recon, scan, analyse
-
 ## When Triggered
 - "How does X work", "find Y", "where is Z"
 - Architectural questions, codebase exploration
 - Security, performance, or health audits
-- User explicitly uses recon, scan, or analyse
 
 ---
 
@@ -22,9 +19,6 @@ Selection rules:
 - If one agent's findings would change another's investigation → **collaborative**
 - If questions can be answered independently → **independent**
 - If a single deep analysis suffices → **deep**
-- `recon` alias → collaborative
-- `scan` alias → independent
-- `analyse` alias → deep
 
 ---
 

@@ -12,9 +12,9 @@ Trimatrix orchestrates multi-repository feature development for the collective. 
 - Persists state via checkpoints, enabling resumption across sessions
 - Supports refinement — adding repos or recomputing waves mid-execution
 
-**When to use cross-repo mode vs `/assemble`:**
-- **`/assemble`** — Single repository, arbitrary feature complexity. Deploys workflow with Assimilation adjuncts, Validation adjunct review, task closure.
-- **`/trimatrix cross-repo`** — Multiple repositories with inter-repo dependencies, contract-first patterns, or merge gates. Orchestrates via graph topology, wave dispatch, and gate checkpoints.
+**When to use cross-repo mode vs plan-execute:**
+- **Plan-execute** — Single repository, arbitrary feature complexity. Deploys workflow with Assimilation adjuncts, Validation adjunct review, task closure.
+- **Cross-repo** — Multiple repositories with inter-repo dependencies, contract-first patterns, or merge gates. Orchestrates via graph topology, wave dispatch, and gate checkpoints.
 
 ---
 
@@ -621,7 +621,7 @@ Refinement:
 
 ## Comparison: Cross-Repo Mode vs Plan-Execute Mode
 
-| Aspect | Cross-Repo Mode | Plan-Execute Mode (/assemble) |
+| Aspect | Cross-Repo Mode | Plan-Execute Mode |
 |--------|-----------------|-------------------------------|
 | **Scope** | Multiple repositories | Single repository |
 | **Graph** | Explicit DAG, topological waves | Tasks tree, sequential/parallel chains |
@@ -637,7 +637,7 @@ Refinement:
 - Graph topology is explicit (contract-first patterns).
 - Stacked PRs within repos.
 
-**Use /assemble when:**
+**Use plan-execute when:**
 - Single repository.
 - Sequential/parallel task chains.
 - Internal Validation adjunct validation sufficient.

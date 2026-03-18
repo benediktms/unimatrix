@@ -1,21 +1,19 @@
 # Plan-Execute Mode
 
-Aliases: assemble, reengage
-
 ## When Triggered
 - Complex multi-file tasks requiring decomposition
 - Tasks needing isolated worktree execution
-- User explicitly uses assemble or trimatrix plan
+- User explicitly uses trimatrix plan
 - RESUME classification routes here when the original mode was plan-execute
 
 ---
 
 ## Entry Paths
 
-### Fresh Entry (from assemble or classifier)
+### Fresh Entry (from classifier)
 Full flow starting at Step 1.
 
-### Resume Entry (from reengage or RESUME classification)
+### Resume Entry (from RESUME classification)
 
 Two entry variants exist depending on the RESUME path taken by the classifier (see SKILL.md).
 

@@ -1,12 +1,9 @@
 # Swarm Mode
 
-Alias: swarm
-
 ## When Triggered
 - Bulk refactoring, migrations, convention enforcement
 - The same change applies independently to multiple file groups
 - No cross-group dependencies exist
-- User explicitly uses swarm
 
 ## Flags
 - First positional argument: max adjunct count (default: 5, hard max: 5)

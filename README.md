@@ -95,16 +95,16 @@ All orchestration routes through a single unified skill: `/trimatrix`. Every pro
 
 **Modes:**
 
-| Mode | Legacy Alias | Description |
-|------|-------------|-------------|
-| `plan-execute` | `/assemble` | Multi-file implementation with worktree isolation, wave dispatch, recon, review |
-| `investigate` | `/recon`, `/analyse` | Collaborative, independent, or deep investigation sub-modes |
-| `diagnose` | `/diagnose` | Adversarial hypothesis testing via Validation Adjunct team. `--fix` to implement |
-| `architect` | (new) | Adversarial architecture evaluation. `--execute` hands winner to plan-execute |
-| `review` | `/comply` | Code review — single adjunct or compliance matrix (`--matrix`) |
-| `adapt` | `/adapt` | Iterative implement-review loop until PASS (`--cycles N`, default 3, max 5) |
-| `swarm` | `/swarm` | File-partitioned bulk changes, max 5 partitions |
-| `cross-repo` | (new) | Multi-repository feature execution with merge gates and per-node worktrees |
+| Mode | Description |
+|------|-------------|
+| `plan-execute` | Multi-file implementation with worktree isolation, wave dispatch, recon, review |
+| `investigate` | Collaborative, independent, or deep investigation sub-modes |
+| `diagnose` | Adversarial hypothesis testing via Validation Adjunct team. `--fix` to implement |
+| `architect` | Adversarial architecture evaluation. `--execute` hands winner to plan-execute |
+| `review` | Code review — single adjunct or compliance matrix (`--matrix`) |
+| `adapt` | Iterative implement-review loop until PASS (`--cycles N`, default 3, max 5) |
+| `swarm` | File-partitioned bulk changes, max 5 partitions |
+| `cross-repo` | Multi-repository feature execution with merge gates and per-node worktrees |
 
 ### Trimatrix MCP Server
 
@@ -324,7 +324,7 @@ flowchart TD
     Converge -->|--fix| Fix["Assimilation<br/>implements fix"]
 ```
 
-### Architect (new)
+### Architect
 
 For evaluating competing architectural approaches:
 

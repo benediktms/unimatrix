@@ -22,15 +22,15 @@ The classifier runs on every prompt. It determines **Intent** and **Tier** befor
 
 ### Intents
 
-| Intent | Triggers | Legacy Aliases |
-|---|---|---|
-| IMPLEMENT | Code changes, new features, refactoring, bulk migrations | `assemble`, `reengage`, `swarm`, `adapt` |
-| INVESTIGATE | "How does X work", "find Y", "audit Z", architectural questions | `recon`, `scan`, `analyse` |
-| DIAGNOSE | Bug reports, "why does X happen", unclear root cause | `diagnose` |
-| ARCHITECT | "Evaluate architecture options", "compare approaches for X" | `architect` |
-| REVIEW | "Review this", code review requests, validation | `comply` |
-| REFACTOR | Structural cleanup, rename operations, pattern migrations | — |
-| RESUME | `--resume`, references a task ID, "resume", "continue", `reengage <id>` | `reengage` |
+| Intent | Triggers |
+|---|---|
+| IMPLEMENT | Code changes, new features, refactoring, bulk migrations |
+| INVESTIGATE | "How does X work", "find Y", "audit Z", architectural questions |
+| DIAGNOSE | Bug reports, "why does X happen", unclear root cause |
+| ARCHITECT | "Evaluate architecture options", "compare approaches for X" |
+| REVIEW | "Review this", code review requests, validation |
+| REFACTOR | Structural cleanup, rename operations, pattern migrations |
+| RESUME | `--resume`, references a task ID, "resume", "continue" |
 
 ### Tiers
 
