@@ -326,6 +326,16 @@ server.tool(
     taskId: z.string().optional().describe(
       "Brain task ID to associate with this node. Validated against brain CLI.",
     ),
+    elicitPrompt: z.string().optional().describe(
+      "Markdown prompt to present during elicitation. Required for ELICIT_GATE nodes.",
+    ),
+    elicitSchema: z.object({
+      type: z.literal("object"),
+      properties: z.record(z.any()),
+      required: z.array(z.string()).optional(),
+    }).optional().describe(
+      "JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -347,6 +357,20 @@ server.tool(
       }
     }
 
+    if (params.type === NodeType.ELICIT_GATE) {
+      if (!params.elicitPrompt) {
+        throw new Error(
+          `ELICIT_GATE node "${params.id}" requires elicitPrompt`,
+        );
+      }
+    } else {
+      if (params.elicitPrompt !== undefined || params.elicitSchema !== undefined) {
+        throw new Error(
+          `elicitPrompt/elicitSchema are only valid for ELICIT_GATE nodes, got type ${params.type}`,
+        );
+      }
+    }
+
     const node = {
       id: params.id,
       ...(params.repo !== undefined ? { repo: params.repo } : {}),
@@ -358,6 +382,8 @@ server.tool(
         ? { stackedOn: params.stackedOn }
         : {}),
       ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
+      ...(params.elicitPrompt !== undefined ? { elicitPrompt: params.elicitPrompt } : {}),
+      ...(params.elicitSchema !== undefined ? { elicitSchema: params.elicitSchema } : {}),
       status: NodeStatus.PENDING,
       executor: params.executor ?? Executor.LEAD,
     };
