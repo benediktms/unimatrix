@@ -237,9 +237,11 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 1. Call `mcp__unimatrix__dispatch_wave` — get activated nodes with executors.
 2. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph` to retrieve the brief.
 3. Generate designations via Protocol A. Assign to subgraph `assignee`.
-4. Dispatch Agents with the brief injected in the prompt.
-5. For LEAD nodes in this wave: execute directly as parallel Bash calls.
-6. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
+4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE` and `room_id: <id>` in every adjunct prompt.
+5. Dispatch Agents with the brief injected in the prompt.
+6. For LEAD nodes in this wave: execute directly as parallel Bash calls.
+7. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
+8. If neural link room was opened: call `mcp__neural_link__room_close` with resolution after all adjuncts return.
 
 **Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
 - Sequential → T2 with multi-wave graph
@@ -267,9 +269,29 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.
 
-### Protocol F: Agent Communication (team-based modes)
+### Protocol F: Agent Communication
 
-Include in every team agent's prompt:
+#### F1: Neural Link (`neural_link` MCP) — all multi-adjunct dispatches
+
+When dispatching **more than one adjunct** (any tier), the lead establishes a neural link room:
+
+1. Call `mcp__neural_link__room_open` with `title` (session label or wave description), `purpose` (coordination scope), and `brains` (if cross-repo).
+2. Include these lines in **every** adjunct prompt:
+   ```
+   NEURAL LINK ACTIVE
+   room_id: <room_id from room_open>
+   ```
+3. Each adjunct joins the room on activation via `mcp__neural_link__room_join` (per their Neural Link Protocol section).
+4. After all adjuncts return, the lead calls `mcp__neural_link__room_close` with a resolution (`completed`, `cancelled`, `failed`).
+5. The lead uses the structured extraction from `room_close` (decisions, open questions, blockers) to inform next-wave decisions or user-facing summaries.
+
+**Single adjunct dispatch**: skip neural link entirely. No room, no marker.
+
+#### F2: Teams — coordinated modes only
+
+Teams (Claude Code TeamCreate) add real-time coordination on top of neural link. They are required when adjuncts must synchronize in-flight, not just exchange messages. See the Team Dispatch Rules table above for when teams apply.
+
+Include in every **team** agent's prompt (in addition to the neural link marker):
 
 - **SHARE DISCOVERIES** — message teammates with significant findings immediately
 - **ASK TEAMMATES** — direct questions to the right agent
