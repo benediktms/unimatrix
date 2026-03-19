@@ -357,6 +357,18 @@ server.tool(
       }
     }
 
+    // Validate repo exists in checkpoint
+    if (params.repo !== undefined) {
+      const repoExists = cp.repos.some((r) => r.name === params.repo);
+      if (!repoExists) {
+        throw new Error(
+          `Node "${params.id}" references unknown repo "${params.repo}". ` +
+          `Available repos: ${cp.repos.map((r) => r.name).join(", ") || "(none)"}. ` +
+          `Add repo via add_repo first.`,
+        );
+      }
+    }
+
     if (params.type === NodeType.ELICIT_GATE) {
       if (!params.elicitPrompt) {
         throw new Error(
@@ -2800,6 +2812,16 @@ server.tool(
     ),
   },
   async (params) => {
+    const cp = requireCheckpoint();
+    const repoExists = cp.repos.some((r) => r.name === params.name);
+    if (!repoExists) {
+      throw new Error(
+        `Brain "${params.name}" not found in checkpoint repos. ` +
+        `Available: ${cp.repos.map((r) => r.name).join(", ") || "(none)"}. ` +
+        `Register via add_repo first.`,
+      );
+    }
+
     try {
       const { stdout, stderr } = await execFileAsync(
         "brain",

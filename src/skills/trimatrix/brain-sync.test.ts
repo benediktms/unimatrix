@@ -2,7 +2,7 @@
  * Tests for brain-sync.ts — cwd-routing logic for brain CLI task syncing.
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { repoRoot, searchEpisodes, syncTaskStatus, writeEpisode } from "./brain-sync.ts";
 import type { BrainExec } from "./brain-sync.ts";
 import type { RepoMetadata } from "./types.ts";
@@ -64,8 +64,12 @@ Deno.test("repoRoot: resolves known repo", () => {
   assertEquals(repoRoot(REPOS, "web"), "/home/user/code/web");
 });
 
-Deno.test("repoRoot: returns undefined for unknown repo", () => {
-  assertEquals(repoRoot(REPOS, "nonexistent"), undefined);
+Deno.test("repoRoot: throws for unknown repo", () => {
+  assertThrows(
+    () => repoRoot(REPOS, "nonexistent"),
+    Error,
+    'Repo "nonexistent" not found in checkpoint',
+  );
 });
 
 Deno.test("repoRoot: returns undefined for undefined repoName", () => {

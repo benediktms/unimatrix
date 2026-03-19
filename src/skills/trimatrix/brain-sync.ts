@@ -44,7 +44,14 @@ export function repoRoot(
   repoName?: string,
 ): string | undefined {
   if (!repoName || repos.length === 0) return undefined;
-  return repos.find((r) => r.name === repoName)?.root;
+  const match = repos.find((r) => r.name === repoName);
+  if (!match) {
+    throw new Error(
+      `Repo "${repoName}" not found in checkpoint. ` +
+      `Available: ${repos.map((r) => r.name).join(", ") || "(none)"}`,
+    );
+  }
+  return match.root;
 }
 
 // ---------------------------------------------------------------------------
