@@ -37,6 +37,7 @@ import {
   failNode,
   nextWave,
   parallelNodesInWave,
+  unsatisfiedDependencies,
   updateNode,
   serializeSubgraphBrief,
   validate,
@@ -52,6 +53,7 @@ import {
 import {
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
+  syncGraphDepsToBrain as syncGraphDepsToBrainCore,
   syncTaskStatus as syncTaskStatusCore,
 } from "./brain-sync.ts";
 import type { BrainExec } from "./brain-sync.ts";
@@ -707,6 +709,9 @@ server.tool(
       );
       checkpoint = applySubgraphs(refinementResult.checkpoint);
 
+      // Project graph deps to brain tasks (best-effort)
+      await syncGraphDepsToBrainCore(cp.graph, undefined, brainExec);
+
       return {
         content: [
           {
@@ -745,6 +750,9 @@ server.tool(
       { type: "plan_submitted" },
     );
     checkpoint = planResult.checkpoint;
+
+    // Project graph deps to brain tasks (best-effort)
+    await syncGraphDepsToBrainCore(cp.graph, undefined, brainExec);
 
     return {
       content: [
@@ -1039,12 +1047,33 @@ server.tool(
   async (params) => {
     const cp = requireCheckpoint();
 
-    // Enforce PR reference on nodes with outgoing MERGE_GATE edges
     const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+
+    // Guard: ELICIT_GATE nodes must be cleared via clear_gate, not completed directly
+    if (node.type === NodeType.ELICIT_GATE && node.elicitResponse === undefined) {
+      throw new Error(
+        `ELICIT_GATE node "${params.nodeId}" has not been cleared — use clear_gate to collect the user response first`,
+      );
+    }
+
+    // Guard: all incoming dependencies must be satisfied before completion
+    const unsatisfied = unsatisfiedDependencies(cp.graph, params.nodeId);
+    if (unsatisfied.length > 0) {
+      throw new Error(
+        `Cannot complete node "${params.nodeId}" — unsatisfied dependencies: ${
+          unsatisfied.map((u) => `${u.edge.from} → ${u.edge.to} (${u.edge.type}): ${u.reason}`).join("; ")
+        }`,
+      );
+    }
+
+    // Enforce PR reference on nodes with outgoing MERGE_GATE edges
     const hasMergeGateOut = cp.graph.edges.some(
       (e) => e.from === params.nodeId && e.type === EdgeType.MERGE_GATE,
     );
-    if (hasMergeGateOut && (!node?.prUrl || !node?.prNumber)) {
+    if (hasMergeGateOut && (!node.prUrl || !node.prNumber)) {
       throw new Error(
         `Node "${params.nodeId}" has outgoing MERGE_GATE edges — set prUrl and prNumber via update_node first`,
       );
@@ -1198,6 +1227,24 @@ server.tool(
   },
   async (params) => {
     const cp = requireCheckpoint();
+
+    // Guard: BLOCKED gate nodes cannot be failed directly — clear or cancel the wave
+    const failTarget = cp.graph.nodes[params.nodeId];
+    if (failTarget?.status === NodeStatus.BLOCKED && (
+      failTarget.type === NodeType.ELICIT_GATE ||
+      cp.graph.edges.some((e) => e.to === params.nodeId && e.type === EdgeType.MERGE_GATE)
+    )) {
+      throw new Error(
+        `Node "${params.nodeId}" is BLOCKED by a gate — use clear_gate or cancel instead of fail_node`,
+      );
+    }
+
+    // Guard: PENDING nodes have not been dispatched — they cannot have failed
+    if (failTarget?.status === NodeStatus.PENDING) {
+      throw new Error(
+        `Cannot fail node "${params.nodeId}" — node is PENDING and has not been dispatched`,
+      );
+    }
 
     const check = canTransition(cp, {
       type: "node_failed",

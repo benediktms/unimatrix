@@ -21,6 +21,7 @@ import {
   nextWave,
   parallelNodesInWave,
   serializeSubgraphBrief,
+  unsatisfiedDependencies,
   validate,
   waveStatus,
 } from "./graph.ts";
@@ -1114,4 +1115,161 @@ Deno.test("computeWaves: ELICIT_GATE with DEPENDS_ON creates wave boundary", () 
   // Wave 0 and 1 should have hasMergeGate since DEPENDS_ON edges cross into later waves
   assertEquals(waves[0].hasMergeGate, true);
   assertEquals(waves[1].hasMergeGate, true);
+});
+
+// ---------------------------------------------------------------------------
+// unsatisfiedDependencies
+// ---------------------------------------------------------------------------
+
+Deno.test("unsatisfiedDependencies: empty for node with no incoming edges", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  assertEquals(unsatisfiedDependencies(g, "A"), []);
+});
+
+Deno.test("unsatisfiedDependencies: empty when DEPENDS_ON sources are DONE/MERGED", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.DONE }),
+      makeNode({ id: "B", status: NodeStatus.MERGED }),
+      makeNode({ id: "C", status: NodeStatus.PENDING }),
+    ],
+    [
+      { from: "A", to: "C", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+  assertEquals(unsatisfiedDependencies(g, "C"), []);
+});
+
+Deno.test("unsatisfiedDependencies: unsatisfied when DEPENDS_ON source is PENDING", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.PENDING }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = unsatisfiedDependencies(g, "B");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].edge.from, "A");
+  assertEquals(result[0].reason.includes("PENDING"), true);
+});
+
+Deno.test("unsatisfiedDependencies: unsatisfied when DEPENDS_ON source is ACTIVE", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.ACTIVE }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = unsatisfiedDependencies(g, "B");
+  assertEquals(result.length, 1);
+});
+
+Deno.test("unsatisfiedDependencies: unsatisfied when MERGE_GATE source is DONE (not MERGED)", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.DONE }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
+  );
+  const result = unsatisfiedDependencies(g, "B");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].reason.includes("requires MERGED"), true);
+});
+
+Deno.test("unsatisfiedDependencies: unsatisfied when MERGE_GATE source is MERGED but lacks prUrl", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.MERGED }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
+  );
+  const result = unsatisfiedDependencies(g, "B");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].reason.includes("lacks prUrl"), true);
+});
+
+Deno.test("unsatisfiedDependencies: empty when MERGE_GATE source is MERGED with prUrl", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.MERGED, prUrl: "https://github.com/o/r/pull/1" }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
+  );
+  assertEquals(unsatisfiedDependencies(g, "B"), []);
+});
+
+Deno.test("unsatisfiedDependencies: unsatisfied when STACKED source is PENDING", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.PENDING }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.STACKED }],
+  );
+  const result = unsatisfiedDependencies(g, "B");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].reason.includes("PR_CREATED or MERGED"), true);
+});
+
+Deno.test("unsatisfiedDependencies: empty when STACKED source is PR_CREATED", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.PR_CREATED }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.STACKED }],
+  );
+  assertEquals(unsatisfiedDependencies(g, "B"), []);
+});
+
+Deno.test("unsatisfiedDependencies: mixed edges — returns only unsatisfied subset", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.DONE }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+      makeNode({ id: "C", status: NodeStatus.PENDING }),
+    ],
+    [
+      { from: "A", to: "C", type: EdgeType.DEPENDS_ON }, // satisfied
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON }, // unsatisfied
+    ],
+  );
+  const result = unsatisfiedDependencies(g, "C");
+  assertEquals(result.length, 1);
+  assertEquals(result[0].edge.from, "B");
+});
+
+// ---------------------------------------------------------------------------
+// validate: FAILED source satisfiability
+// ---------------------------------------------------------------------------
+
+Deno.test("validate: detects FAILED source node as unsatisfiable", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.FAILED }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = validate(g);
+  assertEquals(result.valid, false);
+  assertEquals(result.errors.some((e) => e.includes("Unsatisfiable") && e.includes("FAILED")), true);
+});
+
+Deno.test("validate: passes when no FAILED sources exist", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.DONE }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = validate(g);
+  assertEquals(result.valid, true);
 });

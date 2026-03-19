@@ -3,9 +3,10 @@
  */
 
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
-import { repoRoot, searchEpisodes, syncTaskStatus, writeEpisode } from "./brain-sync.ts";
+import { repoRoot, searchEpisodes, syncGraphDepsToBrain, syncTaskStatus, writeEpisode } from "./brain-sync.ts";
 import type { BrainExec } from "./brain-sync.ts";
-import type { RepoMetadata } from "./types.ts";
+import type { Graph, RepoMetadata } from "./types.ts";
+import { EdgeType, Executor, NodeStatus, NodeType } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Mock executor
@@ -296,4 +297,81 @@ Deno.test("searchEpisodes: uses default budget of 800", async () => {
   await searchEpisodes("query", undefined, undefined, undefined, undefined, exec);
   const payload = JSON.parse(calls[0].stdinData!);
   assertEquals(payload.params.budget_tokens, 800);
+});
+
+// ---------------------------------------------------------------------------
+// syncGraphDepsToBrain
+// ---------------------------------------------------------------------------
+
+function makeNode(id: string, overrides: Partial<Graph["nodes"][string]> = {}): Graph["nodes"][string] {
+  return {
+    id,
+    type: NodeType.IMPLEMENTATION,
+    label: id,
+    status: NodeStatus.PENDING,
+    executor: Executor.LEAD,
+    worktreeBranch: `trimatrix/${id}`,
+    ...overrides,
+  };
+}
+
+Deno.test("syncGraphDepsToBrain: calls tasks_deps_batch with correct pairs", async () => {
+  const graph: Graph = {
+    nodes: {
+      A: makeNode("A", { taskId: "t-A" }),
+      B: makeNode("B", { taskId: "t-B" }),
+      C: makeNode("C", { taskId: "t-C" }),
+    },
+    edges: [
+      { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.MERGE_GATE },
+    ],
+  };
+  const { exec, calls } = mockExec();
+  await syncGraphDepsToBrain(graph, "/repo", exec);
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].method, "withStdin");
+  assertEquals(calls[0].cwd, "/repo");
+  const payload = JSON.parse(calls[0].stdinData!);
+  assertEquals(payload.method, "tasks_deps_batch");
+  assertEquals(payload.params.action, "add");
+  assertEquals(payload.params.deps.length, 2);
+  assertEquals(payload.params.deps[0], { task_id: "t-B", depends_on_task_id: "t-A" });
+  assertEquals(payload.params.deps[1], { task_id: "t-C", depends_on_task_id: "t-B" });
+});
+
+Deno.test("syncGraphDepsToBrain: skips edges where source/target lacks taskId", async () => {
+  const graph: Graph = {
+    nodes: {
+      A: makeNode("A", { taskId: "t-A" }),
+      B: makeNode("B"), // no taskId
+      C: makeNode("C", { taskId: "t-C" }),
+    },
+    edges: [
+      { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.MERGE_GATE },
+    ],
+  };
+  const { exec, calls } = mockExec();
+  await syncGraphDepsToBrain(graph, undefined, exec);
+  assertEquals(calls.length, 0); // no pairs with both taskIds
+});
+
+Deno.test("syncGraphDepsToBrain: no-ops when exec is undefined", async () => {
+  const graph: Graph = {
+    nodes: { A: makeNode("A", { taskId: "t-A" }), B: makeNode("B", { taskId: "t-B" }) },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  // Must not throw
+  await syncGraphDepsToBrain(graph);
+});
+
+Deno.test("syncGraphDepsToBrain: handles exec failure gracefully", async () => {
+  const graph: Graph = {
+    nodes: { A: makeNode("A", { taskId: "t-A" }), B: makeNode("B", { taskId: "t-B" }) },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const { exec } = mockExec({ shouldThrow: true });
+  // Must not throw
+  await syncGraphDepsToBrain(graph, undefined, exec);
 });

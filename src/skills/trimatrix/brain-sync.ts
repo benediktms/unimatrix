@@ -5,7 +5,7 @@
  * without a running brain CLI or MCP server.
  */
 
-import type { EpisodeStub, RepoMetadata } from "./types.ts";
+import type { EpisodeStub, Graph, RepoMetadata } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Executor abstraction
@@ -188,5 +188,44 @@ export async function searchEpisodes(
     return [];
   } catch {
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// syncGraphDepsToBrain
+// ---------------------------------------------------------------------------
+
+/**
+ * Project graph edges as brain task dependencies (best-effort, idempotent).
+ * Only edges where both source and target have a `taskId` are synced.
+ */
+export async function syncGraphDepsToBrain(
+  graph: Graph,
+  cwd?: string,
+  exec?: BrainExec,
+): Promise<void> {
+  if (!exec) return;
+  const pairs: { task_id: string; depends_on_task_id: string }[] = [];
+  for (const edge of graph.edges) {
+    const source = graph.nodes[edge.from];
+    const target = graph.nodes[edge.to];
+    if (source?.taskId && target?.taskId) {
+      pairs.push({
+        task_id: target.taskId,
+        depends_on_task_id: source.taskId,
+      });
+    }
+  }
+  if (pairs.length === 0) return;
+  try {
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tasks_deps_batch",
+      params: { action: "add", deps: pairs },
+      id: 1,
+    });
+    await exec.withStdin(BRAIN_CLI, ["mcp"], rpc, 5000, cwd);
+  } catch {
+    // Best-effort — graph remains source of truth
   }
 }

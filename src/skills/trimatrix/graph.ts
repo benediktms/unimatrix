@@ -125,6 +125,16 @@ export function validate(graph: Graph): ValidationResult {
     );
   }
 
+  // Detect unsatisfiable edges: source node is FAILED
+  for (const edge of graph.edges) {
+    const source = graph.nodes[edge.from];
+    if (source?.status === NodeStatus.FAILED) {
+      errors.push(
+        `Unsatisfiable: edge ${edge.from} → ${edge.to} (${edge.type}) — source node is FAILED`,
+      );
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }
 
@@ -250,6 +260,51 @@ const MERGE_GATE_SATISFIED: NodeStatus = NodeStatus.MERGED;
 /** Statuses that satisfy a `DEPENDS_ON` edge dependency. */
 const DEPENDS_ON_SATISFIED: NodeStatus[] = [NodeStatus.DONE, NodeStatus.MERGED];
 
+// ---------------------------------------------------------------------------
+// Dependency satisfaction check
+// ---------------------------------------------------------------------------
+
+export interface UnsatisfiedDependency {
+  edge: Edge;
+  reason: string;
+}
+
+/**
+ * Return all unsatisfied incoming dependencies for a node.
+ * Empty array means all dependencies are satisfied.
+ */
+export function unsatisfiedDependencies(
+  graph: Graph,
+  nodeId: string,
+): UnsatisfiedDependency[] {
+  const result: UnsatisfiedDependency[] = [];
+  for (const edge of graph.edges) {
+    if (edge.to !== nodeId) continue;
+    const source = graph.nodes[edge.from];
+    if (!source) {
+      result.push({ edge, reason: `source node "${edge.from}" not found` });
+      continue;
+    }
+    if (edge.type === EdgeType.DEPENDS_ON) {
+      if (!DEPENDS_ON_SATISFIED.includes(source.status)) {
+        result.push({ edge, reason: `source is ${source.status}, requires DONE or MERGED` });
+      }
+    } else if (edge.type === EdgeType.MERGE_GATE) {
+      if (source.status !== MERGE_GATE_SATISFIED) {
+        result.push({ edge, reason: `source is ${source.status}, requires MERGED` });
+      } else if (!source.prUrl) {
+        result.push({ edge, reason: `source is MERGED but lacks prUrl` });
+      }
+    } else {
+      // STACKED
+      if (!STACKED_SATISFIED.includes(source.status)) {
+        result.push({ edge, reason: `source is ${source.status}, requires PR_CREATED or MERGED` });
+      }
+    }
+  }
+  return result;
+}
+
 /**
  * Returns the next wave ready for execution, or null if none is available.
  *
@@ -282,13 +337,6 @@ export function nextWave(
     if (allDone) completedWaveIds.add(wave.id);
   }
 
-  // Build a map of incoming edges per node
-  const incomingEdges = new Map<string, Edge[]>();
-  for (const edge of graph.edges) {
-    if (!incomingEdges.has(edge.to)) incomingEdges.set(edge.to, []);
-    incomingEdges.get(edge.to)!.push(edge);
-  }
-
   for (const wave of waves) {
     // Skip already-completed waves
     if (completedWaveIds.has(wave.id)) continue;
@@ -302,20 +350,9 @@ export function nextWave(
     // not block the wave from being dispatched.
     const waveNodeIds = new Set(wave.nodes);
     const waveReady = wave.nodes.every((nId) => {
-      const edges = incomingEdges.get(nId) ?? [];
-      return edges.every((edge) => {
-        if (waveNodeIds.has(edge.from)) return true; // intra-wave: always ok
-        const sourceNode = graph.nodes[edge.from];
-        if (!sourceNode) return false;
-        if (edge.type === EdgeType.MERGE_GATE) {
-          return sourceNode.status === MERGE_GATE_SATISFIED && !!sourceNode.prUrl;
-        }
-        if (edge.type === EdgeType.DEPENDS_ON) {
-          return DEPENDS_ON_SATISFIED.includes(sourceNode.status);
-        }
-        // STACKED
-        return STACKED_SATISFIED.includes(sourceNode.status);
-      });
+      const unsatisfied = unsatisfiedDependencies(graph, nId);
+      // Filter out intra-wave deps — they sequence within the wave, not block dispatch
+      return unsatisfied.every((u) => waveNodeIds.has(u.edge.from));
     });
 
     if (waveReady) return wave;
