@@ -331,7 +331,40 @@ server.tool(
     ),
     elicitSchema: z.object({
       type: z.literal("object"),
-      properties: z.record(z.any()),
+      properties: z.record(z.union([
+        // String (plain — no enum)
+        z.object({
+          type: z.literal("string"),
+          title: z.string().optional(),
+          description: z.string().optional(),
+          minLength: z.number().optional(),
+          maxLength: z.number().optional(),
+          format: z.string().optional(),
+        }).strict(),
+        // String enum
+        z.object({
+          type: z.literal("string"),
+          enum: z.array(z.string()),
+          enumNames: z.array(z.string()).optional(),
+          title: z.string().optional(),
+          description: z.string().optional(),
+        }).strict(),
+        // Number / integer
+        z.object({
+          type: z.enum(["number", "integer"]),
+          title: z.string().optional(),
+          description: z.string().optional(),
+          minimum: z.number().optional(),
+          maximum: z.number().optional(),
+        }).strict(),
+        // Boolean
+        z.object({
+          type: z.literal("boolean"),
+          title: z.string().optional(),
+          description: z.string().optional(),
+          default: z.boolean().optional(),
+        }).strict(),
+      ])),
       required: z.array(z.string()).optional(),
     }).optional().describe(
       "JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted.",
@@ -618,45 +651,43 @@ server.tool(
         }),
       );
 
-      // Graceful degradation: decline from missing capability — proceed without approval
-      const proceedWithoutApproval = elicitResult.action === "decline" &&
-        !server.server.getClientCapabilities()?.elicitation;
+      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+        const noCapability = elicitResult.action === "decline" &&
+          !server.server.getClientCapabilities()?.elicitation;
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: noCapability
+                  ? "Client lacks elicitation capability. Refinement requires manual approval."
+                  : "Refinement rejected by user.",
+                machineState: cp.machineState,
+              }),
+            },
+          ],
+        };
+      }
 
-      if (!proceedWithoutApproval) {
-        if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  ok: false,
-                  reason: "Refinement rejected by user.",
-                  machineState: cp.machineState,
-                }),
-              },
-            ],
-          };
-        }
-
-        if (elicitResult.action === "accept" && !elicitResult.content.approve) {
-          const notes = typeof elicitResult.content.modifications === "string" &&
-              elicitResult.content.modifications.length > 0
-            ? elicitResult.content.modifications
-            : undefined;
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  ok: false,
-                  reason: "Refinement not approved.",
-                  machineState: cp.machineState,
-                  ...(notes !== undefined ? { notes } : {}),
-                }),
-              },
-            ],
-          };
-        }
+      if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+        const notes = typeof elicitResult.content.modifications === "string" &&
+            elicitResult.content.modifications.length > 0
+          ? elicitResult.content.modifications
+          : undefined;
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason: "Refinement not approved.",
+                machineState: cp.machineState,
+                ...(notes !== undefined ? { notes } : {}),
+              }),
+            },
+          ],
+        };
       }
 
       const refinementRecord = {
@@ -922,7 +953,7 @@ server.tool(
       );
     }
 
-    // Activate regular nodes; set elicit gates to BLOCKED
+    // Activate regular nodes; set elicit gates to BLOCKED with resolved schema
     let updatedGraph = activateNodes(cp.graph, regularNodeIds);
     for (const gateId of elicitGateIds) {
       const gateNode = updatedGraph.nodes[gateId];
@@ -931,7 +962,12 @@ server.tool(
           ...updatedGraph,
           nodes: {
             ...updatedGraph.nodes,
-            [gateId]: { ...gateNode, status: NodeStatus.BLOCKED },
+            [gateId]: {
+              ...gateNode,
+              status: NodeStatus.BLOCKED,
+              // Resolve default schema so clear_gate can always validate against it
+              elicitSchema: gateNode.elicitSchema ?? approvalSchema(),
+            },
           },
         };
       }
@@ -1247,12 +1283,18 @@ server.tool(
       };
     }
 
-    // decline (no elicitation capability) or cancel — return without triage
+    // decline or cancel — return failure data without triage decision
+    const noCapability = elicitResult.action === "decline" &&
+      !server.server.getClientCapabilities()?.elicitation;
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(failureData),
+          text: JSON.stringify({
+            ...failureData,
+            triageSkipped: true,
+            ...(noCapability ? { reason: "Client lacks elicitation capability." } : {}),
+          }),
         },
       ],
     };
@@ -1344,8 +1386,30 @@ server.tool(
       }
     }
 
-    // Apply gate_cleared via state machine with effects
+    // Validate response against elicitSchema for ELICIT_GATE nodes
     const cpForTransition = checkpoint ?? cp;
+    const gateNode = cpForTransition.graph.nodes[params.nodeId];
+    if (gateNode?.type === NodeType.ELICIT_GATE && gateNode.elicitSchema && params.response) {
+      const response = params.response;
+      const schemaProps = Object.keys(gateNode.elicitSchema.properties);
+      const responseKeys = Object.keys(response);
+      const unknownKeys = responseKeys.filter((k) => !schemaProps.includes(k));
+      if (unknownKeys.length > 0) {
+        throw new Error(
+          `Response contains keys not in elicitSchema: ${unknownKeys.join(", ")}`,
+        );
+      }
+      const missingRequired = (gateNode.elicitSchema.required ?? []).filter(
+        (k) => !(k in response),
+      );
+      if (missingRequired.length > 0) {
+        throw new Error(
+          `Response missing required fields: ${missingRequired.join(", ")}`,
+        );
+      }
+    }
+
+    // Apply gate_cleared via state machine with effects
     const gateResult = await transitionWithEffects(cpForTransition, {
       type: "gate_cleared",
       nodeId: params.nodeId,
@@ -1412,7 +1476,7 @@ server.tool(
       }),
     );
 
-    // Graceful degradation: no elicitation capability — proceed
+    // Cancellation is user-initiated — optimistic degradation: proceed if client lacks capability
     const proceedWithoutApproval = elicitResult.action === "decline" &&
       !server.server.getClientCapabilities()?.elicitation;
 
@@ -1726,10 +1790,22 @@ server.tool(
       };
     }
 
+    // decline (explicit rejection or missing elicitation capability)
     if (elicitResult.action === "decline") {
-      // Client lacks elicitation capability — preserve current behavior
+      const noCapability = !server.server.getClientCapabilities()?.elicitation;
       return {
-        content: [{ type: "text", text: JSON.stringify({ wave }) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              reason: noCapability
+                ? "Client lacks elicitation capability. Wave requires manual approval."
+                : "Wave rejected by user.",
+              machineState: cp.machineState,
+            }),
+          },
+        ],
       };
     }
 
