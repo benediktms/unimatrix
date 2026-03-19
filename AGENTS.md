@@ -343,7 +343,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 - Body is optional — use it for multi-line explanations when the "why" isn't obvious from the title
 - When making changes that affect documented surface area, **update AGENTS.md in the same commit**
 
-<!-- brain:start:dd472eb9 -->
+<!-- brain:start:0196a725 -->
 ## Build & Test
 
 ```bash
@@ -351,22 +351,6 @@ just           # Run default recipe
 just test      # Test
 just build     # Build
 ```
-
-## Crate Architecture
-
-The workspace has three crates:
-
-- `cli` — Binary crate. Depends on `brain_lib`.
-- `brain_lib` — Application logic: pipelines, MCP server, ranking, parsing. Depends on `brain_persistence`.
-- `brain_persistence` — Concrete persistence: SQLite (connection pool, schema, migrations), LanceDB (vector store, optimize scheduler).
-
-### Dependency rules
-
-- `brain_lib` must NOT depend on `lancedb`, `arrow-schema`, or `arrow-array` directly — enforced by `just check-deps`
-- `brain_lib` defines persistence port traits in `brain_lib::ports` (17 traits covering LanceDB and SQLite operations)
-- Trait implementations live in `brain_lib::ports` (impl blocks for concrete types from `brain_persistence`)
-- Schema migrations live in `brain_persistence`
-- Pipelines are generic over store and DB types: `IndexPipeline<S = Store>`, `QueryPipeline<'a, S = StoreReader, D = Db>`
 
 ## Task Management
 
