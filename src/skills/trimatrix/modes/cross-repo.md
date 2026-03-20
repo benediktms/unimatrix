@@ -105,9 +105,9 @@ save_checkpoint → save as brain artifact tagged:
 6c. dispatch_wave
 6d. Create worktrees per node: <repo-root>/.claude/worktrees/<branch>
 6e. Create brain tasks per node
-6f. Dispatch Assimilation adjuncts (Borg cube if multi-node wave, create team)
+6f. Dispatch drones (Borg cube if multi-node wave, create team)
 6g. Record outcomes: complete_node or fail_node
-6h. Validation adjunct review (see Review Mode for compliance matrix option)
+6h. sentinel review (see Review Mode for compliance matrix option)
 6i. Create PRs via gh pr create
 6j. Persist checkpoint (Step 5)
 6k. Check for merge gate → Step 7, or loop to 6a
@@ -147,12 +147,12 @@ Each node gets an isolated worktree in its target repository:
 
 Where worktreeBranch follows the pattern: `trimatrix/<node-id>`.
 
-Assimilation adjuncts receive `WORKTREE ISOLATION ACTIVE` and the worktree path. They operate
+drones receive `WORKTREE ISOLATION ACTIVE` and the worktree path. They operate
 exclusively within the assigned worktree.
 
 ## Designation Protocol
 
-Use Designation Generation Protocol for each dispatched Assimilation adjunct. Include the node ID
+Use Designation Generation Protocol for each dispatched drone. Include the node ID
 in the designation context so adjuncts can be tracked per-node.
 
 ## Cross-Repo Context Passing

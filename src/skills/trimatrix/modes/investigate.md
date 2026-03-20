@@ -28,7 +28,7 @@ Selection rules:
 - `--plan` — Feature planning mode: iterative scoping → plan → materialization. Collaborative sub-mode only.
 - `--dry-run` — With `--plan`: produce and cache plan, skip materialization.
 - `--resume [<artifact-id>]` — With `--plan`: load cached plan artifact, resume from materialization.
-- `--skip-review` — With `--plan`: skip Tactical Analysis plan review.
+- `--skip-review` — With `--plan`: skip designate plan review.
 
 ---
 
@@ -42,7 +42,7 @@ Fetch plan artifact by ID or via `records_list` with tag `recon-plan`. Present t
 
 ### Step 1: Scoping
 
-**Without --plan:** Decompose the investigation into 5–6 discrete questions. Assign each to a Reconnaissance adjunct (structure/location) or TacticalAnalysis adjunct (depth/judgment). Group under an epic. Set dependencies where one finding gates another. Produce a recon dispatch plan.
+**Without --plan:** Decompose the investigation into 5–6 discrete questions. Assign each to a probe (structure/location) or designate (depth/judgment). Group under an epic. Set dependencies where one finding gates another. Produce a recon dispatch plan.
 
 **With --plan (iterative scoping loop, max 5 iterations):**
 Each iteration returns one of:
@@ -54,7 +54,7 @@ Each iteration returns one of:
 Present recon dispatch plan to user. Wait for explicit approval before spawning agents.
 
 ### Step 3: Create Team and Spawn Agents
-1. Use Designation Generation Protocol. Role: Reconnaissance or TacticalAnalysis per task.
+1. Use Designation Generation Protocol. Role: Probe or Designate per task.
 2. Create team: `TeamCreate(team_name: "recon-<epic-id>")` — **MANDATORY**. Abort if creation fails.
 3. Spawn all agents into team with Agent Communication Protocol included in each prompt.
 4. Agents self-claim their brain tasks via `tasks_apply_event`.
@@ -82,7 +82,7 @@ After `SCOPE_COMPLETE`:
 2. Cache plan as brain artifact: `kind: plan`, tags `["recon-plan"]`, `task_id: <epic-id>`.
 3. If `--dry-run`: present plan to user, stop here.
 4. Materialize into brain tasks via Plan Materialization Protocol.
-5. Unless `--skip-review`: dispatch single TacticalAnalysis adjunct to review the plan. Verdict: APPROVE / REVISE / REJECT.
+5. Unless `--skip-review`: dispatch single designate to review the plan. Verdict: APPROVE / REVISE / REJECT.
    - REVISE → incorporate feedback, re-present plan, re-review
    - REJECT → escalate to user verbatim
 6. Present final plan to user for approval.
@@ -123,8 +123,8 @@ Fetch all `scan-finding` snapshots. Summarize. Present findings with source task
 
 ## Flow: Deep Sub-Mode (Single Adjunct)
 
-Single TacticalAnalysis adjunct dispatch:
-1. Use Designation Generation Protocol. Role: TacticalAnalysis.
+Single designate dispatch:
+1. Use Designation Generation Protocol. Role: Designate.
 2. Dispatch adjunct with the user's question as directive.
 3. Wait for completion.
 4. Present findings directly — no synthesis layer needed.

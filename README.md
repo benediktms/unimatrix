@@ -10,15 +10,15 @@ Unimatrix follows a plan-execute-review cycle orchestrated by the trimatrix supe
 
 ```mermaid
 flowchart LR
-    Plan["Lead<br/>plans"] --> Execute["Assimilation Adjuncts<br/>build"] --> Review["Validation Adjunct<br/>reviews"] --> Cleanup["Closure Adjunct<br/>cleans up"]
+    Plan["Lead<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Sentinel<br/>reviews"] --> Cleanup["Locutus<br/>cleans up"]
     Review -->|NEEDS_CHANGES| Execute
 ```
 
 1. **The lead session plans** — classifies intent, decomposes into a graph of subtasks with dependencies, and computes execution waves
-2. **The lead session dispatches** — spawns Assimilation Adjuncts (and optionally Reconnaissance/Tactical Analysis Adjuncts) per wave
-3. **Assimilation Adjuncts implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
-4. **The Validation Adjunct reviews** — validates correctness with evidence-based verification
-5. **The Closure Adjunct cleans up** — commits, closes tasks, writes memory episodes
+2. **The lead session dispatches** — spawns Drones (and optionally Probes/Designates) per wave
+3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
+4. **The Sentinel reviews** — validates correctness with evidence-based verification
+5. **Locutus cleans up** — commits, closes tasks, writes memory episodes
 
 All task state, checkpoints, and learned patterns are persisted in Brain, enabling work to be resumed across sessions.
 
@@ -28,18 +28,18 @@ All task state, checkpoints, and learned patterns are persisted in Brain, enabli
 graph TB
     Lead["<b>Lead Session</b><br/><i>Unimatrix Zero — Opus</i><br/><br/>Plans, dispatches, and orchestrates<br/>Claude Code: lead session directly / OpenCode: Queen agent<br/>Skill: /trimatrix<br/>Rules: personality.md, token-economy.md, error-taxonomy.md<br/>Hooks: state tracking, compaction management"]
 
-    Lead --> Assimilation["<b>Assimilation Adjunct</b><br/>Sonnet<br/><i>builds</i>"]
-    Lead --> Validation["<b>Validation Adjunct</b><br/>Opus<br/><i>reviews</i>"]
-    Lead --> Recon["<b>Reconnaissance Adjunct</b><br/>Sonnet<br/><i>finds</i>"]
-    Lead --> Tactical["<b>Tactical Analysis Adjunct</b><br/>Opus<br/><i>audits</i>"]
-    Lead --> Closure["<b>Closure Adjunct</b><br/>Haiku<br/><i>cleans up</i>"]
+    Lead --> Drone["<b>Drone</b><br/>Sonnet<br/><i>builds</i>"]
+    Lead --> Sentinel["<b>Sentinel</b><br/>Opus<br/><i>reviews</i>"]
+    Lead --> Probe["<b>Probe</b><br/>Sonnet<br/><i>finds</i>"]
+    Lead --> Designate["<b>Designate</b><br/>Opus<br/><i>audits</i>"]
+    Lead --> Locutus["<b>Locutus</b><br/>Haiku<br/><i>cleans up</i>"]
 
     Lead --> Brain
-    Assimilation --> Brain
-    Validation --> Brain
-    Recon --> Brain
-    Tactical --> Brain
-    Closure --> Brain
+    Drone --> Brain
+    Sentinel --> Brain
+    Probe --> Brain
+    Designate --> Brain
+    Locutus --> Brain
 
     Lead --> MCP["<b>Trimatrix MCP Server</b><br/>Graph engine · Checkpoints · Designations"]
 
@@ -48,11 +48,11 @@ graph TB
     style Lead fill:#1a1a2e,stroke:#e94560,color:#fff
     style Brain fill:#0f3460,stroke:#e94560,color:#fff
     style MCP fill:#2d1b3a,stroke:#ce93d8,color:#fff
-    style Assimilation fill:#1b3a2d,stroke:#69f0ae,color:#fff
-    style Validation fill:#1b2d3a,stroke:#80deea,color:#fff
-    style Recon fill:#3a351b,stroke:#fff176,color:#fff
-    style Tactical fill:#1b2d3a,stroke:#80deea,color:#fff
-    style Closure fill:#2a2a2a,stroke:#bdbdbd,color:#fff
+    style Drone fill:#1b3a2d,stroke:#69f0ae,color:#fff
+    style Sentinel fill:#1b2d3a,stroke:#80deea,color:#fff
+    style Probe fill:#3a351b,stroke:#fff176,color:#fff
+    style Designate fill:#1b2d3a,stroke:#80deea,color:#fff
+    style Locutus fill:#2a2a2a,stroke:#bdbdbd,color:#fff
 ```
 
 ### Agents
@@ -61,11 +61,11 @@ graph TB
 |-------|----------|-------|----------|------|
 | **Lead Session** | (direct) | Opus | Claude Code | Plans, dispatches, and orchestrates — the lead session itself |
 | **Queen** | `queen-coordination-protocol` | Opus | OpenCode | Lead agent in OpenCode — strategic mind + direct execution |
-| **Assimilation Adjunct** | `adjunct-assimilation-protocol` | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
-| **Validation Adjunct** | `adjunct-validation-protocol` | Opus | Both | Code reviewer — evidence-based verification with tiered reviews and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
-| **Reconnaissance Adjunct** | `adjunct-reconnaissance-protocol` | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
-| **Tactical Analysis Adjunct** | `adjunct-tactical-analysis-protocol` | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
-| **Closure Adjunct** | `adjunct-closure-protocol` | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
+| **Drone** | `drone-protocol` | Sonnet | Both | Implementation worker — executes a single well-scoped brain task, commits changes, saves checkpoints |
+| **Sentinel** | `sentinel-protocol` | Opus | Both | Code reviewer — evidence-based verification with tiered reviews and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
+| **Probe** | `probe-protocol` | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
+| **Designate** | `designate-protocol` | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
+| **Locutus** | `locutus-protocol` | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
 
 Agent definitions live in `src/agents/` as markdown files with combined YAML frontmatter that configures platform-specific model, permission mode, max turns, and allowed/disallowed tools. See [FORMAT.md](./FORMAT.md) for the combined source format.
 
@@ -99,7 +99,7 @@ All orchestration routes through a single unified skill: `/trimatrix`. Every pro
 |------|-------------|
 | `plan-execute` | Multi-file implementation with worktree isolation, wave dispatch, recon, review |
 | `investigate` | Collaborative, independent, or deep investigation sub-modes |
-| `diagnose` | Adversarial hypothesis testing via Validation Adjunct team. `--fix` to implement |
+| `diagnose` | Adversarial hypothesis testing via Sentinel team. `--fix` to implement |
 | `architect` | Adversarial architecture evaluation. `--execute` hands winner to plan-execute |
 | `review` | Code review — single adjunct or compliance matrix (`--matrix`) |
 | `adapt` | Iterative implement-review loop until PASS (`--cycles N`, default 3, max 5) |
@@ -248,7 +248,7 @@ flowchart TD
     Request --> Classify
 
     Classify["Trimatrix classifies<br/>intent + tier"]
-    Classify -->|RECON_NEEDED| Recon["Reconnaissance Adjuncts<br/>investigate"]
+    Classify -->|RECON_NEEDED| Recon["Probes<br/>investigate"]
     Classify -->|SKIP_RECON| Plan
 
     Recon --> Plan["Lead plans<br/><i>graph with waves + dependencies</i>"]
@@ -256,17 +256,17 @@ flowchart TD
     Plan --> Wave1
 
     subgraph Wave1 ["Wave 1 (parallel)"]
-        AdjA["Assimilation A — files: a, b"]
-        AdjB["Assimilation B — files: c, d"]
+        AdjA["Drone A — files: a, b"]
+        AdjB["Drone B — files: c, d"]
     end
 
     Wave1 -->|checkpoints passed forward| Wave2
 
     subgraph Wave2 ["Wave 2 (sequential)"]
-        AdjC["Assimilation C — integration"]
+        AdjC["Drone C — integration"]
     end
 
-    Wave2 --> Review["Validation Adjunct reviews"]
+    Wave2 --> Review["Sentinel reviews"]
     Review -->|PASS| Done([Done])
     Review -->|NEEDS_CHANGES| Fix["Dispatch fix adjuncts"]
     Review -->|BLOCK| Escalate([Escalate to user])
@@ -279,7 +279,7 @@ For tasks that need multiple passes to converge:
 
 ```mermaid
 flowchart LR
-    Adj["Assimilation<br/>builds"] --> Val["Validation<br/>reviews"]
+    Adj["Drone<br/>builds"] --> Val["Sentinel<br/>reviews"]
     Val -->|PASS| Done([Done])
     Val -->|NEEDS_CHANGES<br/>feedback| Adj
     Val -->|BLOCK| Escalate([Escalate])
@@ -292,10 +292,10 @@ For applying the same kind of change across many files:
 ```mermaid
 flowchart TD
     Lead["Lead partitions files<br/>into non-overlapping groups"] --> A1 & A2 & A3
-    A1["Assimilation 1<br/><code>src/components/*.tsx</code>"]
-    A2["Assimilation 2<br/><code>src/hooks/*.ts</code>"]
-    A3["Assimilation 3<br/><code>src/utils/*.ts</code>"]
-    A1 & A2 & A3 --> Review["Validation reviews<br/>aggregate changes"]
+    A1["Drone 1<br/><code>src/components/*.tsx</code>"]
+    A2["Drone 2<br/><code>src/hooks/*.ts</code>"]
+    A3["Drone 3<br/><code>src/utils/*.ts</code>"]
+    A1 & A2 & A3 --> Review["Sentinel reviews<br/>aggregate changes"]
 ```
 
 ### Investigate
@@ -305,9 +305,9 @@ For understanding a codebase area before making changes:
 ```mermaid
 flowchart TD
     Lead["Lead scopes investigation"] --> R1 & R2 & TA
-    R1["Recon Adjunct A<br/>trace auth flow"]
-    R2["Recon Adjunct B<br/>find all API endpoints"]
-    TA["Tactical Analysis<br/>audit security posture"]
+    R1["Probe A<br/>trace auth flow"]
+    R2["Probe B<br/>find all API endpoints"]
+    TA["Designate<br/>audit security posture"]
     R1 & R2 & TA -->|results linked to brain tasks| Synthesis["Synthesized findings<br/>returned to user"]
 ```
 
@@ -318,10 +318,10 @@ For bugs with unclear root cause — adversarial hypothesis testing:
 ```mermaid
 flowchart TD
     Lead["Lead frames competing hypotheses"] --> V1 & V2
-    V1["Validation A<br/>tests hypothesis 1"]
-    V2["Validation B<br/>tests hypothesis 2"]
+    V1["Sentinel A<br/>tests hypothesis 1"]
+    V2["Sentinel B<br/>tests hypothesis 2"]
     V1 & V2 -->|challenge each other| Converge["Converge on root cause"]
-    Converge -->|--fix| Fix["Assimilation<br/>implements fix"]
+    Converge -->|--fix| Fix["Drone<br/>implements fix"]
 ```
 
 ### Architect
@@ -331,8 +331,8 @@ For evaluating competing architectural approaches:
 ```mermaid
 flowchart TD
     Lead["Lead frames approaches"] --> TA1 & TA2
-    TA1["Tactical Analysis A<br/>evaluates approach 1"]
-    TA2["Tactical Analysis B<br/>evaluates approach 2"]
+    TA1["Designate A<br/>evaluates approach 1"]
+    TA2["Designate B<br/>evaluates approach 2"]
     TA1 & TA2 -->|adversarial challenge| Winner["Winner selected"]
     Winner -->|--execute| Impl["Plan-execute mode<br/>implements winner"]
 ```
@@ -354,7 +354,7 @@ Epic: "Implement auth system"
 ```
 
 - The **lead session** creates epics and subtasks with dependencies via `tasks_apply_event`
-- **Assimilation Adjuncts** mark tasks `in_progress`, add comments, and report completion
+- **Drones** mark tasks `in_progress`, add comments, and report completion
 - `tasks_next` returns the highest-priority unblocked tasks
 - `tasks_close` closes completed tasks and unblocks dependents
 
@@ -364,12 +364,12 @@ Brain stores checkpoints and artifacts that enable context flow between agents:
 
 | What | Who Creates | Purpose | Tags |
 |------|-------------|---------|------|
-| Adjunct checkpoints | Assimilation Adjunct | Pass context to subsequent waves | `drone-checkpoint`, `parent:<task-id>` |
-| Implementation artifacts | Assimilation Adjunct | Permanent record of what changed | `drone-implementation` |
+| Adjunct checkpoints | Drone | Pass context to subsequent waves | `drone-checkpoint`, `parent:<task-id>` |
+| Implementation artifacts | Drone | Permanent record of what changed | `drone-implementation` |
 | Lead plans | Lead | Plan record before execution | `queen-plan` |
-| Reconnaissance findings | Reconnaissance Adjunct | Recon results linked to tasks | `probe-recon` |
-| Analysis reports | Tactical Analysis Adjunct | Structured analysis reports | `cortex-analysis` |
-| Review verdicts | Validation Adjunct | Review verdicts and evidence | `vinculum-review` |
+| Reconnaissance findings | Probe | Recon results linked to tasks | `probe-recon` |
+| Analysis reports | Designate | Structured analysis reports | `cortex-analysis` |
+| Review verdicts | Sentinel | Review verdicts and evidence | `vinculum-review` |
 
 **Cross-wave context flow:** When adjuncts in Wave 1 complete, the lead extracts their snapshot IDs and passes them to Wave 2 adjuncts via `PRIOR CHECKPOINTS: <id1>, <id2>` in the prompt. This enables context handoff without the lead relaying full file contents.
 
@@ -436,13 +436,13 @@ Most real plans mix both: parallel foundation waves, sequential integration step
 ```mermaid
 flowchart TD
     subgraph Wave1 ["Wave 1 — Parallel (foundation)"]
-        A1["Assimilation 1"] & A2["Assimilation 2"] & A3["Assimilation 3"]
+        A1["Drone 1"] & A2["Drone 2"] & A3["Drone 3"]
     end
     subgraph Wave2 ["Wave 2 — Sequential (integration)"]
-        A4["Assimilation 4"] --> A5["Assimilation 5"]
+        A4["Drone 4"] --> A5["Drone 5"]
     end
     subgraph Wave3 ["Wave 3 — Parallel (finishing)"]
-        A6["Assimilation 6"] & A7["Assimilation 7"]
+        A6["Drone 6"] & A7["Drone 7"]
     end
     Wave1 -->|checkpoints| Wave2 -->|checkpoints| Wave3
 ```
@@ -451,7 +451,7 @@ flowchart TD
 
 - If an adjunct fails, it marks the task `blocked` and reports to the lead
 - The lead does not retry with the same approach — it escalates to the user
-- If the Validation Adjunct finds critical issues, the lead dispatches new adjuncts with specific fix instructions
+- If the Sentinel finds critical issues, the lead dispatches new adjuncts with specific fix instructions
 
 ## Project Structure
 
@@ -460,11 +460,11 @@ unimatrix/
 ├── src/                          # Combined source (human-authored)
 │   ├── agents/                   # Agent definitions (combined frontmatter)
 │   │   ├── queen-coordination-protocol.md    # Lead agent (OpenCode only)
-│   │   ├── adjunct-assimilation-protocol.md  # Implementation worker
-│   │   ├── adjunct-validation-protocol.md    # Code reviewer
-│   │   ├── adjunct-reconnaissance-protocol.md # Codebase scout
-│   │   ├── adjunct-tactical-analysis-protocol.md # Deep analyst
-│   │   └── adjunct-closure-protocol.md       # Cleanup worker
+│   │   ├── drone-protocol.md                 # Implementation worker
+│   │   ├── sentinel-protocol.md              # Code reviewer
+│   │   ├── probe-protocol.md                 # Codebase scout
+│   │   ├── designate-protocol.md             # Deep analyst
+│   │   └── locutus-protocol.md               # Cleanup worker
 │   ├── skills/                   # Slash command skills
 │   │   └── trimatrix/            # Unified orchestration supergraph
 │   │       ├── SKILL.md          #   Skill definition + intent classifier + protocols
@@ -581,7 +581,7 @@ model: sonnet
 description: "Worker agent — implements a single well-defined task"
 
 claude:
-  name: Adjunct: Assimilation Protocol
+  name: Drone
   permissionMode: bypassPermissions
   disallowedTools: [Agent]
   maxTurns: 50

@@ -8,8 +8,8 @@
  * - Role mapping: title embedded in designation
  * - trimatrix=true: contains "Trimatrix <number>", trimatrix_id present
  * - trimatrix=false/omitted: contains "Unimatrix Zero", trimatrix_id absent
- * - Shared ordinals: batch roles (Assimilation, Reconnaissance, Closure) share one ordinal
- * - Unique ordinals: TacticalAnalysis/Validation get ordinal == their position
+ * - Shared ordinals: batch roles (Drone, Probe, Locutus) share one ordinal
+ * - Unique ordinals: Designate/Sentinel get ordinal == their position
  * - Format validation: regex match on designation string
  * - One-of-One avoidance: probabilistic, tested over 50 iterations
  */
@@ -36,18 +36,18 @@ const DESIGNATION_RE = /^[A-Z][a-z]+ of [A-Z][a-z]+, [A-Z][a-z]+ .+ of .+$/;
 // ---------------------------------------------------------------------------
 
 Deno.test("N=1: returns exactly 1 designation", () => {
-  const { designations } = designate(1, Role.ASSIMILATION);
+  const { designations } = designate(1, Role.DRONE);
   assertEquals(designations.length, 1);
 });
 
 Deno.test("N=1: designation matches format", () => {
-  const { designations } = designate(1, Role.ASSIMILATION);
+  const { designations } = designate(1, Role.DRONE);
   assertMatch(designations[0], DESIGNATION_RE);
 });
 
 Deno.test("N=1: never produces 'One of One' over 50 runs", () => {
   for (let i = 0; i < 50; i++) {
-    const { designations } = designate(1, Role.ASSIMILATION);
+    const { designations } = designate(1, Role.DRONE);
     const d = designations[0];
     if (d.startsWith("One of One")) {
       throw new Error(`Got "One of One" on iteration ${i}: ${d}`);
@@ -57,7 +57,7 @@ Deno.test("N=1: never produces 'One of One' over 50 runs", () => {
 
 Deno.test("N=1: position is within a valid range (not zero, not > 12)", () => {
   for (let i = 0; i < 20; i++) {
-    const { designations } = designate(1, Role.ASSIMILATION);
+    const { designations } = designate(1, Role.DRONE);
     const parts = designations[0].split(" of ");
     const position = parts[0];
     // Must be a valid NUMBERS entry (non-empty)
@@ -84,19 +84,19 @@ Deno.test("N=1: position is within a valid range (not zero, not > 12)", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("N=5: returns exactly 5 designations", () => {
-  const { designations } = designate(5, Role.ASSIMILATION);
+  const { designations } = designate(5, Role.DRONE);
   assertEquals(designations.length, 5);
 });
 
 Deno.test("N=5: all positions are unique", () => {
-  const { designations } = designate(5, Role.ASSIMILATION);
+  const { designations } = designate(5, Role.DRONE);
   const positionWords = designations.map((d) => d.split(" of ")[0]);
   const unique = new Set(positionWords);
   assertEquals(unique.size, 5, `Duplicate positions found: ${positionWords}`);
 });
 
 Deno.test("N=5: all positions are valid numbers 1–5", () => {
-  const { designations } = designate(5, Role.ASSIMILATION);
+  const { designations } = designate(5, Role.DRONE);
   const validSet = new Set(NUMBERS.slice(1, 6));
   for (const d of designations) {
     const pos = d.split(" of ")[0];
@@ -111,12 +111,12 @@ Deno.test("N=5: all positions are valid numbers 1–5", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("N=12: returns exactly 12 designations", () => {
-  const { designations } = designate(12, Role.ASSIMILATION);
+  const { designations } = designate(12, Role.DRONE);
   assertEquals(designations.length, 12);
 });
 
 Deno.test("N=12: all positions are unique and span 1–12", () => {
-  const { designations } = designate(12, Role.ASSIMILATION);
+  const { designations } = designate(12, Role.DRONE);
   const positionWords = designations.map((d) => d.split(" of ")[0]);
   const unique = new Set(positionWords);
   assertEquals(unique.size, 12);
@@ -132,11 +132,10 @@ Deno.test("N=12: all positions are unique and span 1–12", () => {
 // ---------------------------------------------------------------------------
 
 const ROLES: Role[] = [
-  Role.ASSIMILATION,
-  Role.VALIDATION,
-  Role.RECONNAISSANCE,
-  Role.TACTICAL_ANALYSIS,
-  Role.CLOSURE,
+  Role.DRONE,
+  Role.SENTINEL,
+  Role.PROBE,
+  Role.DESIGNATE,
 ];
 
 for (const role of ROLES) {
@@ -158,7 +157,7 @@ for (const role of ROLES) {
 // ---------------------------------------------------------------------------
 
 Deno.test("trimatrix=true: designation contains 'Trimatrix' + number", () => {
-  const { designations, trimatrix_id } = designate(3, Role.ASSIMILATION, true);
+  const { designations, trimatrix_id } = designate(3, Role.DRONE, true);
   assertNotEquals(trimatrix_id, undefined);
   for (const d of designations) {
     assertMatch(d, /Trimatrix \d+$/);
@@ -167,7 +166,7 @@ Deno.test("trimatrix=true: designation contains 'Trimatrix' + number", () => {
 
 Deno.test("trimatrix=true: trimatrix_id is between 1 and 999", () => {
   for (let i = 0; i < 20; i++) {
-    const { trimatrix_id } = designate(1, Role.ASSIMILATION, true);
+    const { trimatrix_id } = designate(1, Role.DRONE, true);
     if (trimatrix_id === undefined || trimatrix_id < 1 || trimatrix_id > 999) {
       throw new Error(`trimatrix_id out of range: ${trimatrix_id}`);
     }
@@ -175,14 +174,14 @@ Deno.test("trimatrix=true: trimatrix_id is between 1 and 999", () => {
 });
 
 Deno.test("trimatrix=true: unit in designation matches trimatrix_id", () => {
-  const { designations, trimatrix_id } = designate(3, Role.ASSIMILATION, true);
+  const { designations, trimatrix_id } = designate(3, Role.DRONE, true);
   for (const d of designations) {
     assertMatch(d, new RegExp(`Trimatrix ${trimatrix_id}$`));
   }
 });
 
 Deno.test("trimatrix=false: designation contains 'Unimatrix Zero'", () => {
-  const { designations, trimatrix_id } = designate(3, Role.ASSIMILATION, false);
+  const { designations, trimatrix_id } = designate(3, Role.DRONE, false);
   assertEquals(trimatrix_id, undefined);
   for (const d of designations) {
     assertMatch(d, /Unimatrix Zero$/);
@@ -190,7 +189,7 @@ Deno.test("trimatrix=false: designation contains 'Unimatrix Zero'", () => {
 });
 
 Deno.test("trimatrix omitted: designation contains 'Unimatrix Zero'", () => {
-  const { designations, trimatrix_id } = designate(3, Role.ASSIMILATION);
+  const { designations, trimatrix_id } = designate(3, Role.DRONE);
   assertEquals(trimatrix_id, undefined);
   for (const d of designations) {
     assertMatch(d, /Unimatrix Zero$/);
@@ -202,9 +201,8 @@ Deno.test("trimatrix omitted: designation contains 'Unimatrix Zero'", () => {
 // ---------------------------------------------------------------------------
 
 const SHARED_ORDINAL_ROLES: Role[] = [
-  Role.ASSIMILATION,
-  Role.RECONNAISSANCE,
-  Role.CLOSURE,
+  Role.DRONE,
+  Role.PROBE,
 ];
 
 for (const role of SHARED_ORDINAL_ROLES) {
@@ -230,7 +228,7 @@ for (const role of SHARED_ORDINAL_ROLES) {
   );
 }
 
-for (const role of [Role.TACTICAL_ANALYSIS, Role.VALIDATION]) {
+for (const role of [Role.DESIGNATE, Role.SENTINEL]) {
   Deno.test(`Unique ordinals: ${role} N=5 — ordinal equals position`, () => {
     const { designations } = designate(5, role);
     for (const d of designations) {
@@ -271,13 +269,13 @@ Deno.test("Format validation: N=1 no-role matches designation regex", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test(
-  "UNIQUE_ORDINAL_ROLES contains TacticalAnalysis and Validation",
+  "UNIQUE_ORDINAL_ROLES contains Designate and Sentinel",
   () => {
-    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.TACTICAL_ANALYSIS), true);
-    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.VALIDATION), true);
-    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.ASSIMILATION), false);
-    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.RECONNAISSANCE), false);
-    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.CLOSURE), false);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.DESIGNATE), true);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.SENTINEL), true);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.DRONE), false);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.PROBE), false);
+    assertEquals(UNIQUE_ORDINAL_ROLES.has(Role.LOCUTUS), false);
   },
 );
 
@@ -290,7 +288,7 @@ Deno.test(
   () => {
     const { designations, trimatrix_id } = designate(
       3,
-      Role.ASSIMILATION,
+      Role.DRONE,
       true,
       42,
     );
@@ -300,3 +298,22 @@ Deno.test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Locutus special handling
+// ---------------------------------------------------------------------------
+
+Deno.test("Locutus: always returns 'Locutus of Borg' regardless of count", () => {
+  for (const count of [1, 3, 5, 12]) {
+    const { designations } = designate(count, Role.LOCUTUS);
+    assertEquals(designations.length, 1);
+    assertEquals(designations[0], "Locutus of Borg");
+  }
+});
+
+Deno.test("Locutus: returns trimatrix_id when trimatrix=true", () => {
+  const { designations, trimatrix_id } = designate(1, Role.LOCUTUS, true, 77);
+  assertEquals(designations.length, 1);
+  assertEquals(designations[0], "Locutus of Borg");
+  assertEquals(trimatrix_id, 77);
+});

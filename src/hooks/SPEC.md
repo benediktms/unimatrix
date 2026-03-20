@@ -21,7 +21,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 2. Parse token usage: input_tokens, output_tokens, cache_read_tokens, cache_create_tokens
 3. Detect model tier from model string → pricing tier
 4. Calculate cost: `(input * input_rate + output * output_rate + cache_read * cache_rate + cache_create * create_rate) / 1_000_000`
-5. Normalize agent type (strip designations: "Reconnaissance: Four of Four" → "Reconnaissance")
+5. Normalize agent type (strip designations: "Probe: Four of Four" → "Probe")
 6. Update state: total_subagent_cost_usd, per-agent cost, type_counts
 
 **Pricing tiers** (per 1M tokens):
@@ -36,9 +36,9 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 {
   "total_subagent_cost_usd": 0.42,
   "agents": {
-    "agent-id-1": { "type": "Assimilation", "cost_usd": 0.15 }
+    "agent-id-1": { "type": "Drone", "cost_usd": 0.15 }
   },
-  "type_counts": { "Assimilation": 3, "Reconnaissance": 1 }
+  "type_counts": { "Drone": 3, "Probe": 1 }
 }
 ```
 
@@ -83,7 +83,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 **State file**: `/tmp/unimatrix-agents-{session_id}.json`
 ```json
 {
-  "active": { "agent-id-1": { "type": "Assimilation", "started_at": 1709234567 } },
+  "active": { "agent-id-1": { "type": "Drone", "started_at": 1709234567 } },
   "total_subagent_seconds": 245.3
 }
 ```

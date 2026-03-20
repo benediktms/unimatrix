@@ -20,9 +20,9 @@ Before dispatching, determine scope (in priority order):
 
 ### Single Review (default)
 
-1. Generate designation (Designation Generation Protocol, role: Vinculum)
-2. Dispatch adjunct-validation-protocol:
-   - If task ID: "Validation adjunct — verification sequence initiated. Task: <id>"
+1. Generate designation (Designation Generation Protocol, role: SENTINEL)
+2. Dispatch sentinel-protocol:
+   - If task ID: "sentinel — verification sequence initiated. Task: <id>"
    - If branch: "Scope: all changes on current branch vs main. Use git diff main...HEAD"
    - If uncommitted: "Scope: uncommitted changes. Use git diff + git diff --cached"
    - If file: "Scope: <path>"
@@ -31,11 +31,11 @@ Before dispatching, determine scope (in priority order):
 
 ### Compliance Matrix Review (when --matrix flag or complex scope)
 
-Deploy multiple Validation adjuncts reviewing from different angles.
+Deploy multiple sentinels reviewing from different angles.
 
 1. Generate designations (multiple)
 2. Create team: TeamCreate(team_name: "review-matrix-<scope>")
-3. Spawn each Validation adjunct with scoped prompt and team membership:
+3. Spawn each sentinel with scoped prompt and team membership:
    - Include REVIEW MATRIX ACTIVE block:
      "You are part of a compliance matrix reviewing this changeset from different angles.
      - CROSS-CUTTING FINDINGS: Message teammates when findings affect their scope

@@ -29,18 +29,18 @@ for cycle in 1..max_cycles:
 
   2a. IMPLEMENT
       Generate designation via Designation Generation Protocol.
-      Dispatch Assimilation adjunct.
-      If cycle > 1: prepend Validation feedback from prior cycle to adjunct prompt:
+      Dispatch drone.
+      If cycle > 1: prepend sentinel feedback from prior cycle to adjunct prompt:
         "PRIOR REVIEW FEEDBACK (cycle <N>):\n<feedback verbatim>"
       Wait for completion.
 
   2b. REVIEW
       Generate designation via Designation Generation Protocol.
-      Dispatch Validation adjunct with task ID and implementation snapshot IDs.
+      Dispatch sentinel with task ID and implementation snapshot IDs.
       Wait for verdict in task comments.
 
   2c. EVALUATE
-      Read verdict from Validation adjunct's task comment.
+      Read verdict from sentinel's task comment.
       PASS         → break loop, go to Step 3
       NEEDS_CHANGES → extract issues from comment, store as feedback, continue loop
       BLOCK        → break loop, escalate immediately (Step 3, BLOCK path)
@@ -58,15 +58,15 @@ for cycle in 1..max_cycles:
 - Leave task open with `needs_changes` comment. User decides next action.
 
 **BLOCK:**
-- Report blocker verbatim from Validation adjunct comment.
+- Report blocker verbatim from sentinel comment.
 - Do not attempt autonomous resolution.
 - Leave task in `blocked` state.
 
 ---
 
 ## Rules
-- Never skip the review step. Each cycle requires both Assimilation and Validation adjuncts.
-- Thread full Validation feedback into the next Assimilation adjunct prompt — no summarization.
+- Never skip the review step. Each cycle requires both drone and sentinel.
+- Thread full sentinel feedback into the next drone prompt — no summarization.
 - No worktree isolation — adapt mode works in place on the current branch.
 - If the task was provided by the caller, do not close it on completion.
 - Each cycle generates fresh designations — do not reuse designations across cycles.

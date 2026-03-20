@@ -23,11 +23,11 @@ RESET = "\033[0m"
 
 AGENT_STYLES = {
     "Queen": (MAGENTA + BOLD, "QUEEN"),
-    "Assimilation": (GREEN + BOLD, "ASSIMILATION"),
-    "Validation": (CYAN + BOLD, "VALIDATION"),
-    "Reconnaissance": (YELLOW + BOLD, "RECONNAISSANCE"),
-    "TacticalAnalysis": (CYAN + BOLD, "TACTICALANALYSIS"),
-    "Closure": (DIM, "CLOSURE"),
+    "Drone": (GREEN + BOLD, "DRONE"),
+    "Sentinel": (CYAN + BOLD, "SENTINEL"),
+    "Probe": (YELLOW + BOLD, "PROBE"),
+    "Designate": (CYAN + BOLD, "DESIGNATE"),
+    "Locutus": (DIM, "LOCUTUS"),
 }
 
 # Burn rate thresholds per model tier: (green_below, yellow_below, red_at_and_above)

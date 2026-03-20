@@ -61,8 +61,8 @@ function detectTier(model: string): string {
 }
 
 function normalizeAgentType(name: string): string {
-  // "Reconnaissance: Four of Four — Tertiary Adjunct" → "Reconnaissance"
-  const known = ["Queen", "Assimilation", "Reconnaissance", "Validation", "TacticalAnalysis", "Closure"]
+  // "Probe: Four of Four — Tertiary Adjunct" → "Probe"
+  const known = ["Queen", "Drone", "Probe", "Sentinel", "Designate", "Locutus"]
   for (const t of known) {
     if (name.toLowerCase().includes(t.toLowerCase())) return t
   }

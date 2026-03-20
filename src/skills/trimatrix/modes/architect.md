@@ -78,11 +78,11 @@ Present approaches to user before spawning agents. User may approve, add, or rem
 Proceed only on explicit approval.
 
 ### Step 2: Create Team and Spawn Analysts
-1. Use Designation Generation Protocol. Role: Vinculum for all analysts.
+1. Use Designation Generation Protocol. Role: DESIGNATE for all analysts.
 2. Create team: `TeamCreate(team_name: "architect-<epic-id>")` — **MANDATORY**. Abort if creation fails.
 3. Build execution graph: `mcp__unimatrix__init` with `repos: []`, then `mcp__unimatrix__add_node` per subtask with `type: ANALYSIS`. No edges — single wave, all parallel.
 4. `mcp__unimatrix__compute_waves` to validate.
-5. Spawn one Tactical Analysis adjunct per approach into the team.
+5. Spawn one designate per approach into the team.
 6. Each agent prompt includes: the Architecture Adversarial Protocol block above, the specific `APPROACH:` line, and the agent's brain task ID.
 7. Dispatch all with `run_in_background: true`.
 

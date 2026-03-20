@@ -11,7 +11,7 @@ Alias: diagnose
 
 ## Flags
 
-- `--fix` — After confirmed diagnosis, dispatch an Assimilation adjunct to implement the fix.
+- `--fix` — After confirmed diagnosis, dispatch an drone to implement the fix.
 
 ---
 
@@ -69,9 +69,9 @@ Present hypotheses to user before spawning agents. User may approve, add, or rem
 Proceed only on explicit approval.
 
 ### Step 2: Create Team and Spawn Investigators
-1. Use Designation Generation Protocol. Role: Vinculum for all investigators.
+1. Use Designation Generation Protocol. Role: DESIGNATE for all investigators.
 2. Create team: `TeamCreate(team_name: "diagnosis-<epic-id>")` — **MANDATORY**. Abort if creation fails.
-3. Spawn one Validation adjunct per hypothesis into the team.
+3. Spawn one designate per hypothesis into the team.
 4. Each agent prompt includes: the Diagnostic Protocol block above, the specific `HYPOTHESIS:` line, and the agent's brain task ID.
 5. Dispatch all with `run_in_background: true`.
 
@@ -99,7 +99,7 @@ If `--fix` was not passed: stop here. Task Closure Protocol applies.
 If confidence is LOW: ask user before proceeding. Do not auto-fix an inconclusive diagnosis.
 
 **Simple fix (1–3 files):**
-Dispatch single Assimilation adjunct with diagnosis brief as context.
+Dispatch single drone with diagnosis brief as context.
 Run relevant tests after completion.
 
 **Complex fix (4+ files):**

@@ -2411,7 +2411,7 @@ function buildCheckpointMarkdown(
     sections.push("\n## Recommended Action");
     sections.push(
       "Subagents were lost during compaction. Resume with the task ID — " +
-      "dispatch Assimilation adjuncts for the remaining tasks.",
+      "dispatch drones for the remaining tasks.",
     );
   }
 

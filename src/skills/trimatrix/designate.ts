@@ -39,27 +39,27 @@ export const ORDINALS = [
 
 export enum Role {
   ADJUNCT = "ADJUNCT",
-  ASSIMILATION = "ASSIMILATION",
-  VALIDATION = "VALIDATION",
-  RECONNAISSANCE = "RECONNAISSANCE",
-  TACTICAL_ANALYSIS = "TACTICAL_ANALYSIS",
-  CLOSURE = "CLOSURE",
+  DRONE = "DRONE",
+  SENTINEL = "SENTINEL",
+  PROBE = "PROBE",
+  DESIGNATE = "DESIGNATE",
+  LOCUTUS = "LOCUTUS",
 }
 
 export const ROLE_TITLES: Record<Role, string> = {
   [Role.ADJUNCT]: "Adjunct: Generic Drone",
-  [Role.ASSIMILATION]: "Adjunct: Assimilation Protocol",
-  [Role.VALIDATION]: "Adjunct: Validation Protocol",
-  [Role.RECONNAISSANCE]: "Adjunct: Reconnaissance Protocol",
-  [Role.TACTICAL_ANALYSIS]: "Adjunct: Tactical Analysis Protocol",
-  [Role.CLOSURE]: "Adjunct: Closure Protocol",
+  [Role.DRONE]: "Drone Protocol",
+  [Role.SENTINEL]: "Sentinel Protocol",
+  [Role.PROBE]: "Probe Protocol",
+  [Role.DESIGNATE]: "Designate Protocol",
+  [Role.LOCUTUS]: "Locutus Protocol",
 };
 
 // Roles where each agent gets its own unique ordinal (== its position).
 // All other roles share one randomly chosen ordinal across the batch.
 export const UNIQUE_ORDINAL_ROLES = new Set<Role>([
-  Role.TACTICAL_ANALYSIS,
-  Role.VALIDATION,
+  Role.DESIGNATE,
+  Role.SENTINEL,
 ]);
 
 export interface DesignateResult {
@@ -95,6 +95,11 @@ export function designate(
     unit = `Trimatrix ${resolved_trimatrix_id}`;
   } else {
     unit = "Unimatrix Zero";
+  }
+
+  // Locutus always receives a fixed designation regardless of count.
+  if (role === Role.LOCUTUS) {
+    return { designations: ["Locutus of Borg"], trimatrix_id: resolved_trimatrix_id };
   }
 
   if (count === 1) {

@@ -60,13 +60,13 @@ Default: scan pattern — independent subagents, no team needed.
 Upgrade to recon pattern if questions are cross-cutting and findings affect each other.
 
 2a. Scope recon questions. Each question targets a specific code area or architectural concern.
-2b. Use Designation Generation Protocol. Dispatch Reconnaissance or TacticalAnalysis adjuncts.
+2b. Use Designation Generation Protocol. Dispatch probe or designate adjuncts.
 2c. Collect intelligence from completion snapshots (`records_fetch_content` on snapshot IDs from task comments).
 
 ### Step 3: Implementation Planning
 Use assessment context and recon intelligence.
 Proceed through Plan Materialization Protocol:
-- Decompose into discrete ordered steps. Each independently executable by one Assimilation adjunct.
+- Decompose into discrete ordered steps. Each independently executable by one drone.
 - Identify exact files, functions, and line ranges per step.
 - Order by dependency. No step may depend on a later step.
 - Create epic + subtasks + dependencies (`tasks_deps_batch`).
@@ -84,7 +84,7 @@ After materializing brain tasks, construct a trimatrix graph for algorithmic wav
 1. `mcp__unimatrix__init` with empty repos (`repos: []` for single-repo mode).
 2. For each subtask, `mcp__unimatrix__add_node`:
    - `id`: the brain task ID (links graph node to brain task)
-   - `type`: based on assignee — `IMPLEMENTATION` for Assimilation, `RECON` for Reconnaissance, `VALIDATION` for Validation, `DOCUMENTATION` for Closure
+   - `type`: based on assignee — `IMPLEMENTATION` for Drone, `RECON` for Probe, `VALIDATION` for Sentinel, `ANALYSIS` for Designate
    - `label`: task title
    - `tags`: optional classification (wave dispatch mode, feature area)
    - Omit `repo` and `worktreeBranch` (single-repo mode)
@@ -107,7 +107,7 @@ On accept: call `mcp__unimatrix__rename_session` with the confirmed label, then 
 Use Worktree Lifecycle Protocol. Branch name sourced from dispatch plan.
 
 ### Step 4: Generate Designations
-Use Designation Generation Protocol. Generate designations for all adjuncts across all waves and the validation adjunct. Record in dispatch brief or working memory.
+Use Designation Generation Protocol. Generate designations for all adjuncts across all waves and the sentinel. Record in dispatch brief or working memory.
 
 ### Step 5: Dispatch Adjuncts
 
@@ -122,7 +122,7 @@ Use the graph engine for wave progression:
 Swarm wave — include in each adjunct prompt:
 ```
 FILE PARTITION ACTIVE. Only touch files listed in your task's Files section.
-Other assimilation adjuncts are running in parallel. Crossing file boundaries creates conflicts.
+Other drones are running in parallel. Crossing file boundaries creates conflicts.
 ```
 
 Collaborative wave — include in each adjunct prompt:
@@ -161,7 +161,7 @@ Use Verification Gate Protocol. Run after all adjuncts in a wave complete.
 Check dispatch plan Review Strategy:
 
 **Single:**
-Dispatch one Validation adjunct. Prompt:
+Dispatch one sentinel. Prompt:
 ```
 Review the implementation against the original directive and verify correctness.
 Epic task ID: <id>. Worktree branch: <branch>.
@@ -169,9 +169,9 @@ Produce verdict: PASS / NEEDS_CHANGES / BLOCK.
 ```
 
 **Compliance matrix (sphere):**
-Deploy multiple Validation adjuncts via team. Scope each to a domain:
+Deploy multiple sentinels via team. Scope each to a domain:
 ```
-Validation adjunct <designation>: Review <domain> compliance only.
+sentinel <designation>: Review <domain> compliance only.
 Epic task ID: <id>. Focus: <correctness | types | tests | conventions>.
 Produce verdict: PASS / NEEDS_CHANGES / BLOCK with findings.
 Coordinate with teammates — if another adjunct finds a blocking issue, acknowledge it.

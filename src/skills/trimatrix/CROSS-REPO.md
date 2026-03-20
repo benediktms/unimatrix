@@ -7,13 +7,13 @@ Trimatrix orchestrates multi-repository feature development for the collective. 
 **What trimatrix does:**
 - Decomposes cross-repository features into nodes (branches/PRs) and edges (dependencies)
 - Computes execution waves via topological sort, respecting merge gates as wave boundaries
-- Dispatches parallel Assimilation adjuncts per wave, each working in an isolated git worktree
+- Dispatches parallel drones per wave, each working in an isolated git worktree
 - Halts at merge gates, awaiting external confirmation before proceeding
 - Persists state via checkpoints, enabling resumption across sessions
 - Supports refinement — adding repos or recomputing waves mid-execution
 
 **When to use cross-repo mode vs plan-execute:**
-- **Plan-execute** — Single repository, arbitrary feature complexity. Deploys workflow with Assimilation adjuncts, Validation adjunct review, task closure.
+- **Plan-execute** — Single repository, arbitrary feature complexity. Deploys workflow with drones, sentinel review, task closure.
 - **Cross-repo** — Multiple repositories with inter-repo dependencies, contract-first patterns, or merge gates. Orchestrates via graph topology, wave dispatch, and gate checkpoints.
 
 ---
@@ -54,7 +54,7 @@ stateDiagram-v2
 
 **State descriptions:**
 - **`initializing`** — Graph created, no waves computed yet. User must approve the plan before proceeding.
-- **`dispatching`** — Waves are executing. Assimilation adjuncts are active or completed. Machine loops through `next_wave()`, dispatches, monitors nodes.
+- **`dispatching`** — Waves are executing. drones are active or completed. Machine loops through `next_wave()`, dispatches, monitors nodes.
 - **`gate_halted`** — A wave with `hasMergeGate: true` completed. External PRs must be merged before proceeding. Machine waits for `clear_gate()` events.
 - **`failed`** — One or more nodes failed. User chooses: retry failed nodes, invoke `/diagnose`, or abandon.
 - **`completed`** — All waves executed, all nodes in terminal state. Clean up worktrees and report results.
@@ -80,15 +80,15 @@ flowchart TD
     UserApproves -->|No| AbortWave["Abandon Wave"]
     UserApproves -->|Yes| DispatchWave["dispatch_wave<br/>Create worktrees<br/>Create tasks"]
 
-    DispatchWave --> SpawnAdjuncts["Spawn parallel Assimilation adjuncts\nrun_in_background"]
-    SpawnAdjuncts --> MonitorAdjuncts["Monitor completion\nwait all Assimilation adjuncts"]
+    DispatchWave --> SpawnAdjuncts["Spawn parallel drones\nrun_in_background"]
+    SpawnAdjuncts --> MonitorAdjuncts["Monitor completion\nwait all drones"]
 
     MonitorAdjuncts --> CheckOutcome{Wave<br/>outcome?}
 
-    CheckOutcome -->|all succeeded| ValidationReview["Dispatch Validation adjunct\nreview wave changes"]
+    CheckOutcome -->|all succeeded| ValidationReview["Dispatch sentinel\nreview wave changes"]
     CheckOutcome -->|failures| FailHand
 
-    ValidationReview --> ValCheck{Validation adjunct<br/>approves?}
+    ValidationReview --> ValCheck{sentinel<br/>approves?}
     ValCheck -->|Pass| RecordPRs["Create PRs\nrecord prUrl/prNumber"]
     ValCheck -->|Fail| FailHand
 
@@ -110,8 +110,8 @@ flowchart TD
 ```
 
 **Key decision points:**
-- **Wave approval** — User reviews implementation details before Assimilation adjuncts execute.
-- **Validation adjunct review** — After all nodes in wave complete, Validation adjunct validates changes for compliance.
+- **Wave approval** — User reviews implementation details before drones execute.
+- **sentinel review** — After all nodes in wave complete, sentinel validates changes for compliance.
 - **Merge gate** — If the completed wave carries `hasMergeGate: true` and is not the final wave, execution halts.
 - **Failure triage** — User chooses to retry, diagnose, or abandon.
 
@@ -157,7 +157,7 @@ sequenceDiagram
         end
         Lead->>Lead: Parse user choice
         alt retry
-            Lead->>Server: dispatch_wave(waveId)<br/>Spawn new Assimilation adjuncts
+            Lead->>Server: dispatch_wave(waveId)<br/>Spawn new drones
         else diagnose
             Lead->>Lead: Invoke /diagnose
         else abandon
@@ -187,7 +187,7 @@ sequenceDiagram
 ```
 
 **Three flows:**
-1. **Wave approval** — Assimilation adjuncts standby until user approves implementation plan.
+1. **Wave approval** — drones standby until user approves implementation plan.
 2. **Failure triage** — On failed nodes, user selects action: retry, diagnose, or abandon.
 3. **Refinement approval** — When repos are added mid-execution, user reviews graph changes before re-dispatch.
 
@@ -218,10 +218,10 @@ interface Node {
 ```
 
 **Status lifecycle:**
-- `pending` → `active` (node dispatched to Assimilation adjunct)
-- `active` → `pr_created` (Assimilation adjunct completes, PR created)
+- `pending` → `active` (node dispatched to drone)
+- `active` → `pr_created` (drone completes, PR created)
 - `pr_created` → `merged` (PR merged externally)
-- `failed` (Assimilation adjunct reports failure)
+- `failed` (drone reports failure)
 - `blocked` (merge gate: waiting for upstream PR merge)
 
 ### Edge Types
@@ -308,7 +308,7 @@ Label: api-backend-grpc-feature
 
 Checkpoints:
   - artifact-id-001 (checkpoint: graph computed, awaiting user approval)
-  - artifact-id-002 (checkpoint: Wave 1 dispatched, Assimilation adjuncts active)
+  - artifact-id-002 (checkpoint: Wave 1 dispatched, drones active)
   - artifact-id-003 (checkpoint: Wave 1 completed, gate_halted, PRs merged)
 ```
 
@@ -504,7 +504,7 @@ Add new repositories to an existing checkpoint. Triggers refinement mode:
 /trimatrix cross-repo --include <brain-refs> --dry-run
 ```
 
-Plan and build the graph only. Do not dispatch Assimilation adjuncts or create worktrees.
+Plan and build the graph only. Do not dispatch drones or create worktrees.
 Returns:
 - Decomposed nodes and edges.
 - Computed waves in topological order.
@@ -565,11 +565,11 @@ Step 3: Waves
   Wave 2: grpc-impl (waits for grpc-defs merge)
 
 Step 4: Dispatch
-  Wave 1: Assimilation adjunct in api worktree defines .proto files, creates PR.
+  Wave 1: drone in api worktree defines .proto files, creates PR.
           User merges PR externally.
           Lead checks merge status, clears gate.
-  Wave 2: Assimilation adjunct in backend worktree implements service, creates PR.
-          Validation adjunct reviews changes.
+  Wave 2: drone in backend worktree implements service, creates PR.
+          sentinel reviews changes.
           All done.
 ```
 
@@ -626,7 +626,7 @@ Refinement:
 | **Scope** | Multiple repositories | Single repository |
 | **Graph** | Explicit DAG, topological waves | Tasks tree, sequential/parallel chains |
 | **Cross-repo dependency** | merge_gate edges | Implicit (via PR interdependencies) |
-| **Pause points** | Merge gates (external confirmation) | Validation adjunct reviews (internal validation) |
+| **Pause points** | Merge gates (external confirmation) | sentinel reviews (internal validation) |
 | **Refinement** | Mid-execution repo additions | Task creation/re-planning |
 | **Stacking** | Native: stacked edges | Manual: rebase management |
 | **Checkpoint** | Persisted DAG state | Brain task tree |
@@ -640,7 +640,7 @@ Refinement:
 **Use plan-execute when:**
 - Single repository.
 - Sequential/parallel task chains.
-- Internal Validation adjunct validation sufficient.
+- Internal sentinel validation sufficient.
 - Task-based decomposition fits workflow.
 
 ---
@@ -667,7 +667,7 @@ External PRs must be merged. Use `/trimatrix cross-repo --resume` to check PR st
 
 ### "Execution failed"
 
-One or more Assimilation adjuncts reported failure. The machine entered `failed` state. Options:
+One or more drones reported failure. The machine entered `failed` state. Options:
 - **retry** — Re-dispatch failed nodes.
 - **diagnose** — Invoke `/diagnose` with failure logs.
 - **abandon** — Close tasks, tear down worktrees, preserve results.

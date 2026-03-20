@@ -52,12 +52,12 @@ The classifier runs on every prompt. It determines **Intent** and **Tier** befor
 
 | Intent | T1 (SELF) | T2 (INDEPENDENT) | T3 (COORDINATED) |
 |---|---|---|---|
-| IMPLEMENT | Lead edits directly | Assimilation + Tactical Analysis | Borg cube (partitioned) + compliance matrix |
-| INVESTIGATE | Lead reads/greps | Reconnaissance (single) | Borg sphere (Reconnaissance + Tactical Analysis) with team |
-| DIAGNOSE | Lead inspects | Tactical Analysis (single hypothesis) | Vinculum (adversarial, multi-hypothesis) |
-| ARCHITECT | Lead reasons | Tactical Analysis (single) | Vinculum (adversarial, multi-approach) with team |
-| REVIEW | Lead reads diff | Validation (single) | Compliance matrix (multi-Validation) with team |
-| REFACTOR | Lead edits | Assimilation + Tactical Analysis | Swarm (partitioned Assimilation) + Tactical Analysis |
+| IMPLEMENT | Lead edits directly | Drone + Designate | Borg cube (partitioned) + compliance matrix |
+| INVESTIGATE | Lead reads/greps | Probe (single) | Borg sphere (Probe + Designate) with team |
+| DIAGNOSE | Lead inspects | Designate (single hypothesis) | Vinculum (adversarial, multi-hypothesis) |
+| ARCHITECT | Lead reasons | Designate (single) | Vinculum (adversarial, multi-approach) with team |
+| REVIEW | Lead reads diff | Sentinel (single) | Compliance matrix (multi-Sentinel) with team |
+| REFACTOR | Lead edits | Drone + Designate | Swarm (partitioned Drone) + Designate |
 
 ### Auto-Graph Entry
 
@@ -155,10 +155,10 @@ Parallel agent groups are named by role and size. "Team", "swarm", "fleet", and 
 
 | Formation | Use Case | Size |
 |---|---|---|
-| Borg cube | Multi-adjunct implementation (Assimilation clusters) | 4+ agents |
+| Borg cube | Multi-adjunct implementation (Drone clusters) | 4+ agents |
 | Borg sphere | Multi-agent reconnaissance | 2-3 agents |
-| Vinculum | Multi-agent analysis (Tactical Analysis clusters) | 2+ agents |
-| Compliance matrix | Multi-agent review (Validation clusters) | 2+ agents |
+| Vinculum | Multi-agent analysis (Designate clusters) | 2+ agents |
+| Compliance matrix | Multi-agent review (Sentinel clusters) | 2+ agents |
 | Adjunct cluster | Generic term for any parallel group | Any |
 
 ---
@@ -173,8 +173,8 @@ Teams (Claude Code TeamCreate) are required for coordination. They are NOT used 
 | Collaborative investigation — interconnected questions | YES | One agent's findings change another's path |
 | Adversarial diagnosis — competing hypotheses | YES | Agents must challenge each other in real-time |
 | Adversarial architecture — competing architectural approaches | YES | Agents must challenge each other's feasibility assessments |
-| Compliance matrix review — multiple Validation adjuncts | YES | Cross-cutting findings affect other reviewers |
-| Vinculum analysis — multiple Tactical Analysis adjuncts | YES | Insights in one area affect analysis of another |
+| Compliance matrix review — multiple sentinels | YES | Cross-cutting findings affect other reviewers |
+| Vinculum analysis — multiple designates | YES | Insights in one area affect analysis of another |
 | Swarm — file-partitioned bulk changes | NO | Non-overlapping files, no coordination needed |
 | Independent scan — self-contained questions | NO | Each agent answers independently |
 | Single adjunct dispatch | NO | Only one agent |
@@ -191,12 +191,18 @@ These protocols are defined once here. Mode files reference them by name.
 
 ### Protocol A: Designation Generation
 
+**Every adjunct dispatched by the collective MUST receive a designation. No exceptions.** An adjunct without a designation cannot identify itself in neural link rooms, task comments, or coordination logs. Undesignated adjuncts are non-compliant.
+
 Call `mcp__unimatrix__designate` with:
 - `count` — number of agents to designate
-- `role` — one of: `ASSIMILATION`, `VALIDATION`, `RECONNAISSANCE`, `TACTICAL_ANALYSIS`, `CLOSURE`
+- `role` — one of: `DRONE`, `SENTINEL`, `PROBE`, `DESIGNATE`, `LOCUTUS`
 - `trimatrix: true` — required for all spawned agents
 
-Assign returned designations to the Agent `name` and `description` fields.
+Assign returned designations to the Agent `name` and `description` fields. Include the designation in the adjunct's prompt so it can use it in task comments, neural link messages, and artifacts.
+
+**Locutus exception:** Locutus always receives the designation "Locutus of Borg" regardless of count. The designate function handles this automatically.
+
+**Neural link requirement:** When dispatching multiple adjuncts into a neural link room, each adjunct MUST join with its designation as `display_name`. Adjuncts without designations cannot participate in neural link coordination.
 
 ### Protocol B: Worktree Lifecycle
 
@@ -208,7 +214,7 @@ Assign returned designations to the Agent `name` and `description` fields.
 | Merge | `git merge --squash <branch>` then cleanup |
 | Discard | `ExitWorktree` with `action: "remove"`, `discard_changes: true` |
 
-After Validation adjunct PASS and task closure, present three options to user: **merge** / **keep** / **discard**.
+After sentinel PASS and task closure, present three options to user: **merge** / **keep** / **discard**.
 
 ### Protocol C: Verification Gate
 
@@ -236,8 +242,8 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 **Subgraph dispatch procedure (T2/T3):**
 1. Call `mcp__unimatrix__dispatch_wave` — get activated nodes with executors.
 2. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph` to retrieve the brief.
-3. Generate designations via Protocol A. Assign to subgraph `assignee`.
-4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE` and `room_id: <id>` in every adjunct prompt.
+3. **Generate designations via Protocol A. This step is MANDATORY — do not dispatch adjuncts without designations.** Assign to subgraph `assignee`. Include the designation string in each adjunct's prompt.
+4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`.
 5. Dispatch Agents with the brief injected in the prompt.
 6. For LEAD nodes in this wave: execute directly as parallel Bash calls.
 7. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
@@ -264,7 +270,7 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 - Adjuncts **never** close tasks. They report completion via `tasks_apply_event`, then return.
 - Task closure is exclusively via the `close_node` MCP tool (per node) after review PASS verdict.
 - `close_node` requires an explicit `nodeId`, resolves to a validated `taskId`. Fails loudly on error — no silent best-effort.
-- Queen calls `close_node(nodeId)` for each completed node after Validation PASS, then closes the epic via `tasks_close`.
+- Queen calls `close_node(nodeId)` for each completed node after sentinel PASS, then closes the epic via `tasks_close`.
 - Epic is closed LAST, after ALL subtasks are verified closed via `close_node`.
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.

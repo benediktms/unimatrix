@@ -15,7 +15,7 @@
 
 ### 1. Plan Partitions
 Search memory (`memory_search_minimal`) for prior recon on the target area.
-If file layout is unknown, dispatch a Reconnaissance adjunct to enumerate candidates.
+If file layout is unknown, dispatch a probe to enumerate candidates.
 
 Partition files into logical groups by directory, module, or feature boundary.
 Rules:
@@ -28,15 +28,15 @@ All subtasks are independent — no dependencies set.
 Each subtask description includes: Goal / Files / Instructions / Verification (per task description format).
 
 ### 2. Generate Designations
-Use Designation Generation Protocol. Generate one designation per partition adjunct plus one for the Validation adjunct.
+Use Designation Generation Protocol. Generate one designation per partition adjunct plus one for the sentinel.
 
 ### 3. Dispatch Borg Cube
-Spawn one Assimilation adjunct per partition. All `run_in_background: true`. No team needed — file sets are non-overlapping.
+Spawn one drone per partition. All `run_in_background: true`. No team needed — file sets are non-overlapping.
 
 Include in every adjunct prompt:
 ```
 FILE PARTITION ACTIVE. Only touch files listed in your task's Files section.
-Other assimilation adjuncts are running in parallel. Crossing file boundaries creates conflicts and is non-compliant.
+Other drones are running in parallel. Crossing file boundaries creates conflicts and is non-compliant.
 ```
 
 ### 4. Monitor
@@ -47,7 +47,7 @@ Blocked adjunct → assess whether the partition can be re-dispatched or must be
 Use Verification Gate Protocol. Run after all adjuncts complete (or all non-blocked adjuncts complete).
 
 ### 6. Review
-Dispatch one Validation adjunct with parent epic task ID. Scope: full swarm output.
+Dispatch one sentinel with parent epic task ID. Scope: full swarm output.
 
 ### 7. Handle Verdict
 - **PASS:** Task Closure Protocol — call `close_node(nodeId)` for each completed node, then close epic via `tasks_close`. Report completion with partition summary.
