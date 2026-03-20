@@ -290,7 +290,7 @@ task(subagent_type="sentinel-protocol", ...)
 | Sentinel | `sentinel-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 20 |
 | Probe | `probe-protocol` | sonnet | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 25 |
 | Designate | `designate-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
-| Locutus | `locutus-protocol` | haiku | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 15 |
+| Locutus | `locutus-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
 
 ### 3.3 Tool Name Mapping
 

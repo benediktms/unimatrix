@@ -10,7 +10,7 @@ Unimatrix follows a plan-execute-review cycle orchestrated by the trimatrix supe
 
 ```mermaid
 flowchart LR
-    Plan["Lead<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Sentinel<br/>reviews"] --> Cleanup["Locutus<br/>cleans up"]
+    Plan["Lead<br/>plans"] --> Execute["Drones<br/>build"] --> Review["Sentinel<br/>reviews"]
     Review -->|NEEDS_CHANGES| Execute
 ```
 
@@ -18,7 +18,6 @@ flowchart LR
 2. **The lead session dispatches** — spawns Drones (and optionally Probes/Designates) per wave
 3. **Drones implement** — each executes a single well-scoped task, commits changes, and saves a checkpoint
 4. **The Sentinel reviews** — validates correctness with evidence-based verification
-5. **Locutus cleans up** — commits, closes tasks, writes memory episodes
 
 All task state, checkpoints, and learned patterns are persisted in Brain, enabling work to be resumed across sessions.
 
@@ -32,7 +31,7 @@ graph TB
     Lead --> Sentinel["<b>Sentinel</b><br/>Opus<br/><i>reviews</i>"]
     Lead --> Probe["<b>Probe</b><br/>Sonnet<br/><i>finds</i>"]
     Lead --> Designate["<b>Designate</b><br/>Opus<br/><i>audits</i>"]
-    Lead --> Locutus["<b>Locutus</b><br/>Haiku<br/><i>cleans up</i>"]
+    Lead --> Locutus["<b>Locutus</b><br/>Opus<br/><i>cross-repo plans</i>"]
 
     Lead --> Brain
     Drone --> Brain
@@ -65,7 +64,7 @@ graph TB
 | **Sentinel** | `sentinel-protocol` | Opus | Both | Code reviewer — evidence-based verification with tiered reviews and verdicts (PASS/NEEDS_CHANGES/BLOCK) |
 | **Probe** | `probe-protocol` | Sonnet | Both | Codebase scout — finds files, traces code paths, answers structural questions. Fast and shallow |
 | **Designate** | `designate-protocol` | Opus | Both | Deep analyst — architectural audits, security reviews, performance analysis, codebase health. Slow and thorough |
-| **Locutus** | `locutus-protocol` | Haiku | Both | Cleanup worker — git commits, documentation sync, brain task closure. Executes explicit instructions only |
+| **Locutus** | `locutus-protocol` | Opus | Both | Cross-repo planning agent — analyzes foreign repositories, maps contracts and data flow, returns coordination plans. Plan-only — does not modify code |
 
 Agent definitions live in `src/agents/` as markdown files with combined YAML frontmatter that configures platform-specific model, permission mode, max turns, and allowed/disallowed tools. See [FORMAT.md](./FORMAT.md) for the combined source format.
 
