@@ -276,6 +276,47 @@ install_opencode() {
     link "$dist_tui" "$target/tui.json"
   fi
 
+  # Register unimatrix MCP server in global OpenCode config (idempotent)
+  # MCP servers are system-wide — always register in ~/.config/opencode/opencode.json
+  if [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
+    local config_file="$HOME/.config/opencode/opencode.json"
+    local unimatrix_bin="$UNIMATRIX_DIR/bin/unimatrix"
+    mkdir -p "$(dirname "$config_file")"
+
+    if [ -f "$config_file" ]; then
+      echo "  mcp: registering unimatrix in $config_file"
+      "$PYTHON" -c "
+import json, sys
+config = json.load(open(sys.argv[1]))
+config.setdefault('mcp', {})
+config['mcp']['unimatrix'] = {
+    'type': 'local',
+    'command': [sys.argv[2]],
+    'enabled': True
+}
+json.dump(config, sys.stdout, indent='\t')
+print()
+" "$config_file" "$unimatrix_bin" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+    else
+      echo "  mcp: creating $config_file with unimatrix MCP"
+      "$PYTHON" -c "
+import json, sys
+config = {
+    '\$schema': 'https://opencode.ai/config.json',
+    'mcp': {
+        'unimatrix': {
+            'type': 'local',
+            'command': [sys.argv[1]],
+            'enabled': True
+        }
+    }
+}
+json.dump(config, sys.stdout, indent='\t')
+print()
+" "$unimatrix_bin" > "$config_file"
+    fi
+  fi
+
   # Clean up stale global symlinks from old install path (~/.opencode/)
   if [ "$is_global" = "true" ] && [ -d "$HOME/.opencode" ]; then
     cleanup_stale_links "$HOME/.opencode/agents" "$dist_oc/"
