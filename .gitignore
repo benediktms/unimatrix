@@ -7,3 +7,4 @@ dist/
 .opencode/
 bin/
 node_modules/
+AGENTS.md
