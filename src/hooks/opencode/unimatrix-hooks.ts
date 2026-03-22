@@ -102,17 +102,6 @@ const EMPTY_TOKENS: TokenState = {
 }
 
 // ---------------------------------------------------------------------------
-// Greeting state
-// ---------------------------------------------------------------------------
-
-interface GreetingState {
-  greeting_shown: boolean
-  shown_at: number
-}
-
-const EMPTY_GREETING: GreetingState = { greeting_shown: false, shown_at: 0 }
-
-// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -141,27 +130,6 @@ export const unimatrixHooks: Plugin = async ({ $, directory }) => {
     "tool.execute.after": async (input: any, output: any) => {
       const toolName = input?.tool ?? input?.name ?? ""
       const result = output?.result ?? output ?? ""
-
-      // --- session greeting: fire once per session ---
-      const greeting = readState<GreetingState>("greeting", sessionId, { ...EMPTY_GREETING })
-      if (!greeting.greeting_shown) {
-        greeting.greeting_shown = true
-        greeting.shown_at = Date.now() / 1000
-        writeState("greeting", sessionId, greeting)
-        console.error(
-          "╔═══════════════════════════════╗\n" +
-          "║   ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄  ║\n" +
-          "║   █   █ █   █ █   █ █      ║\n" +
-          "║   █▄▄▄█ █   █ █▄▄▄█ █  ▄▄▄ ║\n" +
-          "║   █   █ █   █ █   █ █   █  ║\n" +
-          "║   █▄▄▄█ █▄▄▄█ █   █ █▄▄▄█  ║\n" +
-          "║                              ║\n" +
-          "║  WE ARE THE BORG.            ║\n" +
-          "║  YOUR CODE WILL BE           ║\n" +
-          "║  ASSIMILATED.                ║\n" +
-          "╚═══════════════════════════════╝"
-        )
-      }
 
       // --- warn-compaction: estimate tokens from all tool results ---
       const resultStr = typeof result === "string" ? result : JSON.stringify(result)
