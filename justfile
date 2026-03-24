@@ -52,6 +52,14 @@ install path=project_root: build compile
 install-global: build compile
     bash install.sh --both --global
 
+# Install only the status line (globally or to a project)
+install-statusline path="global":
+    @if [ "{{path}}" = "global" ]; then \
+        bash install-statusline.sh --global; \
+    else \
+        bash install-statusline.sh --project {{path}}; \
+    fi
+
 # Inject Borg personality into a brain's AGENTS.md
 inject brain:
     {{python}} build.py --inject-tone {{brain}}
@@ -77,6 +85,10 @@ check: check-py check-ts validate
 # Clean build output
 clean:
     rm -rf dist/
+
+# Uninstall globally (both platforms)
+uninstall:
+    bash uninstall.sh --global
 
 # Full clean (build output + deps)
 clean-all: clean
