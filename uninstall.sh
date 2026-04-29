@@ -70,11 +70,16 @@ uninstall_claude() {
   remove_unimatrix_links_in "$target/skills"
   rmdir_if_empty "$target/skills"
 
-  # Remove unimatrix MCP server
+  # Remove unimatrix MCP server (try all scopes)
   if command -v claude > /dev/null 2>&1; then
-    if claude mcp remove unimatrix 2>/dev/null; then
-      echo "  mcp: removed unimatrix MCP server"
-    else
+    local removed=false
+    for scope in local project user; do
+      if claude mcp remove unimatrix -s "$scope" 2>/dev/null; then
+        echo "  mcp: removed unimatrix MCP server (scope: $scope)"
+        removed=true
+      fi
+    done
+    if [ "$removed" = false ]; then
       echo "  mcp: unimatrix MCP server not registered (skipping)"
     fi
   fi
