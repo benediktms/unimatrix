@@ -222,11 +222,19 @@ install_claude() {
   merge_settings "$target" "$is_global"
 
   # Register unimatrix MCP server (idempotent — skips if already registered)
+  # Global installs use --scope user so the MCP is visible from every project.
+  # Project installs use the default local scope.
   if command -v claude > /dev/null 2>&1 && [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
-    if claude mcp add unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix" 2>/dev/null; then
-      echo "  mcp: registered unimatrix MCP server"
+    local scope_flag=""
+    local scope_label="local"
+    if [ "$is_global" = "true" ]; then
+      scope_flag="--scope user"
+      scope_label="user"
+    fi
+    if claude mcp add $scope_flag unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix" 2>/dev/null; then
+      echo "  mcp: registered unimatrix MCP server (scope: $scope_label)"
     else
-      echo "  mcp: unimatrix MCP server already registered"
+      echo "  mcp: unimatrix MCP server already registered (scope: $scope_label)"
     fi
   fi
 
