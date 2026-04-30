@@ -107,7 +107,7 @@ save_checkpoint → save as brain artifact tagged:
 6e. Create brain tasks per node
 6f. Dispatch drones (Borg cube if multi-node wave, create team)
 6g. Record outcomes: complete_node or fail_node
-6h. sentinel review (see Review Mode for compliance matrix option)
+6h. sentinel review per Protocol C § C5a (tier selection) and § C6 (verdict handling)
 6i. Create PRs via gh pr create
 6j. Persist checkpoint (Step 5)
 6k. Check for merge gate → Step 7, or loop to 6a
