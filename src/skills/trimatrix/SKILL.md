@@ -184,15 +184,17 @@ After checkpoint restoration and before routing by machineState:
 
 **State routing table** (after graph is loaded and user confirms):
 
-| machineState   | Action                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------ |
-| `dispatching`  | Route to original mode's dispatch step. Determine mode from `intent` field in `status` response. |
-| `gate_halted`  | Route to cross-repo gate check (cross-repo.md Step 8).                                           |
-| `refining`     | `compute_waves` to complete pending refinement, then route as `dispatching`.                     |
-| `failed`       | Present failed nodes to user. Offer retry/diagnose/abandon.                                      |
-| `initializing` | Graph was never fully built. Route to original mode's planning step.                             |
-| `completed`    | Terminal. Inform user: "Session already completed." Offer to start fresh.                        |
-| `cancelled`    | Terminal. Inform user: "Session was cancelled." Offer to start fresh.                            |
+| machineState   | Action                                                                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dispatching`  | Route to original mode's dispatch step. Determine mode from `intent` field in `status` response. **If any active node has `iterationCount > 0`**, resume mid-loop on that node — re-enter Protocol C § C1 at the fix-adjunct dispatch step (step 5), not from the initial implement step. Do not reset `iterationCount`. |
+| `gate_halted`  | Route to cross-repo gate check (cross-repo.md Step 8).                                                                                                                                                                         |
+| `refining`     | `compute_waves` to complete pending refinement, then route as `dispatching`.                                                                                                                                                    |
+| `failed`       | Present failed nodes to user. Offer retry/diagnose/abandon.                                                                                                                                                                     |
+| `initializing` | Graph was never fully built. Route to original mode's planning step.                                                                                                                                                            |
+| `completed`    | Terminal. Inform user: "Session already completed." Offer to start fresh.                                                                                                                                                       |
+| `cancelled`    | Terminal. Inform user: "Session was cancelled." Offer to start fresh.                                                                                                                                                           |
+
+**Mid-loop resume rule (Protocol C § C1, step 7):** When resuming into `dispatching` and a node is found with `iterationCount > 0` and `lastReviewVerdict: "FAIL"`, treat that node as mid-convergence. Resume at iteration `iterationCount + 1` — dispatch a fix adjunct carrying the `lastReviewNotes` from the prior sentinel. The convergence loop (C1 steps 4–7) continues until the node reaches a terminal state or the cap is hit. This satisfies success criterion #3 of unm-735: "Resuming a saga via `--resume` picks up mid-loop on the failing node, not from scratch."
 
 #### Path B: Task-Based Resume (resume <task-id>)
 

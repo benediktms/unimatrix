@@ -828,6 +828,96 @@ Options:
 
 ---
 
+## Per-Node Convergence in Cross-Repo Sagas
+
+Cross-repo sagas apply the same convergence loop (Protocol C §§ C1–C8 in
+`SKILL.md`) per node that single-repo plan-execute sagas do. Each node carries
+`iterationCount`, `maxIterations`, `lastReviewVerdict`, and `lastReviewNotes`
+fields regardless of how many repositories the saga spans.
+
+### Convergence Semantics Across Repos
+
+- A node in repo A and a node in repo B each run their own independent
+  implement → review → fix loop.
+- Wave dispatch does not reset `iterationCount`. A node that was mid-loop at
+  saga interruption retains its count across the checkpoint boundary.
+- Sentinel review happens per node after that node's drone completes work,
+  consistent with the single-repo convergence contract.
+
+### Mid-Loop Resume Rule
+
+When a saga is interrupted (session crash, gate halt, user pause) while a node
+is mid-convergence, RESUME must pick up at the correct iteration:
+
+**Rule:** A node with `iterationCount = N` (N > 0) and
+`lastReviewVerdict: "FAIL"` at checkpoint time resumes at iteration `N + 1`.
+The lead dispatches a fix adjunct carrying `lastReviewNotes` from the prior
+sentinel. The convergence loop (C1 steps 4–7) continues from that point.
+
+**The node is NOT re-dispatched from scratch** (i.e., from C1 step 1). Prior
+implementation work is preserved in the node's worktree branch.
+
+This satisfies success criterion #3 of unm-735: *"Resuming a saga via
+`--resume` picks up mid-loop on the failing node, not from scratch."*
+
+### Cross-Repo Resume Example
+
+```
+Saga: 5 nodes across 2 brains (brain-A, brain-B).
+
+Nodes:
+  - api-contracts   [brain-A]  DONE         (iteration 1, PASS)
+  - svc-impl        [brain-A]  ACTIVE        iterationCount=2, lastReviewVerdict="FAIL"
+  - svc-tests       [brain-A]  PENDING (BLOCKED on svc-impl)
+  - client-types    [brain-B]  DONE         (iteration 1, PASS)
+  - client-impl     [brain-B]  PENDING (READY — awaiting Wave 3)
+
+Saga interrupted while svc-impl is mid-loop at iteration 2.
+
+Resume action:
+  /trimatrix --resume
+
+Lead restores checkpoint. machineState = dispatching.
+svc-impl has iterationCount=2, lastReviewVerdict="FAIL".
+
+→ Lead enters Protocol C § C1 at step 5 (fix-adjunct dispatch).
+→ Fix adjunct receives lastReviewNotes from iteration 2 sentinel.
+→ On PASS at iteration 3: svc-impl → DONE.
+→ svc-tests unblocks. Wave continues.
+→ Wave 3: client-impl dispatches from scratch (iterationCount=0, no prior review).
+```
+
+### Invariants
+
+- `iterationCount` persists across checkpoint save/restore. The server never
+  resets it on deserialization.
+- `reset_node` is the only mechanism that may reset `iterationCount` (when
+  called with `resetIterationCount: true`). Resume does not reset it.
+- Nodes in terminal state (`DONE`, `MERGED`, `FAILED`) are not re-dispatched by
+  resume. Their `iterationCount` and `lastReviewVerdict` are preserved as audit
+  data in the checkpoint.
+- The iteration cap (`maxIterations`) applies identically in cross-repo and
+  single-repo contexts. Cap exhaustion auto-fails the node regardless of which
+  repo it belongs to.
+
+### Protocol C Reference
+
+The canonical convergence loop specification is in `SKILL.md` Protocol C:
+
+| Section | Content                                                    |
+| ------- | ---------------------------------------------------------- |
+| C1      | Full implement → verify → review → fix cycle               |
+| C2      | Iteration cap (`maxIterations`, auto-fail on exhaustion)   |
+| C3      | Recovery via `reset_node` (lease bump, optional count reset) |
+| C4      | Failure isolation invariant (downstream `BLOCKED` on fail) |
+| C5      | Node state diagram (PENDING → ACTIVE → REVIEWING → ...)    |
+| C5a     | Review tier selection (TRIVIAL / NON_TRIVIAL)              |
+| C6      | MCP primitives (`review_passed`, `review_failed`, etc.)    |
+| C7      | Post-completion summary (mandatory after each terminal)    |
+| C8      | Saga report (post-saga aggregate)                          |
+
+---
+
 ## Implementation Details
 
 ### Wave Computation Algorithm
