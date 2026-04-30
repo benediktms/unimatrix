@@ -9,10 +9,10 @@ default:
 project_root := justfile_directory()
 python := project_root / ".venv/bin/python3"
 
-# Create/refresh Python virtual environment
+# Create/refresh Python virtual environment (idempotent)
 venv:
-    python3 -m venv .venv
-    {{python}} -m pip install -q -e .
+    @test -x {{python}} || python3 -m venv .venv
+    @{{python}} -m pip install -q -e .
 
 # Install all dependencies (Python venv + Deno cache)
 setup: venv
@@ -22,7 +22,7 @@ setup: venv
 build: (_build "all")
 
 # Build for a specific target (claude, opencode, all)
-_build target:
+_build target: venv
     {{python}} build.py --target {{target}}
 
 # Build for Claude Code only

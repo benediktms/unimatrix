@@ -139,6 +139,7 @@ cleanup_stale_links() {
 
 install_claude() {
   local target="$1"
+  local is_global="${2:-false}"
   local dist="$UNIMATRIX_DIR/dist/claude-code/.claude"
 
   ensure_build "claude"
@@ -164,11 +165,19 @@ install_claude() {
   merge_settings "$target"
 
   # Register unimatrix MCP server (idempotent — skips if already registered)
+  # Global installs use --scope user so the MCP is visible from every project.
+  # Project installs use the default local scope.
   if command -v claude > /dev/null 2>&1 && [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
-    if claude mcp add unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix" 2>/dev/null; then
-      echo "  mcp: registered unimatrix MCP server"
+    local scope_flag=""
+    local scope_label="local"
+    if [ "$is_global" = "true" ]; then
+      scope_flag="--scope user"
+      scope_label="user"
+    fi
+    if claude mcp add $scope_flag unimatrix -- "$UNIMATRIX_DIR/bin/unimatrix" 2>/dev/null; then
+      echo "  mcp: registered unimatrix MCP server (scope: $scope_label)"
     else
-      echo "  mcp: unimatrix MCP server already registered"
+      echo "  mcp: unimatrix MCP server already registered (scope: $scope_label)"
     fi
   fi
 
@@ -369,9 +378,9 @@ link_binaries
 case "$PLATFORM" in
   claude)
     if [ "$TARGET_MODE" = "global" ]; then
-      install_claude "$HOME/.claude"
+      install_claude "$HOME/.claude" "true"
     else
-      install_claude "$PROJECT_PATH/.claude"
+      install_claude "$PROJECT_PATH/.claude" "false"
     fi
     ;;
   opencode)
@@ -383,11 +392,11 @@ case "$PLATFORM" in
     ;;
   both)
     if [ "$TARGET_MODE" = "global" ]; then
-      install_claude "$HOME/.claude"
+      install_claude "$HOME/.claude" "true"
       echo ""
       install_opencode "$HOME" "true"
     else
-      install_claude "$PROJECT_PATH/.claude"
+      install_claude "$PROJECT_PATH/.claude" "false"
       echo ""
       install_opencode "$PROJECT_PATH"
     fi
