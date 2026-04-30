@@ -65,8 +65,20 @@ After init, every classified prompt enters the graph:
 1. Add nodes via `mcp__unimatrix__add_node` with appropriate `executor`
    (LEAD or ADJUNCT).
 2. Add edges via `mcp__unimatrix__add_edge`.
-3. Call `mcp__unimatrix__compute_waves` — auto-computes subgraphs.
-4. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs
+3. **Optional — declare explicit subgraphs** via `mcp__unimatrix__add_subgraph`
+   before computing waves. Use this when partitions are known up-front and
+   stable across runs. Each explicit subgraph takes a user-supplied slug as its
+   stable ID; it survives checkpoint serialization unchanged. For T2/T3 with
+   user-declared file partitions or coordination contracts, explicit subgraphs
+   are preferred over auto-derived ones. See `SUBGRAPHS.md` for the full
+   design note.
+4. Call `mcp__unimatrix__compute_waves` — validates the graph, computes
+   topological waves, and auto-derives subgraphs for any nodes not already
+   claimed by an explicit subgraph. Derived adjunct subgraphs receive stable
+   `auto-<8-char-hash>` IDs; the lead subgraph always gets the reserved ID
+   `sg-lead`. Use `mcp__unimatrix__list_subgraphs` to inspect the resulting
+   partition before dispatch.
+5. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs
    dispatched as agents.
 
 For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead
@@ -243,13 +255,18 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 
 **Subgraph dispatch procedure (T2/T3):**
 1. Call `mcp__unimatrix__dispatch_wave` — get activated nodes with executors.
-2. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph` to retrieve the brief.
-3. **Generate designations via Protocol A. This step is MANDATORY — do not dispatch adjuncts without designations.** Assign to subgraph `assignee`. Include the designation string in each adjunct's prompt.
-4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`.
-5. Dispatch Agents with the brief injected in the prompt.
-6. For LEAD nodes in this wave: execute directly as parallel Bash calls.
-7. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
-8. If neural link room was opened: call `mcp__neural_link__room_close` with resolution after all adjuncts return.
+2. Call `mcp__unimatrix__list_subgraphs` for discovery — returns
+   `{ derived: SubgraphSummary[], explicit: SubgraphSummary[] }`. Use the
+   `outcome` field on each summary to skip subgraphs already `completed`.
+3. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph`
+   to retrieve the brief. Subgraph IDs are either user slugs (explicit) or
+   `auto-<hash>` (derived) — both are stable within the session.
+4. **Generate designations via Protocol A. This step is MANDATORY — do not dispatch adjuncts without designations.** Assign to subgraph `assignee`. Include the designation string in each adjunct's prompt.
+5. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`.
+6. Dispatch Agents with the brief injected in the prompt.
+7. For LEAD nodes in this wave: execute directly as parallel Bash calls.
+8. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
+9. If neural link room was opened: call `mcp__neural_link__room_close` with resolution after all adjuncts return.
 
 **Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
 - Sequential → T2 with multi-wave graph
@@ -324,7 +341,7 @@ For modes that create brain tasks:
    - Add `VERIFY_COMPILE` nodes after each ADJUNCT implementation node (executor: `ADJUNCT`, edge: `DEPENDS_ON`)
    - Add `VERIFY_TEST`, `VERIFY_LINT`, `VERIFY_FORMAT` nodes after all implementation waves (executor: `LEAD`, edges: `DEPENDS_ON` from implementation nodes)
    - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies
-   - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-computes subgraphs
+   - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-derives subgraphs for nodes not claimed by an explicit subgraph. Derived adjunct subgraphs use stable `auto-<8-char-hash>` IDs; the lead subgraph is always `sg-lead`. Explicit subgraphs declared before this call are preserved unchanged.
    - The graph enables cycle detection, optimal parallelism, subgraph partitioning, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
 9. **Session naming gate** — present the plan and a proposed session name (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Elicit via `AskUserQuestion` with three options:
    - **Accept** — user approves the plan and session name as-is. Proceed.

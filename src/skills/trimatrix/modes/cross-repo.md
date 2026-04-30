@@ -155,6 +155,17 @@ exclusively within the assigned worktree.
 Use Designation Generation Protocol for each dispatched drone. Include the node ID
 in the designation context so adjuncts can be tracked per-node.
 
+## Explicit Subgraphs for Coordination Contracts
+
+When the coordination topology is known before execution — for example, a
+contract node that must complete before implementation nodes can start —
+declare explicit subgraphs via `mcp__unimatrix__add_subgraph` before calling
+`compute_waves` (Step 4d). This expresses the coordination contract
+(exports/imports/dependsOn) explicitly rather than relying on auto-derivation.
+
+Use `mcp__unimatrix__list_subgraphs` after `compute_waves` to confirm the
+partition. See `SUBGRAPHS.md` for policy semantics and the full design note.
+
 ## Cross-Repo Context Passing
 
 When nodes in later waves depend on earlier merged nodes, pass relevant context via:

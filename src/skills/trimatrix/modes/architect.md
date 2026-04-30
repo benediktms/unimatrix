@@ -129,6 +129,19 @@ Hand winning approach to plan-execute mode:
 - The brief contains the winning approach, tradeoff context, and key constraints
 - Plan-execute mode decomposes and implements from there
 
+### Step 6b: Commit Structural Design via Explicit Subgraphs (optional)
+
+When the architect has converged on a structural design before handing off to
+plan-execute mode, the supergraph partition can be committed as explicit
+subgraphs via `mcp__unimatrix__add_subgraph`. This preserves the architect's
+structural decisions in the checkpoint, so they survive refinement and resume
+without requiring re-analysis.
+
+Explicit subgraphs carry `label`, `coordination` (exports/imports/dependsOn),
+and policy fields (`completionPolicy`, `failurePolicy`, `gates`). These encode
+the architectural intent in machine-readable form. See `SUBGRAPHS.md` for the
+full design note.
+
 ### Step 7: Cleanup
 Shut down all team members. Delete team.
 Confirm all brain tasks — subtasks and epic — are in terminal state before reporting completion.

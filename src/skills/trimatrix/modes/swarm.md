@@ -27,6 +27,32 @@ Create brain tasks: one parent epic, one subtask per partition.
 All subtasks are independent — no dependencies set.
 Each subtask description includes: Goal / Files / Instructions / Verification (per task description format).
 
+### 1b. Optional: Declare Explicit Subgraphs Per Partition
+
+Swarm mode derives subgraphs automatically from connected components. For
+partitions that are known up-front and expected to remain stable across runs,
+declare explicit subgraphs before calling `compute_waves`:
+
+```
+mcp__unimatrix__add_subgraph({
+  slug: "auth-partition",
+  label: "Auth files — Drone Two of Five",
+  nodeIds: ["auth-impl", "auth-verify-compile"],
+  executor: "ADJUNCT",
+  tier: "T2",
+  completionPolicy: "ALL",
+  failurePolicy: "FAIL_FAST",
+})
+```
+
+Explicit subgraphs use the user-supplied slug as their stable ID. If a
+partition is later resized (nodes added or removed), the derived `auto-*`
+sibling IDs shift but the explicit subgraph's slug remains constant. This
+makes checkpoint-based resume more predictable across runs with differing
+file counts.
+
+See `SUBGRAPHS.md` for the full design note.
+
 ### 2. Generate Designations
 Use Designation Generation Protocol. Generate one designation per partition adjunct plus one for the sentinel.
 
