@@ -80,6 +80,7 @@ link_binaries() {
 
 merge_settings() {
   local target="$1"
+  local is_global="${2:-false}"
   local settings_file="$target/settings.json"
   local unimatrix_settings="$UNIMATRIX_DIR/settings.json"
 
@@ -94,21 +95,70 @@ merge_settings() {
     local merged
     merged=$("$PYTHON" -c "
 import json, sys
-existing = json.load(open('$settings_file'))
-incoming = json.loads('''$resolved''')
+
+is_global = sys.argv[1] == 'true'
+unimatrix_dir = sys.argv[2]
+settings_file = sys.argv[3]
+
+existing = json.load(open(settings_file))
+incoming = json.loads(sys.stdin.read())
+
+if not is_global:
+    # Hooks belong only in global scope — strip from incoming template
+    incoming.pop('hooks', None)
+
+    # Cleanup pass: remove pre-existing unimatrix-managed hook entries
+    # from project settings. Preserve user-added custom hooks.
+    existing_hooks = existing.get('hooks', {})
+    cleaned_events = {}
+    removed_count = 0
+    for event, matcher_groups in existing_hooks.items():
+        cleaned_groups = []
+        for group in matcher_groups:
+            cleaned_hook_list = []
+            for hook in group.get('hooks', []):
+                cmd = hook.get('command', '')
+                if unimatrix_dir in cmd or '__UNIMATRIX_DIR__' in cmd:
+                    removed_count += 1
+                else:
+                    cleaned_hook_list.append(hook)
+            if cleaned_hook_list:
+                cleaned_groups.append(dict(group, hooks=cleaned_hook_list))
+        if cleaned_groups:
+            cleaned_events[event] = cleaned_groups
+    if removed_count:
+        print(f'  clean: removed {removed_count} unimatrix-managed hook(s) from ' + settings_file, file=sys.stderr)
+    if cleaned_events:
+        existing['hooks'] = cleaned_events
+    elif 'hooks' in existing:
+        del existing['hooks']
+    if not is_global:
+        print('  skip: hooks (project scope; install --global to enable)', file=sys.stderr)
+
 existing.update(incoming)
 json.dump(existing, sys.stdout, indent=2)
 print()
-")
+" "$is_global" "$UNIMATRIX_DIR" "$settings_file" <<< "$resolved")
     echo "$merged" > "$settings_file"
   else
     echo "  create: $settings_file"
-    echo "$resolved" | "$PYTHON" -c "
+    if [ "$is_global" = "false" ]; then
+      echo "  skip: hooks (project scope; install --global to enable)"
+      echo "$resolved" | "$PYTHON" -c "
+import json, sys
+d = json.load(sys.stdin)
+d.pop('hooks', None)
+json.dump(d, sys.stdout, indent=2)
+print()
+" > "$settings_file"
+    else
+      echo "$resolved" | "$PYTHON" -c "
 import json, sys
 d = json.load(sys.stdin)
 json.dump(d, sys.stdout, indent=2)
 print()
 " > "$settings_file"
+    fi
   fi
 }
 
@@ -139,6 +189,7 @@ cleanup_stale_links() {
 
 install_claude() {
   local target="$1"
+  local is_global="${2:-false}"
   local dist="$UNIMATRIX_DIR/dist/claude-code/.claude"
 
   ensure_build "claude"
@@ -161,7 +212,8 @@ install_claude() {
   cleanup_stale_links "$target/skills" "$dist/skills/"
 
   # Merge settings (spinner verbs, status line, hooks)
-  merge_settings "$target"
+  # Hooks are written only for global installs; project installs skip and clean them.
+  merge_settings "$target" "$is_global"
 
   # Register unimatrix MCP server (idempotent — skips if already registered)
   if command -v claude > /dev/null 2>&1 && [ -f "$UNIMATRIX_DIR/bin/unimatrix" ]; then
@@ -369,9 +421,9 @@ link_binaries
 case "$PLATFORM" in
   claude)
     if [ "$TARGET_MODE" = "global" ]; then
-      install_claude "$HOME/.claude"
+      install_claude "$HOME/.claude" "true"
     else
-      install_claude "$PROJECT_PATH/.claude"
+      install_claude "$PROJECT_PATH/.claude" "false"
     fi
     ;;
   opencode)
@@ -383,11 +435,11 @@ case "$PLATFORM" in
     ;;
   both)
     if [ "$TARGET_MODE" = "global" ]; then
-      install_claude "$HOME/.claude"
+      install_claude "$HOME/.claude" "true"
       echo ""
       install_opencode "$HOME" "true"
     else
-      install_claude "$PROJECT_PATH/.claude"
+      install_claude "$PROJECT_PATH/.claude" "false"
       echo ""
       install_opencode "$PROJECT_PATH"
     fi
