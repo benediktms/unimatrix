@@ -1814,6 +1814,17 @@ export function nodeToWave(graph: Graph, waves: Wave[]): Map<string, number> {
  *
  * Nodes whose `readinessStatus` is undefined are treated as `READY` (backwards
  * compatibility with pre-2.5.0 checkpoints that lack the field).
+ *
+ * **Advisory contract**: `currentFrontier` is read-time advisory. It does
+ * NOT consult lease fences (a parallel caller may have already dispatched
+ * the node), capability requirements (those are checked by `dispatch_wave`
+ * with caller `Capabilities`), or fresh external-blocker state (the cached
+ * `externallyBlocked` axis is honored, but the brain may have updated since).
+ * Authoritative activation lives in `dispatch_wave`, which mints fences,
+ * re-consults brain, and rejects on capability mismatch. Two callers reading
+ * the same frontier may both see the same node; only one's WorkPacket
+ * survives the next mint. Use the frontier for batching and UI; use
+ * `dispatch_wave` for actual activation.
  */
 export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
   const waveOf = nodeToWave(graph, waves);

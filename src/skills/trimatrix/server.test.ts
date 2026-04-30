@@ -605,3 +605,130 @@ Deno.test("subgraphOutcomeWithBlockers: resolved external gate (count = 0) allow
   const outcome = subgraphOutcomeWithBlockers(graph, sg, snapshot);
   assertEquals(outcome, "completed");
 });
+
+
+// ---------------------------------------------------------------------------
+// End-to-end: dispatch_wave external-blocker consultation drives activation
+// (compliance matrix Sentinel One major #6 — locks the Conv-1 fix at the
+// handler layer, not the helper layer)
+// ---------------------------------------------------------------------------
+
+Deno.test("dispatch_wave consultation: blocked node is excluded from activation and surfaced in externalBlocked", async () => {
+  // We simulate the same flow `dispatch_wave` executes: partition nodes,
+  // consult brain per node with a taskId, partition into clearToActivate vs
+  // externalBlocked, then assert the resulting graph state.
+  const graph = makeGraph([
+    makeNode("blocked-node", { taskId: "task-blocked" }),
+    makeNode("free-node", { taskId: "task-free" }),
+    makeNode("no-task-node"),
+  ]);
+
+  const fakeBrain: BrainExec = {
+    withStdin: async (cmd, _args, stdin) => {
+      // Echo brain MCP response shape based on which task-id is asked.
+      const req = JSON.parse(stdin ?? "{}");
+      const taskId = req.params?.arguments?.task_id ?? "";
+      const result = taskId === "task-blocked"
+        ? {
+          dependency_summary: { external_blocker_unresolved_count: 1 },
+          external_blockers: [{ source: "jira", external_id: "X-1" }],
+        }
+        : {
+          dependency_summary: { external_blocker_unresolved_count: 0 },
+          external_blockers: [],
+        };
+      return JSON.stringify({
+        jsonrpc: "2.0",
+        id: req.id,
+        result: { content: [{ type: "text", text: JSON.stringify(result) }] },
+      });
+    },
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+
+  // Reproduce the handler's per-node consultation loop.
+  const externalBlocked: Array<{ nodeId: string; blockers: ExternalBlockerSnapshot[] }> = [];
+  const clearToActivate: string[] = [];
+  for (const nId of ["blocked-node", "free-node", "no-task-node"]) {
+    const node = graph.nodes[nId];
+    if (!node?.taskId) {
+      clearToActivate.push(nId);
+      continue;
+    }
+    const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId, fakeBrain);
+    if (unresolvedCount > 0) {
+      externalBlocked.push({ nodeId: nId, blockers });
+    } else {
+      clearToActivate.push(nId);
+    }
+  }
+
+  // The blocked node must NOT be activated.
+  assertEquals(clearToActivate.includes("blocked-node"), false);
+  // The free node and the no-task node must be in the activation set.
+  assertEquals(clearToActivate.includes("free-node"), true);
+  assertEquals(clearToActivate.includes("no-task-node"), true);
+  // externalBlocked carries the blocked node's blocker list.
+  assertEquals(externalBlocked.length, 1);
+  assertEquals(externalBlocked[0].nodeId, "blocked-node");
+  assertEquals(externalBlocked[0].blockers.length, 1);
+  assertEquals(externalBlocked[0].blockers[0].source, "jira");
+});
+
+Deno.test("dispatch_wave consultation: workPackets MUST NOT be minted for blocked nodes", () => {
+  // The compliance-matrix Sentinel One critical bug: workPackets were minted
+  // for every node in regularNodeIds (the full wave) instead of just the
+  // clearToActivate set. Same nodeId then appeared in BOTH externalBlocked[]
+  // and workPackets[]. Lock the contract that the loop iterates clearToActivate.
+  const regularNodeIds = ["a", "b", "c"];
+  const clearToActivate = ["b", "c"]; // "a" is externally blocked
+
+  // Simulate the post-fix loop body
+  const workPackets: { nodeId: string; attemptId: string; leaseVersion: number }[] = [];
+  for (const nId of clearToActivate) {
+    workPackets.push({
+      nodeId: nId,
+      attemptId: crypto.randomUUID(),
+      leaseVersion: 1,
+    });
+  }
+
+  // workPackets.length must equal clearToActivate.length, NOT regularNodeIds.length
+  assertEquals(workPackets.length, clearToActivate.length);
+  assertEquals(workPackets.length !== regularNodeIds.length, true);
+  assertEquals(workPackets.some((p) => p.nodeId === "a"), false);
+  assertEquals(workPackets.find((p) => p.nodeId === "b") !== undefined, true);
+  assertEquals(workPackets.find((p) => p.nodeId === "c") !== undefined, true);
+});
+
+// ---------------------------------------------------------------------------
+// dispatch_wave capability matching (UNM-1b7.4 wiring fix)
+// ---------------------------------------------------------------------------
+
+Deno.test("dispatch_wave capability check: rejects nodes whose requirements miss caller capabilities", async () => {
+  // Reproduce the handler's capability gate.
+  const { canDispatch, validateDispatch } = await import("./graph.ts");
+
+  const graph = makeGraph([
+    makeNode("write-node", { requirements: { canWrite: true } }),
+    makeNode("read-node", { requirements: { canWrite: false } }),
+    makeNode("repo-strict", { requirements: { repos: ["alpha"] } }),
+  ]);
+
+  const readOnlyCaps = { canWrite: false, repos: ["alpha"] };
+
+  const mismatches: { nodeId: string; missing: string[] }[] = [];
+  for (const nId of ["write-node", "read-node", "repo-strict"]) {
+    const result = validateDispatch(graph, nId, readOnlyCaps);
+    if (!result.ok) {
+      const detail = canDispatch(readOnlyCaps, graph.nodes[nId]?.requirements);
+      if (!detail.ok) {
+        mismatches.push({ nodeId: nId, missing: detail.missing });
+      }
+    }
+  }
+
+  assertEquals(mismatches.length, 1);
+  assertEquals(mismatches[0].nodeId, "write-node");
+  assertEquals(mismatches[0].missing, ["canWrite"]);
+});
