@@ -1990,6 +1990,95 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: reset_node
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "reset_node",
+  "Transition a FAILED node back to PENDING, bumping leaseVersion to invalidate any in-flight WorkPackets. Completes the convergence loop's retry path. Provide attemptId + leaseVersion to enable fence validation; omit both for backward-compatible unfenced writes.",
+  {
+    nodeId: z.string().describe("Node ID to reset"),
+    reason: z.string().optional().describe(
+      "Human-readable reason for the reset (recorded in the event log).",
+    ),
+    resetIterationCount: z.boolean().optional().describe(
+      "If true, resets iterationCount to 0. Otherwise preserves the current count so the cap still bites on next failure.",
+    ),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+
+    const resetTarget = cp.graph.nodes[params.nodeId];
+    if (!resetTarget) {
+      throw new Error(`Node "${params.nodeId}" not found in checkpoint`);
+    }
+
+    // Precondition: only FAILED nodes may be reset
+    if (resetTarget.status !== NodeStatus.FAILED) {
+      throw new Error(
+        `Cannot reset node "${params.nodeId}" — node is ${resetTarget.status}, expected ${NodeStatus.FAILED}`,
+      );
+    }
+
+    // Lease fencing: validate fence if both fields are provided
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        resetTarget.attemptId !== params.attemptId ||
+        resetTarget.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${resetTarget.attemptId}, leaseVersion=${resetTarget.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
+    }
+
+    const check = canTransition(cp, {
+      type: "node_reset",
+      nodeId: params.nodeId,
+      reason: params.reason,
+      resetIterationCount: params.resetIterationCount,
+    });
+    if (!check.allowed) {
+      throw new Error(`Cannot reset node: ${check.reason}`);
+    }
+
+    const resetResult = await transitionWithEffects(cp, {
+      type: "node_reset",
+      nodeId: params.nodeId,
+      reason: params.reason,
+      resetIterationCount: params.resetIterationCount,
+    });
+    checkpoint = resetResult.checkpoint;
+    if (resetResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
+    }
+
+    const updatedNode = checkpoint.graph.nodes[params.nodeId];
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            status: updatedNode?.status,
+            leaseVersion: updatedNode?.leaseVersion,
+            iterationCount: updatedNode?.iterationCount,
+            machineState: checkpoint.machineState,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: clear_gate
 // ---------------------------------------------------------------------------
 

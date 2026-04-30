@@ -156,6 +156,7 @@ export function canTransition(
     case "wave_dispatched":
     case "node_completed":
     case "node_failed":
+    case "node_reset":
     case "wave_completed":
     case "wave_failed":
     case "review_passed":
@@ -522,6 +523,39 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         nodes: {
           ...checkpoint.graph.nodes,
           [event.nodeId]: updatedNode,
+        },
+      });
+      return {
+        ...checkpoint,
+        graph: nextGraph,
+        updatedAt: now,
+      };
+    }
+
+    case "node_reset": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      // Precondition: only FAILED nodes may be reset
+      if (node.status !== NodeStatus.FAILED) {
+        throw new Error(
+          `Cannot reset node "${event.nodeId}" — node is ${node.status}, expected ${NodeStatus.FAILED}`,
+        );
+      }
+      const resetNode: Node = {
+        ...node,
+        status: NodeStatus.PENDING,
+        // Bump leaseVersion to invalidate any in-flight WorkPackets for the old attempt
+        leaseVersion: (node.leaseVersion ?? 0) + 1,
+        // Clear the failure reason on reset
+        failureReason: undefined,
+        // Reset iterationCount only when explicitly requested
+        ...(event.resetIterationCount ? { iterationCount: 0 } : {}),
+      };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: resetNode,
         },
       });
       return {

@@ -28,6 +28,7 @@ import {
   MachineState,
   NodeStatus,
   NodeType,
+  ReadinessStatus,
   SubgraphStrategy,
   Tier,
   WaveResultStatus,
@@ -2203,4 +2204,103 @@ Deno.test("replay: review_failed cap exhaustion event log reproduces FAILED stat
     replayed.graph.nodes["n1"].failureReason,
     "iteration cap exhausted: review failed 3/3 times",
   );
+});
+
+// ---------------------------------------------------------------------------
+// node_reset handler tests (UNM-735.3)
+// ---------------------------------------------------------------------------
+
+// Test NR-1: reset a FAILED node → PENDING, leaseVersion bumped
+Deno.test("transition: node_reset from FAILED -> PENDING, leaseVersion bumped", () => {
+  const graph = makeGraph([
+    makeNode("n1", { status: NodeStatus.FAILED, leaseVersion: 2, iterationCount: 2, failureReason: "something broke" }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
+  assertEquals(result.graph.nodes["n1"].leaseVersion, 3);
+  assertEquals(result.graph.nodes["n1"].failureReason, undefined);
+});
+
+// Test NR-2: reset from non-FAILED → throws
+Deno.test("transition: node_reset from non-FAILED -> throws", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  assertThrows(
+    () => transition(cp, { type: "node_reset", nodeId: "n1" }),
+    Error,
+    "expected FAILED",
+  );
+});
+
+// Test NR-3: reset with resetIterationCount: true → iterationCount = 0
+Deno.test("transition: node_reset with resetIterationCount:true -> iterationCount=0", () => {
+  const graph = makeGraph([
+    makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 3, leaseVersion: 1 }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "n1", resetIterationCount: true });
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
+  assertEquals(result.graph.nodes["n1"].iterationCount, 0);
+});
+
+// Test NR-4: reset without resetIterationCount flag → iterationCount preserved
+Deno.test("transition: node_reset without resetIterationCount -> iterationCount preserved", () => {
+  const graph = makeGraph([
+    makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 2, leaseVersion: 1 }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
+  assertEquals(result.graph.nodes["n1"].iterationCount, 2);
+});
+
+// Test NR-5: downstream BLOCKED node readiness recomputed after reset
+Deno.test("transition: node_reset — downstream BLOCKED node readiness recomputed", () => {
+  // n1 (FAILED) → n2 (PENDING, BLOCKED because n1 failed)
+  const graph = makeGraph(
+    [
+      makeNode("n1", { status: NodeStatus.FAILED, leaseVersion: 1 }),
+      makeNode("n2", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
+  // n2 is blocked on n1 which is now PENDING (not terminal-done), so still BLOCKED
+  // recomputeReadiness was called (no crash, n2 still present)
+  assertEquals(result.graph.nodes["n2"].status, NodeStatus.PENDING);
+  assertEquals(result.graph.nodes["n2"].readinessStatus, ReadinessStatus.BLOCKED);
+});
+
+// Test NR-6: canTransition permits node_reset in DISPATCHING
+Deno.test("canTransition: node_reset allowed in dispatching", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING });
+  const result = canTransition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result, { allowed: true });
+});
+
+// Test NR-7: canTransition rejects node_reset in INITIALIZING
+Deno.test("canTransition: node_reset rejected in initializing", () => {
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING });
+  const result = canTransition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result.allowed, false);
+});
+
+// Test NR-8: replay parity — node_reset event log reproduces final state
+Deno.test("replay: node_reset event log reproduces PENDING state (replay parity)", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 2, leaseVersion: 1 })]);
+  const initial = createCheckpoint([], graph);
+  let cp = appendEvent(
+    appendEvent(initial, { type: "plan_submitted" }),
+    { type: "plan_finalized" },
+  );
+  cp = appendEvent(cp, { type: "node_reset", nodeId: "n1", reason: "manual recovery", resetIterationCount: true });
+  // Replay from the event log
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(cp.eventLog!, fresh);
+  assertEquals(replayed.graph.nodes["n1"].status, NodeStatus.PENDING);
+  assertEquals(replayed.graph.nodes["n1"].iterationCount, 0);
+  assertEquals(replayed.graph.nodes["n1"].failureReason, undefined);
 });

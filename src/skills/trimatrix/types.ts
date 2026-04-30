@@ -899,4 +899,12 @@ export type Event =
   | { type: "refine" }
   | { type: "refinement_approved" }
   | { type: "subgraph_added"; subgraph: Subgraph }
-  | { type: "cancel"; reason?: string };
+  | { type: "cancel"; reason?: string }
+  | {
+    type: "node_reset";
+    nodeId: string;
+    /** Optional human-readable reason for the reset (preserved in event log). */
+    reason?: string;
+    /** If true, resets iterationCount to 0. Otherwise preserves the current count. */
+    resetIterationCount?: boolean;
+  };
