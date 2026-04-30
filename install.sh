@@ -80,7 +80,8 @@ link_binaries() {
 
 merge_settings() {
   local target="$1"
-  local is_global="${2:-false}"
+  local is_global="${2:-}"
+  [ -n "$is_global" ] || { echo "merge_settings: missing is_global argument" >&2; return 1; }
   local settings_file="$target/settings.json"
   local unimatrix_settings="$UNIMATRIX_DIR/settings.json"
 
@@ -93,7 +94,7 @@ merge_settings() {
   if [ -f "$settings_file" ]; then
     echo "  merge: unimatrix settings into $settings_file"
     local merged
-    merged=$("$PYTHON" -c "
+    if ! merged=$("$PYTHON" -c "
 import json, sys
 
 is_global = sys.argv[1] == 'true'
@@ -118,6 +119,9 @@ if not is_global:
             cleaned_hook_list = []
             for hook in group.get('hooks', []):
                 cmd = hook.get('command', '')
+                if not isinstance(cmd, str):
+                    cleaned_hook_list.append(hook)
+                    continue
                 if unimatrix_dir in cmd or '__UNIMATRIX_DIR__' in cmd:
                     removed_count += 1
                 else:
@@ -132,18 +136,20 @@ if not is_global:
         existing['hooks'] = cleaned_events
     elif 'hooks' in existing:
         del existing['hooks']
-    if not is_global:
-        print('  skip: hooks (project scope; install --global to enable)', file=sys.stderr)
+    print('  skip: hooks (project scope; install --global to enable)', file=sys.stderr)
 
 existing.update(incoming)
 json.dump(existing, sys.stdout, indent=2)
 print()
-" "$is_global" "$UNIMATRIX_DIR" "$settings_file" <<< "$resolved")
+" "$is_global" "$UNIMATRIX_DIR" "$settings_file" <<< "$resolved"); then
+      echo "  error: failed to merge settings; $settings_file left untouched" >&2
+      return 1
+    fi
     echo "$merged" > "$settings_file"
   else
     echo "  create: $settings_file"
     if [ "$is_global" = "false" ]; then
-      echo "  skip: hooks (project scope; install --global to enable)"
+      echo "  skip: hooks (project scope; install --global to enable)" >&2
       echo "$resolved" | "$PYTHON" -c "
 import json, sys
 d = json.load(sys.stdin)
