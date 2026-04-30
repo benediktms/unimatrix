@@ -5,7 +5,15 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { CoordinationContract, Edge, Graph, Node, Subgraph, SubgraphGate, Wave } from "./types.ts";
+import type {
+  CoordinationContract,
+  Edge,
+  Graph,
+  Node,
+  Subgraph,
+  SubgraphGate,
+  Wave,
+} from "./types.ts";
 import {
   CoordinationMode,
   EdgeType,
@@ -219,7 +227,10 @@ export function computeWaves(graph: Graph): Wave[] {
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
+      const bump =
+        (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON)
+          ? 1
+          : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -239,7 +250,9 @@ export function computeWaves(graph: Graph): Wave[] {
   // Determine which wave IDs have outgoing MERGE_GATE or DEPENDS_ON edges into a later wave
   const gateSourceLevels = new Set<number>();
   for (const edge of graph.edges) {
-    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
+    if (
+      edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON
+    ) {
       const fromLevel = level.get(edge.from) ?? 0;
       gateSourceLevels.add(fromLevel);
     }
@@ -297,18 +310,27 @@ export function unsatisfiedDependencies(
     }
     if (edge.type === EdgeType.DEPENDS_ON) {
       if (!DEPENDS_ON_SATISFIED.includes(source.status)) {
-        result.push({ edge, reason: `source is ${source.status}, requires DONE or MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires DONE or MERGED`,
+        });
       }
     } else if (edge.type === EdgeType.MERGE_GATE) {
       if (source.status !== MERGE_GATE_SATISFIED) {
-        result.push({ edge, reason: `source is ${source.status}, requires MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires MERGED`,
+        });
       } else if (!source.prUrl) {
         result.push({ edge, reason: `source is MERGED but lacks prUrl` });
       }
     } else {
       // STACKED
       if (!STACKED_SATISFIED.includes(source.status)) {
-        result.push({ edge, reason: `source is ${source.status}, requires PR_CREATED or MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires PR_CREATED or MERGED`,
+        });
       }
     }
   }
@@ -386,7 +408,11 @@ export function clearGate(graph: Graph, nodeId: string): Graph {
     ...graph,
     nodes: {
       ...graph.nodes,
-      [nodeId]: { ...node, status: NodeStatus.ACTIVE, failureReason: undefined },
+      [nodeId]: {
+        ...node,
+        status: NodeStatus.ACTIVE,
+        failureReason: undefined,
+      },
     },
   };
 }
@@ -405,7 +431,9 @@ export function completeNode(
   if (!node) return graph;
   const updated: Node = {
     ...node,
-    status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
+    status: node.prUrl
+      ? NodeStatus.PR_CREATED
+      : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
   };
   return {
     ...graph,
@@ -644,7 +672,10 @@ export function computeWavesFromRefinement(
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
+      const bump =
+        (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON)
+          ? 1
+          : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -664,7 +695,9 @@ export function computeWavesFromRefinement(
   // Determine wave IDs with outgoing MERGE_GATE or DEPENDS_ON edges into later waves
   const gateSourceLevels = new Set<number>();
   for (const edge of activeEdges) {
-    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
+    if (
+      edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON
+    ) {
       const fromLevel = level.get(edge.from) ?? 0;
       gateSourceLevels.add(fromLevel);
     }
@@ -699,9 +732,13 @@ export function waveStatus(
 ): "pending" | "active" | "completed" | "partial_failure" | "failed" {
   if (wave.nodes.length === 0) return "completed";
 
-  const statuses = wave.nodes.map((id) => graph.nodes[id]?.status ?? NodeStatus.PENDING);
+  const statuses = wave.nodes.map((id) =>
+    graph.nodes[id]?.status ?? NodeStatus.PENDING
+  );
 
-  const allTerminal = statuses.every((s) => s === NodeStatus.MERGED || s === NodeStatus.DONE);
+  const allTerminal = statuses.every((s) =>
+    s === NodeStatus.MERGED || s === NodeStatus.DONE
+  );
   if (allTerminal) return "completed";
 
   const failedOrBlocked = (s: NodeStatus | undefined) =>
@@ -711,7 +748,9 @@ export function waveStatus(
 
   const hasFailure = statuses.some(failedOrBlocked);
   const hasCompleted = statuses.some(
-    (s) => s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED || s === NodeStatus.DONE,
+    (s) =>
+      s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED ||
+      s === NodeStatus.DONE,
   );
   if (hasFailure && hasCompleted) return "partial_failure";
   if (hasFailure) return "failed";
@@ -784,7 +823,9 @@ function connectedComponents(nodeIds: string[], edges: Edge[]): string[][] {
  */
 function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
   const nodeSet = new Set(nodeIds);
-  const relevant = edges.filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to));
+  const relevant = edges.filter((e) =>
+    nodeSet.has(e.from) && nodeSet.has(e.to)
+  );
 
   const inDegree = new Map<string, number>();
   const adj = new Map<string, string[]>();
@@ -822,6 +863,12 @@ function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
  * Used to derive subgraph IDs (`auto-<hash>`) so subgraph identity remains
  * constant when sibling subgraphs are added or removed. Order-insensitive —
  * the input set is sorted before hashing. djb2-style mix; not cryptographic.
+ *
+ * Output space is 32 bits (~4.3B). Birthday-collision probability rises near
+ * ~65k components per session — well above any realistic graph. The
+ * `applySubgraphs` post-condition throws on collision rather than silently
+ * merging; widen the suffix length here if subgraph counts ever approach
+ * that scale.
  */
 export function hashNodeSet(nodeIds: string[]): string {
   const sorted = [...nodeIds].sort();
@@ -976,7 +1023,7 @@ export function computeSubgraphs(
   if (new Set(nonEmptyIds).size !== nonEmptyIds.length) {
     throw new Error(
       "Hash collision detected in computeSubgraphs: two adjunct components produced the same auto-<hash> ID. " +
-      "This is probabilistically near-impossible with distinct node sets — inspect inputs for duplicated node IDs.",
+        "This is probabilistically near-impossible with distinct node sets — inspect inputs for duplicated node IDs.",
     );
   }
 
@@ -1010,15 +1057,21 @@ export function computeSubgraphs(
           const srcComp = nodeToComponent.get(edge.from);
           if (srcComp !== undefined) {
             const depSgId = componentIds[srcComp];
-            if (depSgId && !dependsOn.includes(depSgId)) dependsOn.push(depSgId);
-          } else if (leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")) {
+            if (depSgId && !dependsOn.includes(depSgId)) {
+              dependsOn.push(depSgId);
+            }
+          } else if (
+            leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")
+          ) {
             dependsOn.push("sg-lead");
           }
         }
       }
 
       coordination = {
-        mode: isReadOnly ? CoordinationMode.ADVERSARIAL : CoordinationMode.PARTITIONED,
+        mode: isReadOnly
+          ? CoordinationMode.ADVERSARIAL
+          : CoordinationMode.PARTITIONED,
         ...(dependsOn.length > 0 ? { dependsOn } : {}),
         exports: extractTaggedPaths(graph, compNodes, "exports"),
         imports: extractTaggedPaths(graph, compNodes, "imports"),
@@ -1035,7 +1088,7 @@ export function computeSubgraphs(
       derived: true,
       nodes: sorted,
       edges: compEdges,
-      assignee: "",  // Populated by caller after designation generation
+      assignee: "", // Populated by caller after designation generation
       executor: Executor.ADJUNCT,
       tier,
       coordination,
@@ -1101,7 +1154,10 @@ export const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
  * Compare two SubgraphGate arrays for semantic equality.
  * Order-insensitive for both node-ID gates and external gates.
  */
-function gatesEqual(a: SubgraphGate[] | undefined, b: SubgraphGate[] | undefined): boolean {
+function gatesEqual(
+  a: SubgraphGate[] | undefined,
+  b: SubgraphGate[] | undefined,
+): boolean {
   const aArr = a ?? [];
   const bArr = b ?? [];
   if (aArr.length !== bArr.length) return false;
@@ -1124,7 +1180,10 @@ function gatesEqual(a: SubgraphGate[] | undefined, b: SubgraphGate[] | undefined
  * Check whether an existing subgraph's spec matches the incoming spec field-by-field.
  * Used to implement idempotent re-add semantics.
  */
-function subgraphsEquivalent(existing: Subgraph, spec: AddSubgraphSpec): boolean {
+function subgraphsEquivalent(
+  existing: Subgraph,
+  spec: AddSubgraphSpec,
+): boolean {
   // Slug already matched by the caller. Check the remaining fields.
   const existingNodeSet = new Set(existing.nodes);
   const specNodeSet = new Set(spec.nodeIds);
@@ -1136,8 +1195,10 @@ function subgraphsEquivalent(existing: Subgraph, spec: AddSubgraphSpec): boolean
   if (existing.executor !== spec.executor) return false;
   if (existing.tier !== spec.tier) return false;
 
-  const effectiveCompletion = spec.completionPolicy ?? SubgraphCompletionPolicy.ALL;
-  const effectiveFailure = spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST;
+  const effectiveCompletion = spec.completionPolicy ??
+    SubgraphCompletionPolicy.ALL;
+  const effectiveFailure = spec.failurePolicy ??
+    SubgraphFailurePolicy.FAIL_FAST;
   if (existing.completionPolicy !== effectiveCompletion) return false;
   if (existing.failurePolicy !== effectiveFailure) return false;
 
@@ -1162,11 +1223,17 @@ export function addSubgraph(
         `Invalid slug "${spec.slug}" — must match ${SUBGRAPH_SLUG_RE.source}`,
     };
   }
-  if (spec.slug === "sg-lead" || spec.slug.startsWith("auto-")) {
+  if (spec.slug === "sg-lead") {
+    return {
+      ok: false,
+      error: `Slug "sg-lead" is reserved for the auto-derived lead subgraph`,
+    };
+  }
+  if (spec.slug.startsWith("auto-")) {
     return {
       ok: false,
       error:
-        `Slug "${spec.slug}" is reserved (sg-lead and auto-* are auto-derived IDs)`,
+        `Slug "${spec.slug}" is reserved — the "auto-" prefix is used for auto-derived subgraph IDs`,
     };
   }
 
@@ -1178,7 +1245,8 @@ export function addSubgraph(
     }
     return {
       ok: false,
-      error: `Subgraph "${spec.slug}" already exists with a different spec — re-add rejected`,
+      error:
+        `Subgraph "${spec.slug}" already exists with a different spec — re-add rejected`,
     };
   }
 
@@ -1193,7 +1261,9 @@ export function addSubgraph(
       return { ok: false, error: `Node "${nodeId}" does not exist in graph` };
     }
   }
-  if (spec.parentId && !currentSubgraphs.some((sg) => sg.id === spec.parentId)) {
+  if (
+    spec.parentId && !currentSubgraphs.some((sg) => sg.id === spec.parentId)
+  ) {
     return {
       ok: false,
       error: `Parent subgraph "${spec.parentId}" does not exist`,
@@ -1212,10 +1282,9 @@ export function addSubgraph(
     if (explicitMembership.has(nodeId)) {
       return {
         ok: false,
-        error:
-          `Node "${nodeId}" already belongs to explicit subgraph "${
-            explicitMembership.get(nodeId)
-          }"`,
+        error: `Node "${nodeId}" already belongs to explicit subgraph "${
+          explicitMembership.get(nodeId)
+        }"`,
       };
     }
   }
@@ -1395,7 +1464,9 @@ export function subgraphOutcome(
     case SubgraphCompletionPolicy.GATED: {
       // External gates are always unresolved — GATED never completes if any are present.
       if (hasUnresolvedExternalGates) break;
-      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) {
+        return "completed";
+      }
       break;
     }
   }

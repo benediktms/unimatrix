@@ -14,7 +14,6 @@ import {
   addSubgraph,
   clearGate,
   completeNode,
-  updateNode,
   computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
@@ -24,6 +23,7 @@ import {
   serializeSubgraphBrief,
   subgraphOutcome,
   unsatisfiedDependencies,
+  updateNode,
   validate,
   waveStatus,
 } from "./graph.ts";
@@ -353,7 +353,12 @@ Deno.test("nextWave: gate cleared (A merged) → returns wave 2", () => {
   // A merged with prUrl → B's MERGE_GATE dependency is satisfied.
   const g = makeGraph(
     [
-      makeNode({ id: "A", status: NodeStatus.MERGED, prUrl: "https://github.com/o/r/pull/1", prNumber: 1 }),
+      makeNode({
+        id: "A",
+        status: NodeStatus.MERGED,
+        prUrl: "https://github.com/o/r/pull/1",
+        prNumber: 1,
+      }),
       makeNode({ id: "B", status: NodeStatus.PENDING }),
     ],
     [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
@@ -426,9 +431,14 @@ Deno.test("nextWave: wave completion includes DONE nodes", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("completeNode: sets PR_CREATED when node has prUrl", () => {
-  const original = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
+  const original = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.ACTIVE }),
+  ]);
   // Attach PR metadata first via updateNode
-  const withPr = updateNode(original, "A", { prUrl: "https://gh.example/pr/1", prNumber: 1 });
+  const withPr = updateNode(original, "A", {
+    prUrl: "https://gh.example/pr/1",
+    prNumber: 1,
+  });
   const updated = completeNode(withPr, "A");
   assertEquals(updated.nodes["A"].status, NodeStatus.PR_CREATED);
   assertEquals(updated.nodes["A"].prUrl, "https://gh.example/pr/1");
@@ -438,7 +448,9 @@ Deno.test("completeNode: sets PR_CREATED when node has prUrl", () => {
 });
 
 Deno.test("completeNode: with repo, no PR → MERGED", () => {
-  const g = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE, repo: "repo-a" })]);
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.ACTIVE, repo: "repo-a" }),
+  ]);
   const updated = completeNode(g, "A");
   assertEquals(updated.nodes["A"].status, NodeStatus.MERGED);
 });
@@ -459,14 +471,22 @@ Deno.test("completeNode: repo-less with prUrl → PR_CREATED", () => {
     makeNode({ id: "A", status: NodeStatus.ACTIVE }),
   ]);
   delete (g.nodes["A"] as Partial<Node>).repo;
-  const withPr = updateNode(g, "A", { prUrl: "https://gh.example/pr/2", prNumber: 2 });
+  const withPr = updateNode(g, "A", {
+    prUrl: "https://gh.example/pr/2",
+    prNumber: 2,
+  });
   const updated = completeNode(withPr, "A");
   assertEquals(updated.nodes["A"].status, NodeStatus.PR_CREATED);
 });
 
 Deno.test("updateNode: patches metadata without changing status", () => {
-  const original = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
-  const updated = updateNode(original, "A", { prUrl: "https://gh.example/pr/3", prNumber: 3 });
+  const original = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.ACTIVE }),
+  ]);
+  const updated = updateNode(original, "A", {
+    prUrl: "https://gh.example/pr/3",
+    prNumber: 3,
+  });
   assertEquals(updated.nodes["A"].status, NodeStatus.ACTIVE);
   assertEquals(updated.nodes["A"].prUrl, "https://gh.example/pr/3");
   assertEquals(updated.nodes["A"].prNumber, 3);
@@ -476,11 +496,17 @@ Deno.test("updateNode: patches metadata without changing status", () => {
 
 Deno.test("updateNode: throws on missing node", () => {
   const g = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
-  assertThrows(() => updateNode(g, "NONEXISTENT", { prUrl: "https://gh.example/pr/1" }), Error, "not found");
+  assertThrows(
+    () => updateNode(g, "NONEXISTENT", { prUrl: "https://gh.example/pr/1" }),
+    Error,
+    "not found",
+  );
 });
 
 Deno.test("failNode: sets FAILED status and failureReason", () => {
-  const original = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
+  const original = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.ACTIVE }),
+  ]);
   const updated = failNode(original, "A", "build error");
   assertEquals(updated.nodes["A"].status, NodeStatus.FAILED);
   assertEquals(updated.nodes["A"].failureReason, "build error");
@@ -801,7 +827,12 @@ Deno.test("computeWavesFromRefinement: stacked edges within remaining nodes — 
     [
       makeNode({ id: "A", status: NodeStatus.MERGED }),
       makeNode({ id: "B", repo: "repo-x", status: NodeStatus.PENDING }),
-      makeNode({ id: "C", repo: "repo-x", status: NodeStatus.PENDING, stackedOn: "B" }),
+      makeNode({
+        id: "C",
+        repo: "repo-x",
+        status: NodeStatus.PENDING,
+        stackedOn: "B",
+      }),
     ],
     [
       { from: "A", to: "B", type: EdgeType.MERGE_GATE },
@@ -870,7 +901,11 @@ Deno.test("computeSubgraphs: INDEPENDENT partitions adjunct and lead nodes", () 
     [
       makeNode({ id: "A", executor: Executor.ADJUNCT }),
       makeNode({ id: "B", executor: Executor.ADJUNCT }),
-      makeNode({ id: "C", executor: Executor.LEAD, type: NodeType.VERIFY_TEST }),
+      makeNode({
+        id: "C",
+        executor: Executor.LEAD,
+        type: NodeType.VERIFY_TEST,
+      }),
     ],
     // Connect A and B so they form one component
     [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
@@ -893,8 +928,16 @@ Deno.test("computeSubgraphs: INDEPENDENT keeps VERIFY_COMPILE with adjunct prede
   const g = makeGraph(
     [
       makeNode({ id: "impl", executor: Executor.ADJUNCT }),
-      makeNode({ id: "vc", executor: Executor.LEAD, type: NodeType.VERIFY_COMPILE }),
-      makeNode({ id: "test", executor: Executor.LEAD, type: NodeType.VERIFY_TEST }),
+      makeNode({
+        id: "vc",
+        executor: Executor.LEAD,
+        type: NodeType.VERIFY_COMPILE,
+      }),
+      makeNode({
+        id: "test",
+        executor: Executor.LEAD,
+        type: NodeType.VERIFY_TEST,
+      }),
     ],
     [{ from: "impl", to: "vc", type: EdgeType.DEPENDS_ON }],
   );
@@ -923,7 +966,11 @@ Deno.test("computeSubgraphs: INDEPENDENT separates disconnected adjunct componen
 Deno.test("computeSubgraphs: COORDINATED adds ADVERSARIAL for read-only subgraphs", () => {
   const g = makeGraph([
     makeNode({ id: "R1", executor: Executor.ADJUNCT, type: NodeType.RECON }),
-    makeNode({ id: "R2", executor: Executor.ADJUNCT, type: NodeType.VALIDATION }),
+    makeNode({
+      id: "R2",
+      executor: Executor.ADJUNCT,
+      type: NodeType.VALIDATION,
+    }),
   ]);
   const waves = computeWaves(g);
   const sgs = computeSubgraphs(g, waves, Tier.T3, SubgraphStrategy.COORDINATED);
@@ -936,7 +983,11 @@ Deno.test("computeSubgraphs: COORDINATED adds ADVERSARIAL for read-only subgraph
 
 Deno.test("computeSubgraphs: COORDINATED adds PARTITIONED for write subgraphs", () => {
   const g = makeGraph([
-    makeNode({ id: "impl", executor: Executor.ADJUNCT, type: NodeType.IMPLEMENTATION }),
+    makeNode({
+      id: "impl",
+      executor: Executor.ADJUNCT,
+      type: NodeType.IMPLEMENTATION,
+    }),
   ]);
   const waves = computeWaves(g);
   const sgs = computeSubgraphs(g, waves, Tier.T3, SubgraphStrategy.COORDINATED);
@@ -976,7 +1027,11 @@ Deno.test("computeSubgraphs: derived adjunct IDs are stable when siblings change
   );
   const sgs2 = computeSubgraphs(g2, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
   const ab2 = sgs2.find((s) => s.nodes.includes("A"))!.id;
-  assertEquals(ab1, ab2, "subgraph ID for {A,B} must survive removal of sibling {C}");
+  assertEquals(
+    ab1,
+    ab2,
+    "subgraph ID for {A,B} must survive removal of sibling {C}",
+  );
   assertEquals(ab1.startsWith("auto-"), true);
   assertEquals(c1.startsWith("auto-"), true);
   assertEquals(ab1 !== c1, true);
@@ -1091,7 +1146,12 @@ Deno.test("addSubgraph: rejects nodes overlapping another explicit subgraph", ()
 
 Deno.test("addSubgraph: allows overlap with derived subgraphs", () => {
   const g = makeGraph([makeNode({ id: "A", executor: Executor.ADJUNCT })]);
-  const derived = computeSubgraphs(g, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const derived = computeSubgraphs(
+    g,
+    [],
+    Tier.T2,
+    SubgraphStrategy.INDEPENDENT,
+  );
   assertEquals(derived[0].derived, true);
   const result = addSubgraph(g, derived, {
     slug: "explicit",
@@ -1277,8 +1337,17 @@ Deno.test("addSubgraph: hierarchy via parentId", () => {
 
 Deno.test("serializeSubgraphBrief: produces valid markdown for adjunct subgraph", () => {
   const g = makeGraph([
-    makeNode({ id: "impl", executor: Executor.ADJUNCT, label: "Refactor handler" }),
-    makeNode({ id: "vc", executor: Executor.ADJUNCT, type: NodeType.VERIFY_COMPILE, label: "Compile check" }),
+    makeNode({
+      id: "impl",
+      executor: Executor.ADJUNCT,
+      label: "Refactor handler",
+    }),
+    makeNode({
+      id: "vc",
+      executor: Executor.ADJUNCT,
+      type: NodeType.VERIFY_COMPILE,
+      label: "Compile check",
+    }),
   ], [
     { from: "impl", to: "vc", type: EdgeType.DEPENDS_ON },
   ]);
@@ -1432,7 +1501,11 @@ Deno.test("computeWaves: ELICIT_GATE with DEPENDS_ON creates wave boundary", () 
         executor: Executor.LEAD,
         elicitPrompt: "Proceed with implementation?",
       }),
-      makeNode({ id: "impl1", type: NodeType.IMPLEMENTATION, executor: Executor.ADJUNCT }),
+      makeNode({
+        id: "impl1",
+        type: NodeType.IMPLEMENTATION,
+        executor: Executor.ADJUNCT,
+      }),
     ],
     [
       { from: "recon1", to: "eg1", type: EdgeType.DEPENDS_ON },
@@ -1528,7 +1601,11 @@ Deno.test("unsatisfiedDependencies: unsatisfied when MERGE_GATE source is MERGED
 Deno.test("unsatisfiedDependencies: empty when MERGE_GATE source is MERGED with prUrl", () => {
   const g = makeGraph(
     [
-      makeNode({ id: "A", status: NodeStatus.MERGED, prUrl: "https://github.com/o/r/pull/1" }),
+      makeNode({
+        id: "A",
+        status: NodeStatus.MERGED,
+        prUrl: "https://github.com/o/r/pull/1",
+      }),
       makeNode({ id: "B", status: NodeStatus.PENDING }),
     ],
     [{ from: "A", to: "B", type: EdgeType.MERGE_GATE }],
@@ -1591,7 +1668,12 @@ Deno.test("validate: detects FAILED source node as unsatisfiable", () => {
   );
   const result = validate(g);
   assertEquals(result.valid, false);
-  assertEquals(result.errors.some((e) => e.includes("Unsatisfiable") && e.includes("FAILED")), true);
+  assertEquals(
+    result.errors.some((e) =>
+      e.includes("Unsatisfiable") && e.includes("FAILED")
+    ),
+    true,
+  );
 });
 
 Deno.test("validate: passes when no FAILED sources exist", () => {
@@ -1679,6 +1761,65 @@ Deno.test("addSubgraph idempotency: same slug different failure policy returns e
     tier: Tier.T1,
     failurePolicy: SubgraphFailurePolicy.CONTINUE,
     gates: ["G"],
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("already exists"), true);
+});
+
+Deno.test("addSubgraph idempotency: same slug different gates set returns error", () => {
+  // Regression for cross-layer idempotency divergence: the server-side check
+  // previously omitted `gates`, so a re-add with a different gate composition
+  // could be reported as idempotent. The graph layer is the single authority
+  // and must reject differing gate sets.
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+    makeNode({ id: "C" }),
+  ]);
+  const first = addSubgraph(g, [], {
+    slug: "gates-test",
+    nodeIds: ["A", "B", "C"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    gates: ["A"],
+  });
+  assertEquals(first.ok, true);
+  const second = addSubgraph(g, [first.value!], {
+    slug: "gates-test",
+    nodeIds: ["A", "B", "C"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    gates: ["B"],
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("already exists"), true);
+});
+
+Deno.test("addSubgraph idempotency: same slug different parentId returns error", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
+  const parent = addSubgraph(g, [], {
+    slug: "parent-sg",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(parent.ok, true);
+  const first = addSubgraph(g, [parent.value!], {
+    slug: "child-sg",
+    nodeIds: ["B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    parentId: "parent-sg",
+  });
+  assertEquals(first.ok, true);
+  const second = addSubgraph(g, [parent.value!, first.value!], {
+    slug: "child-sg",
+    nodeIds: ["B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    // parentId omitted — no longer matches existing.
   });
   assertEquals(second.ok, false);
   assertEquals(second.error?.includes("already exists"), true);
@@ -2088,7 +2229,8 @@ Deno.test("computeSubgraphs: derived ID changes when own member set changes (M5 
     [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
   );
   const sgs1 = computeSubgraphs(g1, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
-  const ab = sgs1.find((s) => s.nodes.includes("A") && s.nodes.includes("B"))!.id;
+  const ab =
+    sgs1.find((s) => s.nodes.includes("A") && s.nodes.includes("B"))!.id;
 
   // Now only node A remains. Hash input changed — ID must differ.
   const g2 = makeGraph([
@@ -2097,7 +2239,11 @@ Deno.test("computeSubgraphs: derived ID changes when own member set changes (M5 
   const sgs2 = computeSubgraphs(g2, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
   const aOnly = sgs2.find((s) => s.nodes.includes("A"))!.id;
 
-  assertEquals(ab !== aOnly, true, "subgraph ID must change when member set changes");
+  assertEquals(
+    ab !== aOnly,
+    true,
+    "subgraph ID must change when member set changes",
+  );
   assertEquals(ab.startsWith("auto-"), true);
   assertEquals(aOnly.startsWith("auto-"), true);
 });

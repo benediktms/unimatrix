@@ -112,7 +112,7 @@ normalizes to `[0, 1]`.
       <bin range="4-6" value="0.7"/>
       <bin range="7+" value="1.0"/>
     </signal>
-    <signal name="cross_file_deps" weight="0.05">
+    <signal name="cross_file_deps" weight="0.025">
       <extract>Boolean: `file_path_count >= 2`.</extract>
       <bin value="0.0 (false)"/>
       <bin value="1.0 (true)"/>
@@ -123,7 +123,7 @@ normalizes to `[0, 1]`.
       <bin range="2" value="0.5"/>
       <bin range="3+" value="1.0"/>
     </signal>
-    <signal name="reversibility" weight="0.05">
+    <signal name="reversibility" weight="0.025">
       <extract>Boolean: contains `delete|drop|rm |force` (irreversible action).</extract>
       <bin value="0.0 (reversible)"/>
       <bin value="1.0 (irreversible)"/>

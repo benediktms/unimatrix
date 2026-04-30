@@ -25,7 +25,9 @@ only the procedure.
 
 Intents: `IMPLEMENT`, `INVESTIGATE`, `DIAGNOSE`, `ARCHITECT`, `REVIEW`,
 `REFACTOR`, `RESUME`. Tiers: `T1` → SELF, `T2` → INDEPENDENT, `T3` →
-COORDINATED. The full Intent × Tier dispatch matrix is in `AGENTS.md`.
+COORDINATED. Tier thresholds live in `src/rules/routing.md` § Tier
+Mapping; the per-tier dispatch pattern table is below in
+§ Protocol D: Wave Dispatch Patterns.
 
 ### Procedure
 
@@ -75,8 +77,15 @@ After init, every classified prompt enters the graph:
     <reference path="src/skills/trimatrix/SUBGRAPHS.md"/>
   </step>
   <step n="4" tool="mcp__unimatrix__compute_waves">
-    Validates the graph, computes topological waves, and auto-derives subgraphs
-    for any nodes not already claimed by an explicit subgraph.
+    Validates the graph and computes topological waves. Transitions the
+    machine to `plan_review`. On the first pass (`initializing`) this does
+    NOT auto-derive subgraphs — derivation runs at `finalize_plan`. On a
+    refinement pass (`refining`) `compute_waves` does auto-derive.
+  </step>
+  <step n="5" tool="mcp__unimatrix__finalize_plan">
+    Approve the wave plan and transition `plan_review` → `dispatching`.
+    Auto-derives subgraphs for any nodes not already claimed by an
+    explicit subgraph.
     <ids>
       <id form="sg-lead">Reserved for the lead subgraph.</id>
       <id form="auto-&lt;8-char-hash&gt;">Stable derived adjunct subgraph ID.</id>
@@ -85,7 +94,7 @@ After init, every classified prompt enters the graph:
       Inspect the derived/explicit partition before dispatch.
     </inspect>
   </step>
-  <step n="5">
+  <step n="6">
     Dispatch per subgraph: `LEAD` nodes executed directly; `ADJUNCT` subgraphs dispatched as agents.
   </step>
 </auto-graph-entry>
@@ -101,7 +110,7 @@ traverses directly.
   Gates and routed to the canonical intent.
 - All intents enter the graph. T1 enters with a minimal graph (1-2 nodes,
   SELF strategy).
-- The full Intent × Tier dispatch matrix lives in `AGENTS.md`.
+- Per-tier dispatch patterns are defined in § Protocol D below.
 
 ### RESUME Flow
 

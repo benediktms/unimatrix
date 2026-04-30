@@ -163,10 +163,10 @@ in the designation context so adjuncts can be tracked per-node.
     contract node that must complete before implementation nodes can start.
   </when>
   <action>
-    Declare explicit subgraphs via `mcp__unimatrix__add_subgraph` before
-    `compute_waves` (Step 4d). Express the coordination contract
-    (`exports`, `imports`, `dependsOn`) explicitly rather than relying on
-    auto-derivation.
+    Declare explicit subgraphs via `mcp__unimatrix__add_subgraph` after
+    `add_node`/`add_edge` and before `compute_waves` (Step 4e). Express the
+    coordination contract (`exports`, `imports`, `dependsOn`) explicitly
+    rather than relying on auto-derivation.
   </action>
   <verify>
     Call `mcp__unimatrix__list_subgraphs` after `compute_waves` to confirm

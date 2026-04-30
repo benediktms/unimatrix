@@ -72,9 +72,10 @@ sufficient.
 | `auto-<8-char-hash>` | `computeSubgraphs`            | Stable while member set is unchanged      |
 | User slug            | `add_subgraph` caller         | Yes — slug becomes the ID for the session |
 
-**Slug validation:** `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$`. Must not be
-`sg-lead` and must not start with `auto-`. Slugs are case-sensitive and
-lowercase-only.
+**Slug validation:** `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` — 1–41 characters,
+must start with a lowercase letter, end with a lowercase letter or digit,
+inner chars from `[a-z0-9-]`. Must not equal `sg-lead` and must not start
+with `auto-`. Slugs are case-sensitive and lowercase-only.
 
 **Hash-input rule:** The hash is computed from the sorted node IDs of the
 derived component (`hashNodeSet` in `graph.ts`). Adding or removing a _sibling_
