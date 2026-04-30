@@ -26,7 +26,10 @@ All trimatrix cross-repo executions follow this state machine:
 stateDiagram-v2
     [*] --> initializing: init()
 
-    initializing --> dispatching: compute_waves()\n(plan_approved)
+    initializing --> plan_review: compute_waves()\n(plan_submitted event)
+
+    plan_review --> dispatching: finalize_plan()\n(plan_finalized event)
+    plan_review --> plan_review: revise_plan()\n(plan_revision_requested event)
 
     dispatching --> dispatching: wave_dispatched\nnode_completed\nwave_completed
 
@@ -43,6 +46,7 @@ stateDiagram-v2
     failed --> dispatching: retry_wave()
 
     initializing --> cancelled: cancel()
+    plan_review --> cancelled: cancel()
     dispatching --> cancelled: cancel()
     gate_halted --> cancelled: cancel()
     refining --> cancelled: cancel()
@@ -53,7 +57,8 @@ stateDiagram-v2
 ```
 
 **State descriptions:**
-- **`initializing`** — Graph created, no waves computed yet. User must approve the plan before proceeding.
+- **`initializing`** — Graph created, no waves computed yet. Call `compute_waves` to transition to plan review.
+- **`plan_review`** — Wave plan computed and ready for user review. Call `finalize_plan` to begin dispatch, or `revise_plan` to iterate on the plan.
 - **`dispatching`** — Waves are executing. drones are active or completed. Machine loops through `next_wave()`, dispatches, monitors nodes.
 - **`gate_halted`** — A wave with `hasMergeGate: true` completed. External PRs must be merged before proceeding. Machine waits for `clear_gate()` events.
 - **`failed`** — One or more nodes failed. User chooses: retry failed nodes, invoke `/diagnose`, or abandon.
@@ -217,12 +222,18 @@ interface Node {
 }
 ```
 
-**Status lifecycle:**
-- `pending` → `active` (node dispatched to drone)
-- `active` → `pr_created` (drone completes, PR created)
-- `pr_created` → `merged` (PR merged externally)
-- `failed` (drone reports failure)
-- `blocked` (merge gate: waiting for upstream PR merge)
+**Status lifecycle (`NodeStatus`):**
+- `PENDING` → `ACTIVE` (node dispatched to drone)
+- `ACTIVE` → `PR_CREATED` (drone completes, PR created)
+- `PR_CREATED` → `MERGED` (PR merged externally)
+- `DONE` (node closed without a PR)
+- `FAILED` (drone reports failure)
+- `BLOCKED` (ELICIT_GATE pending elicitation response)
+
+**Readiness axis (`ReadinessStatus`):** A separate orthogonal field tracking topology eligibility, independent of `NodeStatus`:
+- `READY` — every incoming dependency edge is satisfied; node is eligible for dispatch when `PENDING`.
+- `BLOCKED` — at least one incoming dependency is unsatisfied; recomputed automatically by `recomputeReadiness`.
+- `INVALIDATED` — the node's contract changed via refinement after it was computed; explicit re-dispatch required.
 
 ### Edge Types
 
@@ -232,22 +243,27 @@ interface Node {
 interface Edge {
   from: string        // Source node ID
   to: string          // Target node ID
-  type: "merge_gate" | "stacked"
+  type: "MERGE_GATE" | "STACKED" | "DEPENDS_ON"
 }
 ```
 
-**`merge_gate` edges** (cross-repo dependencies):
+**`MERGE_GATE` edges** (cross-repo dependencies):
 - Target cannot activate until source is `merged`.
 - Creates wave boundary — target belongs to a later wave.
 - Use when downstream repo depends on released API from upstream repo.
 - Example: `api-contracts` → `service-impl` (service depends on API contract).
 
-**`stacked` edges** (intra-repo sequencing):
+**`STACKED` edges** (intra-repo sequencing):
 - Target branch stacks on top of source branch within the same repo.
 - Does NOT create wave boundary — both nodes can be in the same wave.
 - Target node's worktree is created from source node's branch, not main.
 - Use for sequential changes within one repo.
 - Example: `service-impl` → `service-tests` (tests stack on implementation).
+
+**`DEPENDS_ON` edges** (logical dependency, no merge gate):
+- Target cannot activate until source reaches a terminal-OK state (`DONE`, `MERGED`, or `PR_CREATED`).
+- Does NOT create a wave boundary — the engine may place both nodes in the same wave if topology allows.
+- Use when one node logically depends on another but does not require the source to be fully merged before the target branch is created.
 
 ### Example Topology
 
@@ -427,13 +443,13 @@ Checkpoints are persisted after:
 
 ### Version Compatibility
 
-- Current version: `1.2.0`
-- Deserialization enforces version match — mismatched versions abort.
-- Future versions (1.3.0+) will implement forward-compatible migration logic.
+- Current version: `2.6.0`
+- Deserialization enforces that the version appears in the supported-versions set — unsupported versions abort with a clear error.
+- Migration is implemented across the full 1.0.0→2.6.0 ladder. Each version adds backward-compat defaults on deserialize (e.g., `refinementHistory` for 1.0.0, `repos` for pre-1.2.0, `subgraphs` for pre-2.0.0, `eventLog` for pre-2.6.0).
 
 ### Refinement History
 
-*Planned for 1.1.0:* Checkpoints will track refinement history:
+Checkpoints track a live `refinementHistory` field:
 
 ```typescript
 interface Checkpoint {
@@ -447,7 +463,7 @@ interface Checkpoint {
 }
 ```
 
-This enables audit trails and partial rollback if needed.
+Each refinement operation appends an entry. This enables audit trails of scope expansions and is present on all checkpoints from version 1.1.0 onward (1.0.0 checkpoints receive an empty array on deserialize).
 
 ---
 
@@ -523,20 +539,39 @@ The UNIMATRIX MCP server exposes the following tools. All require an initialized
 | `init` | Initialize empty checkpoint in `initializing` state with repo metadata. |
 | `add_repo` | Add repo to existing checkpoint. No-op if already present. |
 | `add_node` | Add node to graph (id, repo, type, label, worktreeBranch, stackedOn?). |
-| `add_edge` | Add directed edge: `from`, `to`, `type` (merge_gate \| stacked). |
+| `add_edge` | Add directed edge: `from`, `to`, `type` (MERGE_GATE \| STACKED \| DEPENDS_ON). |
 | `validate` | Check graph integrity: edge refs, stackedOn refs, cycle detection (Kahn). |
-| `compute_waves` | Compute topological waves, transition to `dispatching`. Validate first. |
-| `dispatch_wave` | Activate all nodes in a wave, set currentWaveId. |
+| `compute_waves` | Compute topological waves, transition to `plan_review`. Validate first. |
+| `finalize_plan` | Transition from `plan_review` to `dispatching` after user review. |
+| `revise_plan` | Request plan revision while in `plan_review`; remains in `plan_review`. |
+| `refine` | Enter `refining` state to add nodes/edges/repos mid-execution. Call `compute_waves` when done. |
+| `compute_subgraphs` | Derive subgraph partitions from the current node graph. |
+| `add_subgraph` | Declare an explicit subgraph with a stable user-supplied slug, policies, and coordination contracts. |
+| `list_subgraphs` | List all subgraphs (derived and explicit) with their current status. |
+| `get_subgraph` | Return full details for a single subgraph by ID. |
+| `dispatch_wave` | Activate all nodes in a wave, set currentWaveId. Consults brain for external blockers when nodes have taskIds. |
 | `complete_node` | Mark node complete. Optionally record prUrl and prNumber. |
+| `update_node` | Update mutable fields on a node (label, worktreeBranch, taskId, etc.). |
+| `close_node` | Close a node and its associated brain task. |
 | `fail_node` | Mark node failed with human-readable reason. |
 | `clear_gate` | Clear merge gate on blocked node. Auto-advances to `dispatching` if all gates cleared. |
 | `next_wave` | Return next ready wave, or null with reason. |
+| `next_frontier` | Return all PENDING+READY nodes across wave boundaries (advisory; `dispatch_wave` is authoritative). |
+| `add_external_blocker` | Add an external blocker to the brain task associated with a graph node. |
+| `resolve_external_blocker` | Resolve an external blocker on the brain task associated with a graph node. |
 | `status` | Return full state dump: machineState, nodes, edges, waves, waveHistory. |
-| `save_checkpoint` | Serialize checkpoint to JSON string for persistence. |
+| `rename_session` | Update the session label of the active in-memory graph. |
+| `save_checkpoint` | Serialize checkpoint to JSON string for persistence. Optionally captures runtime state files. |
 | `restore_checkpoint` | Deserialize JSON and load as current checkpoint. |
 | `cancel` | Cancel execution. Transitions to cancelled state. Accepts optional reason. |
+| `complete` | Complete execution. Transitions to completed state and persists a final checkpoint. |
 | `archive` | Archive a checkpoint artifact. Requires completed or cancelled state. |
 | `list_sessions` | List all trimatrix sessions grouped by session ID. |
+| `reflect_session` | Gather session episodes and return reflection source material for synthesis. |
+| `designate` | Generate Borg-style designations for one or more agents. |
+| `resolve_brains` | Resolve brain references (ID, name, alias, path) to registry entries. Auto-initializes unregistered paths. |
+| `brain_id` | Return the brain ID and name for the current working directory or a specified path. |
+| `brain_link` | Link a directory as an additional root for an existing brain (e.g., after creating a worktree). |
 
 ---
 

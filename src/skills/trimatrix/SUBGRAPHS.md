@@ -160,12 +160,19 @@ type ExternalGate = {
 node statuses via `subgraphOutcome` in `graph.ts`.
 
 **External gates** allow a subgraph to express "gated on upstream PR / Jira
-ticket" without injecting a placeholder node into the graph. In the current
-trimatrix implementation, external gates are **always unresolved** — the engine
-has no pathway to query external systems. This is intentional: the gate remains
-open until UNM-1b7.7 (brain consultation for external blockers) lands. Until
-then, use external gates to make the dependency explicit and visible in
-`list_subgraphs` output, but plan to clear them manually.
+ticket" without injecting a placeholder node into the graph. External gates
+carry `{ kind: "external", source, externalId, url?, taskId? }` and are
+resolved via brain consultation when `taskId` is supplied.
+
+Resolution flow: the caller declares a GATED subgraph with one or more external
+gates → `dispatch_wave` consults the brain via `getExternalBlockers` →
+unresolved blockers stamp `Node.externalBlockers` and set
+`ReadinessStatus.BLOCKED` → resolution clears the gate and advances readiness.
+
+External gates without a `taskId` cannot be resolved via brain consultation and
+remain conservatively unresolved. The synchronous `subgraphOutcome` function
+also treats all external gates as unresolved; use `subgraphOutcomeWithBlockers`
+at the async dispatch boundary for snapshot-aware resolution.
 
 ---
 
@@ -197,9 +204,11 @@ then, use external gates to make the dependency explicit and visible in
 <resume-contract>
   <invariant name="explicit-survives-roundtrip">
     Explicit subgraphs survive checkpoint serialize→deserialize unchanged.
-    The `subgraph_added` event carries the full subgraph payload, so
-    event-log replay (planned for UNM-1b7.3) can reconstruct `cp.subgraphs`
-    without re-calling `add_subgraph`.
+    The `subgraph_added` event carries the full subgraph payload. Event log
+    persistence is implemented in `state.ts` via `replay()`, `appendEvent()`,
+    and the `eventLog` field. Replay is append-only and idempotent on
+    re-application of the same event sequence, so `cp.subgraphs` is
+    reconstructed without re-calling `add_subgraph`.
   </invariant>
   <invariant name="derived-stable-under-recompute">
     Derived subgraphs are recomputed on restore via `compute_subgraphs`.

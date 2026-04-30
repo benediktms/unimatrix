@@ -139,7 +139,9 @@ export function validateDispatch(
 
   return {
     ok: false,
-    error: `Node ${nodeId} requires ${result.missing.join(", ")}; dispatcher lacks these capabilities`,
+    error: `Node ${nodeId} requires ${
+      result.missing.join(", ")
+    }; dispatcher lacks these capabilities`,
   };
 }
 
@@ -1527,10 +1529,14 @@ const TERMINAL_OK: NodeStatus[] = [
  * if you want failures to be tolerated alongside ANY completion.
  *
  * **GATED + external gates**: gates may be node IDs or external gate objects
- * (see `SubgraphGate`). External gates have no in-process resolver — they are
- * treated as **always unresolved** until UNM-1b7.7 integrates external_blockers.
- * A subgraph with any unresolved external gates will never reach `"completed"` via
- * GATED, and BEST_EFFORT will always trip on an external gate as failed.
+ * (see `SubgraphGate`). This function is the **synchronous variant** — it
+ * conservatively treats every external gate as unresolved, making it safe for
+ * in-loop callers that have no async boundary. A subgraph with any external
+ * gates will therefore never reach `"completed"` via GATED in this variant, and
+ * BEST_EFFORT will always trip on an external gate as failed.
+ *
+ * For the snapshot-aware async-boundary variant that resolves external gates
+ * against pre-fetched blocker counts, see `subgraphOutcomeWithBlockers`.
  *
  * Failure policy is checked first; if it has tripped, the subgraph is failed.
  * Otherwise, completion policy is evaluated against "settled" nodes — a node
@@ -1705,7 +1711,9 @@ export function subgraphOutcomeWithBlockers(
       break;
     case SubgraphCompletionPolicy.GATED: {
       if (hasUnresolvedExternalGates) break;
-      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) {
+        return "completed";
+      }
       break;
     }
   }
@@ -1920,7 +1928,9 @@ export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
   }
 
   // Sort by (wave asc, nodeId asc) for determinism
-  entries.sort((a, b) => a.wave !== b.wave ? a.wave - b.wave : a.nodeId.localeCompare(b.nodeId));
+  entries.sort((a, b) =>
+    a.wave !== b.wave ? a.wave - b.wave : a.nodeId.localeCompare(b.nodeId)
+  );
 
   return entries;
 }

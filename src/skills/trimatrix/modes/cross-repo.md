@@ -80,7 +80,7 @@ stacked for intra-repo).
 4b. add_node for each planned node
 4c. add_edge for each dependency
 4d. validate — abort if invalid
-4e. compute_waves — transitions to dispatching, returns wave plan
+4e. compute_waves — transitions to plan_review, returns wave plan; finalize_plan transitions to dispatching after user review
 
 ### Step 4f: Session Naming Gate
 

@@ -152,7 +152,7 @@ normalizes to `[0, 1]`.
   </category>
 </signals>
 
-Sum of weights = 1.0. The remaining 0.025 is reserved as headroom for tuning.
+Sum of enumerated weights = 0.975. Reserved headroom = 0.025. Combined budget = 1.0.
 
 ## Scoring
 
