@@ -5,7 +5,7 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { Capabilities, CoordinationContract, Edge, Graph, Node, Requirements, Subgraph, SubgraphGate, Wave } from "./types.ts";
+import type { Capabilities, CoordinationContract, Edge, FrontierEntry, Graph, Node, Requirements, Subgraph, SubgraphGate, Wave } from "./types.ts";
 import {
   CoordinationMode,
   EdgeType,
@@ -1681,4 +1681,92 @@ export function parallelNodesInWave(
   }
 
   return batches;
+}
+
+// ---------------------------------------------------------------------------
+// Continuous frontier scheduling (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a lookup map from node ID → wave number.
+ *
+ * Nodes absent from every wave are not included in the map.
+ */
+export function nodeToWave(graph: Graph, waves: Wave[]): Map<string, number> {
+  void graph; // graph param is reserved for future node-existence validation
+  const result = new Map<string, number>();
+  for (const wave of waves) {
+    for (const nodeId of wave.nodes) {
+      result.set(nodeId, wave.id);
+    }
+  }
+  return result;
+}
+
+/**
+ * Return the continuous frontier: every node that is simultaneously
+ * `NodeStatus.PENDING` and `ReadinessStatus.READY`, regardless of which wave
+ * it belongs to.
+ *
+ * This unlocks cross-wave parallelism: when a later-wave node's dependencies
+ * clear before earlier-wave nodes finish, it appears on the frontier and can
+ * be dispatched immediately — no wave-serialization barrier.
+ *
+ * Entries are sorted by (wave asc, nodeId asc) for deterministic output.
+ * The wave number is carried purely as a dispatch hint; consumers may group,
+ * filter, or ignore it.
+ *
+ * Nodes whose `readinessStatus` is undefined are treated as `READY` (backwards
+ * compatibility with pre-2.5.0 checkpoints that lack the field).
+ */
+export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
+  const waveOf = nodeToWave(graph, waves);
+  const entries: FrontierEntry[] = [];
+
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    if (node.status !== NodeStatus.PENDING) continue;
+    // Treat undefined readinessStatus as READY (pre-2.5.0 compat)
+    const ready = node.readinessStatus === undefined ||
+      node.readinessStatus === ReadinessStatus.READY;
+    if (!ready) continue;
+    const wave = waveOf.get(nodeId) ?? 0;
+    entries.push({ nodeId, wave });
+  }
+
+  // Sort by (wave asc, nodeId asc) for determinism
+  entries.sort((a, b) => a.wave !== b.wave ? a.wave - b.wave : a.nodeId.localeCompare(b.nodeId));
+
+  return entries;
+}
+
+/**
+ * Return one dispatch batch per wave that has at least one frontier-eligible
+ * node, across all waves simultaneously (continuous-frontier alternative to
+ * `nextWave`).
+ *
+ * Each batch contains the wave number and the IDs of PENDING+READY nodes in
+ * that wave. Batches are ordered by wave number (ascending). Empty waves are
+ * omitted.
+ *
+ * The `currentWaveId` parameter is retained for API symmetry with `nextWave`
+ * and caller context; this function does NOT filter by it — the continuous
+ * frontier is wave-order-independent.
+ */
+export function nextFrontierBatch(
+  graph: Graph,
+  waves: Wave[],
+  _currentWaveId: number | null,
+): { wave: number; nodeIds: string[] }[] {
+  const frontier = currentFrontier(graph, waves);
+  if (frontier.length === 0) return [];
+
+  // Group entries by wave, preserving sort order from currentFrontier
+  const byWave = new Map<number, string[]>();
+  for (const entry of frontier) {
+    if (!byWave.has(entry.wave)) byWave.set(entry.wave, []);
+    byWave.get(entry.wave)!.push(entry.nodeId);
+  }
+
+  // Return as array of {wave, nodeIds}, wave-ascending (already ordered by insertion)
+  return [...byWave.entries()].map(([wave, nodeIds]) => ({ wave, nodeIds }));
 }

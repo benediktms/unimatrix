@@ -19,8 +19,11 @@ import {
   computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
+  currentFrontier,
   failNode,
+  nextFrontierBatch,
   nextWave,
+  nodeToWave,
   parallelNodesInWave,
   serializeSubgraphBrief,
   subgraphOutcome,
@@ -35,6 +38,7 @@ import {
   Executor,
   NodeStatus,
   NodeType,
+  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
   SubgraphStrategy,
@@ -2175,4 +2179,116 @@ Deno.test("validateDispatch: returns ok:true when all requirements are satisfied
   const caps: Capabilities = { repos: ["*"], canWrite: true };
   const result = validateDispatch(graph, "n2", caps);
   assertEquals(result.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// currentFrontier (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+Deno.test("currentFrontier: empty graph returns []", () => {
+  const g = makeGraph([]);
+  const result = currentFrontier(g, []);
+  assertEquals(result, []);
+});
+
+Deno.test("currentFrontier: returns only PENDING+READY nodes — excludes ACTIVE, DONE, BLOCKED, FAILED", () => {
+  const g = makeGraph([
+    makeNode({ id: "pending", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "active", status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "done", status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "failed", status: NodeStatus.FAILED, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "blocked_rs", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+  ]);
+  const waves: Wave[] = [{ id: 1, nodes: ["pending", "active", "done", "failed", "blocked_rs"], hasMergeGate: false }];
+  const result = currentFrontier(g, waves);
+  assertEquals(result.length, 1);
+  assertEquals(result[0].nodeId, "pending");
+  assertEquals(result[0].wave, 1);
+});
+
+Deno.test("currentFrontier: returns nodes from multiple waves when deps are clear", () => {
+  // wave 1: node A (PENDING+READY), wave 2: node B (PENDING+READY — deps satisfied)
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+  ]);
+  const waves: Wave[] = [
+    { id: 1, nodes: ["A"], hasMergeGate: false },
+    { id: 2, nodes: ["B"], hasMergeGate: false },
+  ];
+  const result = currentFrontier(g, waves);
+  assertEquals(result.length, 2);
+  assertEquals(result[0], { nodeId: "A", wave: 1 });
+  assertEquals(result[1], { nodeId: "B", wave: 2 });
+});
+
+Deno.test("currentFrontier: wave-3 node whose deps are satisfied appears even when wave-1 is incomplete", () => {
+  // Locks the contract: frontier crosses wave boundaries.
+  // Wave 1: nodeA is still PENDING (not done). Wave 3: nodeC is PENDING+READY (deps on nodeB which is DONE).
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+      makeNode({ id: "B", status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
+      makeNode({ id: "C", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    ],
+    [{ from: "B", to: "C", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves: Wave[] = [
+    { id: 1, nodes: ["A"], hasMergeGate: false },
+    { id: 2, nodes: ["B"], hasMergeGate: true },
+    { id: 3, nodes: ["C"], hasMergeGate: false },
+  ];
+  const result = currentFrontier(g, waves);
+  // Both A (wave 1) and C (wave 3) are PENDING+READY — both appear
+  assertEquals(result.length, 2);
+  assertEquals(result[0], { nodeId: "A", wave: 1 });
+  assertEquals(result[1], { nodeId: "C", wave: 3 });
+});
+
+Deno.test("currentFrontier: deterministic order across repeated calls", () => {
+  const g = makeGraph([
+    makeNode({ id: "Z", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "M", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+  ]);
+  const waves: Wave[] = [{ id: 1, nodes: ["Z", "A", "M"], hasMergeGate: false }];
+  const r1 = currentFrontier(g, waves);
+  const r2 = currentFrontier(g, waves);
+  // Both calls must return the same order
+  assertEquals(r1, r2);
+  // Within same wave, nodes sorted by nodeId asc
+  assertEquals(r1.map((e) => e.nodeId), ["A", "M", "Z"]);
+});
+
+// ---------------------------------------------------------------------------
+// nextFrontierBatch (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+Deno.test("nextFrontierBatch: groups by wave and returns all eligible waves at once", () => {
+  // Wave 1: A (PENDING+READY), Wave 2: B (PENDING+READY), Wave 3: C (PENDING+BLOCKED)
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "C", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+  ]);
+  const waves: Wave[] = [
+    { id: 1, nodes: ["A"], hasMergeGate: false },
+    { id: 2, nodes: ["B"], hasMergeGate: false },
+    { id: 3, nodes: ["C"], hasMergeGate: false },
+  ];
+  const result = nextFrontierBatch(g, waves, null);
+  // Only waves 1 and 2 have eligible nodes
+  assertEquals(result.length, 2);
+  assertEquals(result[0], { wave: 1, nodeIds: ["A"] });
+  assertEquals(result[1], { wave: 2, nodeIds: ["B"] });
+});
+
+Deno.test("nextFrontierBatch: returns [] when no PENDING+READY nodes exist", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
+    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+  ]);
+  const waves: Wave[] = [{ id: 1, nodes: ["A", "B"], hasMergeGate: false }];
+  const result = nextFrontierBatch(g, waves, 1);
+  assertEquals(result, []);
 });

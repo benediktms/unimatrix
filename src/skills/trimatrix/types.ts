@@ -232,6 +232,17 @@ export interface Edge {
 }
 
 /**
+ * A single entry in the continuous frontier — a PENDING+READY node with its
+ * wave membership attached for consumer batching and UI purposes.
+ */
+export interface FrontierEntry {
+  /** Node identifier. */
+  nodeId: string;
+  /** Wave number the node belongs to. */
+  wave: number;
+}
+
+/**
  * The full directed acyclic graph of nodes and edges for one trimatrix execution.
  */
 export interface Graph {
