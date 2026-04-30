@@ -2207,6 +2207,7 @@ server.tool(
         id,
         {
           status: node.status,
+          readinessStatus: node.readinessStatus ?? "READY",
           repo: node.repo,
           label: node.label,
           type: node.type,

@@ -838,6 +838,113 @@ Deno.test("deserialize: pre-2.4.0 subgraphs receive default policies and derived
   assertEquals(sg.failurePolicy, "FAIL_FAST");
 });
 
+Deno.test("deserialize: pre-2.5.0 nodes receive READY default and recomputed readiness", () => {
+  // Two-node chain with DEPENDS_ON. Pre-2.5.0 had no readinessStatus field.
+  // After deserialize: node1 has no incoming deps → READY; node2 depends on
+  // PENDING node1 → BLOCKED (recomputed from edge satisfaction).
+  const raw = {
+    version: "2.4.0",
+    machineState: "dispatching",
+    graph: {
+      nodes: {
+        n1: {
+          id: "n1",
+          type: "IMPLEMENTATION",
+          label: "first",
+          status: "PENDING",
+          executor: "LEAD",
+        },
+        n2: {
+          id: "n2",
+          type: "IMPLEMENTATION",
+          label: "second",
+          status: "PENDING",
+          executor: "LEAD",
+        },
+      },
+      edges: [{ from: "n1", to: "n2", type: "DEPENDS_ON" }],
+    },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    episodeIds: [],
+    subgraphs: [],
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.graph.nodes.n1.readinessStatus, "READY");
+  assertEquals(cp.graph.nodes.n2.readinessStatus, "BLOCKED");
+});
+
+Deno.test("transition: node_completed recomputes readiness for downstream nodes", () => {
+  // Same chain. Complete n1 → n2's readiness should flip BLOCKED → READY.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2"),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+  // Pre-condition: n2 should be BLOCKED because n1 is PENDING.
+  assertEquals(cp.graph.nodes.n2.readinessStatus, "BLOCKED");
+
+  // Transition n1 to dispatching state then complete it.
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, { type: "node_completed", nodeId: "n1" });
+
+  assertEquals(next.graph.nodes.n2.readinessStatus, "READY");
+});
+
+Deno.test("transition: node_failed marks downstream nodes as still BLOCKED (not invalidated)", () => {
+  // Failure should NOT clear downstream readiness — they remain BLOCKED
+  // because n1 has not reached terminal-OK. INVALIDATED is reserved for
+  // refinement, not for failure propagation.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2"),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, { type: "node_failed", nodeId: "n1", reason: "boom" });
+
+  assertEquals(next.graph.nodes.n1.status, "FAILED");
+  assertEquals(next.graph.nodes.n2.readinessStatus, "BLOCKED");
+});
+
+Deno.test("recomputeReadiness: preserves INVALIDATED across automatic recompute", () => {
+  // INVALIDATED is set explicitly by refinement and must survive any
+  // status-changing event — only re-dispatch clears it back to READY.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2", { readinessStatus: "INVALIDATED" } as never),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, { type: "node_completed", nodeId: "n1" });
+
+  // n1 completed → in any other case n2 would auto-flip to READY,
+  // but INVALIDATED is preserved.
+  assertEquals(next.graph.nodes.n2.readinessStatus, "INVALIDATED");
+});
+
 Deno.test("deserialize: 2.3.0 checkpoint preserves existing episodeIds", () => {
   const raw = {
     version: "2.3.0",
@@ -886,7 +993,7 @@ Deno.test("serialize/deserialize: round trip preserves intent, tier, subgraphStr
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.4.0");
+  assertEquals(restored.version, "2.5.0");
 });
 
 // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import {
   Executor,
   NodeStatus,
   NodeType,
+  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
   SubgraphStrategy,
@@ -280,6 +281,44 @@ export interface UnsatisfiedDependency {
 }
 
 /**
+ * Recompute the topology `readinessStatus` for every node in the graph.
+ *
+ * - A node with no unsatisfied incoming deps becomes `READY`.
+ * - A node with at least one unsatisfied incoming dep becomes `BLOCKED`.
+ * - Nodes already marked `INVALIDATED` are preserved as-is — invalidation is
+ *   set explicitly by refinement code and only cleared by re-dispatch, never
+ *   by automatic recompute.
+ *
+ * This is the topology axis (orthogonal to `NodeStatus`). The execution layer
+ * (`compute_waves`, `dispatch_wave`) reads this to decide whether a `PENDING`
+ * node is actually claimable.
+ *
+ * Returns a new `Graph` value — pure function, no mutation.
+ */
+export function recomputeReadiness(graph: Graph): Graph {
+  const updatedNodes: Record<string, Node> = {};
+  let changed = false;
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (node.readinessStatus === ReadinessStatus.INVALIDATED) {
+      updatedNodes[id] = node;
+      continue;
+    }
+    const unsatisfied = unsatisfiedDependencies(graph, id);
+    const next = unsatisfied.length === 0
+      ? ReadinessStatus.READY
+      : ReadinessStatus.BLOCKED;
+    if (node.readinessStatus !== next) {
+      updatedNodes[id] = { ...node, readinessStatus: next };
+      changed = true;
+    } else {
+      updatedNodes[id] = node;
+    }
+  }
+  if (!changed) return graph;
+  return { ...graph, nodes: updatedNodes };
+}
+
+/**
  * Return all unsatisfied incoming dependencies for a node.
  * Empty array means all dependencies are satisfied.
  */
@@ -513,11 +552,18 @@ export function addNode(
     }
   }
 
+  // Backfill readinessStatus default for callers that haven't migrated to
+  // the 2.5.0 schema yet (`undefined` → `READY`). The next `recomputeReadiness`
+  // pass corrects it based on actual edge satisfaction.
+  const nodeWithReadiness: Node = node.readinessStatus !== undefined
+    ? node
+    : { ...node, readinessStatus: ReadinessStatus.READY };
+
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: { ...graph.nodes, [node.id]: node },
+      nodes: { ...graph.nodes, [node.id]: nodeWithReadiness },
     },
   };
 }

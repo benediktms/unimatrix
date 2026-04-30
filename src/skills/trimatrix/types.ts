@@ -30,9 +30,40 @@ export enum NodeStatus {
   ACTIVE = "ACTIVE",
   PR_CREATED = "PR_CREATED",
   MERGED = "MERGED",
+  /**
+   * @deprecated as of 2.5.0 — execution-vs-topology concerns are split into
+   * `NodeStatus` (execution lifecycle) and `ReadinessStatus` (topology
+   * eligibility). Existing usage of `BLOCKED` is preserved for ELICIT_GATE
+   * pending elicitation; new code should set `readinessStatus` instead and
+   * use `executionStatus` for actual execution lifecycle. Will be removed
+   * once all call sites migrate.
+   */
   BLOCKED = "BLOCKED",
   FAILED = "FAILED",
   DONE = "DONE",
+}
+
+/**
+ * Readiness state — the topology-eligibility axis of a node, orthogonal to
+ * `NodeStatus` (execution lifecycle).
+ *
+ * - `READY` — every incoming dependency edge is satisfied. Eligible for
+ *   dispatch when `NodeStatus` is `PENDING`.
+ * - `BLOCKED` — at least one incoming dependency is unsatisfied (source node
+ *   is not in a terminal-OK state, or carries an unresolved external blocker).
+ *   Recomputed automatically on every state transition.
+ * - `INVALIDATED` — the node's contract was changed via `refine` after it had
+ *   been computed; explicit re-dispatch is required to clear back to `READY`.
+ *   Set explicitly by refinement code; never auto-cleared.
+ *
+ * A node can be `ACTIVE` (executing) and `INVALIDATED` (topology says it's
+ * stale) simultaneously. The single `NodeStatus` enum cannot express that;
+ * the orthogonal axis can.
+ */
+export enum ReadinessStatus {
+  READY = "READY",
+  BLOCKED = "BLOCKED",
+  INVALIDATED = "INVALIDATED",
 }
 
 export enum EdgeType {
@@ -124,6 +155,20 @@ export interface Node {
   stackedOn?: string;
   /** Current execution status of this node. */
   status: NodeStatus;
+  /**
+   * Topology-eligibility axis, orthogonal to `status`.
+   * - `READY` (default) — incoming dependencies satisfied; eligible for dispatch.
+   * - `BLOCKED` — at least one incoming dependency unsatisfied; recomputed automatically.
+   * - `INVALIDATED` — node's contract changed via refinement; explicit re-dispatch required.
+   *
+   * Introduced in checkpoint version 2.5.0. Pre-2.5.0 checkpoints default to
+   * `READY` on deserialize; subsequent transitions recompute the field.
+   *
+   * Optional at the type level so callers constructing fresh `Node` literals
+   * (MCP `add_node` tool, test fixtures) do not have to thread the default.
+   * `addNode`, `createCheckpoint`, and `recomputeReadiness` backfill on entry.
+   */
+  readinessStatus?: ReadinessStatus;
   /** URL of the pull request created for this node, if any. */
   prUrl?: string;
   /** Number of the pull request created for this node, if any. */

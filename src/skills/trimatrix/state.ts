@@ -9,16 +9,17 @@ import {
   Executor,
   MachineState,
   NodeStatus,
+  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
 } from "./types.ts";
-import { computeWaves } from "./graph.ts";
+import { computeWaves, recomputeReadiness } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.4.0";
+const VERSION = "2.5.0";
 
 /** All checkpoint versions this runtime can load. */
 const SUPPORTED_VERSIONS = new Set([
@@ -31,6 +32,7 @@ const SUPPORTED_VERSIONS = new Set([
   "2.2.0",
   "2.3.0",
   "2.4.0",
+  "2.5.0",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -54,11 +56,25 @@ export function createCheckpoint(
   },
 ): Checkpoint {
   const now = new Date().toISOString();
+  // Defensive: callers may pass a graph whose nodes lack `readinessStatus`
+  // (older fixtures, manually-constructed test graphs). Backfill `READY` and
+  // recompute against edge satisfaction so the checkpoint starts coherent.
+  const initialGraph = recomputeReadiness({
+    ...graph,
+    nodes: Object.fromEntries(
+      Object.entries(graph.nodes).map(([id, node]) => [
+        id,
+        node.readinessStatus !== undefined
+          ? node
+          : { ...node, readinessStatus: ReadinessStatus.READY },
+      ]),
+    ),
+  });
   return {
     version: VERSION,
     machineState: MachineState.INITIALIZING,
-    graph,
-    waves: computeWaves(graph),
+    graph: initialGraph,
+    waves: computeWaves(initialGraph),
     currentWaveId: null,
     repos,
     waveHistory: [],
@@ -284,15 +300,16 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         ...node,
         status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
       };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
       return {
         ...checkpoint,
-        graph: {
-          ...checkpoint.graph,
-          nodes: {
-            ...checkpoint.graph.nodes,
-            [event.nodeId]: updatedNode,
-          },
-        },
+        graph: nextGraph,
         updatedAt: now,
       };
     }
@@ -305,15 +322,16 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         status: NodeStatus.FAILED,
         failureReason: event.reason,
       };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
       return {
         ...checkpoint,
-        graph: {
-          ...checkpoint.graph,
-          nodes: {
-            ...checkpoint.graph.nodes,
-            [event.nodeId]: updatedNode,
-          },
-        },
+        graph: nextGraph,
         updatedAt: now,
       };
     }
@@ -360,7 +378,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // Mark the node as active to clear its blocked state
       const node = checkpoint.graph.nodes[event.nodeId];
       const updatedGraph = node
-        ? {
+        ? recomputeReadiness({
           ...checkpoint.graph,
           nodes: {
             ...checkpoint.graph.nodes,
@@ -373,7 +391,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
                 : {}),
             },
           },
-        }
+        })
         : checkpoint.graph;
 
       // Check whether all pending gates in the current wave are cleared
@@ -528,6 +546,21 @@ export function deserialize(json: string): Checkpoint {
     if (partial.derived === undefined) sg.derived = true;
     if (!sg.completionPolicy) sg.completionPolicy = SubgraphCompletionPolicy.ALL;
     if (!sg.failurePolicy) sg.failurePolicy = SubgraphFailurePolicy.FAIL_FAST;
+  }
+
+  // Backward compat: pre-2.5.0 nodes lack readinessStatus. Default to READY,
+  // then recompute against actual edge satisfaction so an old checkpoint
+  // resumes with topology consistency.
+  let needsReadinessRecompute = false;
+  for (const node of Object.values(cp.graph.nodes)) {
+    if ((node as Partial<Node>).readinessStatus === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).readinessStatus = ReadinessStatus.READY;
+      needsReadinessRecompute = true;
+    }
+  }
+  if (needsReadinessRecompute) {
+    cp.graph = recomputeReadiness(cp.graph);
   }
 
   return cp;
