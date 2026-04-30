@@ -119,7 +119,9 @@ async function executeRecordEpisode(
     const nodeLabels = (wave?.nodes ?? [])
       .map((nid) => ctx.after.graph.nodes[nid]?.label)
       .filter(Boolean) as string[];
-    goal = `Wave ${event.waveId} dispatched for session "${ctx.after.sessionLabel ?? ctx.after.sessionId}"`;
+    goal = `Wave ${event.waveId} dispatched for session "${
+      ctx.after.sessionLabel ?? ctx.after.sessionId
+    }"`;
     actions = nodeLabels;
     outcome = "dispatching";
     tags = ["trimatrix", "wave", sessionTag];
@@ -170,7 +172,7 @@ const EXECUTORS: Record<SideEffectAction, EffectExecutor> = {
 /**
  * Create a `transitionWithEffects` function wired to the given dependencies.
  *
- * 1. Calls pure `transition(checkpoint, event)` — throws on illegal transition.
+ * 1. Calls `appendEvent(checkpoint, event)` — transitions state AND writes to the event log; throws on illegal transition.
  * 2. Looks up `SIDE_EFFECT_POLICY[event.type]` — absent = no-op.
  * 3. Executes specs sequentially, collecting checkpoint patches.
  * 4. Merges patches into the post-transition checkpoint.

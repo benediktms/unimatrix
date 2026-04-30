@@ -77,6 +77,7 @@ import {
   transition,
 } from "./state.ts";
 import {
+  callBrainTool,
   getExternalBlockers,
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
@@ -241,7 +242,9 @@ function externalBlockerSnapshot(graph: Graph): Map<string, number> {
   const snapshot = new Map<string, number>();
   for (const node of Object.values(graph.nodes)) {
     if (!node.taskId || !node.externalBlockers) continue;
-    const unresolved = node.externalBlockers.filter((b) => b.resolvedAt === undefined).length;
+    const unresolved = node.externalBlockers.filter((b) =>
+      b.resolvedAt === undefined
+    ).length;
     if (unresolved > 0) snapshot.set(node.taskId, unresolved);
   }
   return snapshot;
@@ -263,7 +266,11 @@ function summarizeSubgraph(sg: Subgraph, graph: Graph): SubgraphSummary {
     // external-blocker state cached on the graph from prior dispatch_wave
     // consultations. Falls through to the blocker-blind path when no
     // external blockers are present (snapshot is empty).
-    outcome: subgraphOutcomeWithBlockers(graph, sg, externalBlockerSnapshot(graph)),
+    outcome: subgraphOutcomeWithBlockers(
+      graph,
+      sg,
+      externalBlockerSnapshot(graph),
+    ),
     ...(sg.label !== undefined ? { label: sg.label } : {}),
     ...(sg.parentId !== undefined ? { parentId: sg.parentId } : {}),
     ...(sg.gates ? { gates: sg.gates } : {}),
@@ -591,9 +598,11 @@ server.tool(
           params.taskId,
           "--json",
         ], { timeout: 5000 });
-      } catch {
+      } catch (err) {
+        const stderr = (err as { stderr?: string }).stderr?.trim();
+        const detail = stderr ? ` (${stderr})` : "";
         throw new Error(
-          `Task ID "${params.taskId}" does not exist in brain — cannot associate with node "${params.id}"`,
+          `Task ID "${params.taskId}" does not exist in brain — cannot associate with node "${params.id}"${detail}`,
         );
       }
     }
@@ -1379,11 +1388,23 @@ server.tool(
       (nId) => cp.graph.nodes[nId]?.type !== NodeType.ELICIT_GATE,
     );
 
+    // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types.
+    // Validated first — before capability checks or brain round-trips.
+    if (elicitGateIds.length > 0 && regularNodeIds.length > 0) {
+      throw new Error(
+        `Wave ${params.waveId} mixes ELICIT_GATE nodes (${
+          elicitGateIds.join(", ")
+        }) with regular nodes (${regularNodeIds.join(", ")}). ` +
+          `ELICIT_GATE nodes must be in their own wave — use DEPENDS_ON edges to separate them.`,
+      );
+    }
+
     // Capability matching (UNM-1b7.4): if the caller advertises capabilities,
     // gate every regular node's requirements against them. Mismatches are
     // surfaced and the node is held back from activation. Backward-compat:
     // when `capabilities` is undefined, the check is skipped entirely.
-    const capabilityMismatches: Array<{ nodeId: string; missing: string[] }> = [];
+    const capabilityMismatches: Array<{ nodeId: string; missing: string[] }> =
+      [];
     const capabilityRejected = new Set<string>();
     if (params.capabilities) {
       for (const nId of regularNodeIds) {
@@ -1399,16 +1420,6 @@ server.tool(
           }
         }
       }
-    }
-
-    // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types
-    if (elicitGateIds.length > 0 && regularNodeIds.length > 0) {
-      throw new Error(
-        `Wave ${params.waveId} mixes ELICIT_GATE nodes (${
-          elicitGateIds.join(", ")
-        }) with regular nodes (${regularNodeIds.join(", ")}). ` +
-          `ELICIT_GATE nodes must be in their own wave — use DEPENDS_ON edges to separate them.`,
-      );
     }
 
     // ---------------------------------------------------------------------------
@@ -1570,13 +1581,15 @@ server.tool(
             parallelBatches: batches,
             workPackets,
             ...(externalBlocked.length > 0 ? { externalBlocked } : {}),
-            ...(capabilityMismatches.length > 0 ? { capabilityMismatches } : {}),
+            ...(capabilityMismatches.length > 0
+              ? { capabilityMismatches }
+              : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
                   nodeId: nId,
-                  prompt: cp.graph.nodes[nId]?.elicitPrompt,
-                  schema: cp.graph.nodes[nId]?.elicitSchema,
+                  prompt: checkpoint!.graph.nodes[nId]?.elicitPrompt,
+                  schema: checkpoint!.graph.nodes[nId]?.elicitSchema,
                 })),
               }
               : {}),
@@ -1596,8 +1609,12 @@ server.tool(
   "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to complete"),
-    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
-    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1701,8 +1718,12 @@ server.tool(
     prNumber: z.coerce.number().int().optional().describe(
       "Pull request number",
     ),
-    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
-    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1799,9 +1820,12 @@ server.tool(
       );
     }
 
-    // Close the task — must succeed
+    // Close the task — must succeed (fail-loud: errors bubble to caller)
     const cwd = repoRoot(node.repo);
-    await syncTaskStatus(node.taskId, "close", cwd);
+    await brainExec.exec(BRAIN_CLI, ["tasks", "close", node.taskId], {
+      timeout: 5000,
+      ...(cwd ? { cwd } : {}),
+    });
 
     return {
       content: [
@@ -1829,8 +1853,12 @@ server.tool(
   {
     nodeId: z.string().describe("Node ID to fail"),
     reason: z.string().describe("Human-readable failure reason"),
-    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
-    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -2960,7 +2988,7 @@ async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
           text: serialized,
           tags: [
             "trimatrix-checkpoint",
-            `session:${cp.sessionId ?? "unknown"}`,
+            `trimatrix-session:${cp.sessionId ?? "unknown"}`,
             `state:${cp.machineState}`,
           ],
         },
@@ -3242,8 +3270,12 @@ server.tool(
   "add_external_blocker",
   "Add an external blocker to the brain task associated with a graph node. The node must have a taskId set.",
   {
-    nodeId: z.string().describe("Node ID whose brain task receives the blocker"),
-    source: z.string().describe("Source system identifier (e.g. 'jira', 'github-pr', 'linear')"),
+    nodeId: z.string().describe(
+      "Node ID whose brain task receives the blocker",
+    ),
+    source: z.string().describe(
+      "Source system identifier (e.g. 'jira', 'github-pr', 'linear')",
+    ),
     externalId: z.string().describe("Identifier within the source system"),
     url: z.string().optional().describe("Optional URL for human navigation"),
   },
@@ -3258,43 +3290,26 @@ server.tool(
         `Node "${params.nodeId}" has no taskId — cannot add external blocker. Set taskId via update_node first.`,
       );
     }
-    const eventPayload = {
-      type: "external_blocker_added",
-      source: params.source,
-      externalId: params.externalId,
-      ...(params.url ? { url: params.url } : {}),
-    };
-    const rpc = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: {
-        name: "tasks.apply_event",
-        arguments: {
-          task_id: node.taskId,
-          event: eventPayload,
-        },
+    const result = await callBrainTool(brainExec, "tasks.apply_event", {
+      task_id: node.taskId,
+      event: {
+        type: "external_blocker_added",
+        source: params.source,
+        externalId: params.externalId,
+        ...(params.url ? { url: params.url } : {}),
       },
-      id: 1,
-    });
-    let brainResponse: unknown;
-    try {
-      const raw = await brainExec.withStdin("brain", ["mcp"], rpc, 5000);
-      brainResponse = JSON.parse(raw);
-    } catch (err) {
-      throw new Error(`brain mcp call failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    }, { timeout: 5000 });
+    const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
+      false;
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify({
             ok: true,
-            nodeId: params.nodeId,
-            taskId: node.taskId,
-            source: params.source,
+            idempotent,
             externalId: params.externalId,
-            ...(params.url ? { url: params.url } : {}),
-            brainResponse,
+            taskId: node.taskId,
           }),
         },
       ],
@@ -3310,9 +3325,15 @@ server.tool(
   "resolve_external_blocker",
   "Resolve an external blocker on the brain task associated with a graph node. The node must have a taskId set.",
   {
-    nodeId: z.string().describe("Node ID whose brain task has the blocker resolved"),
-    source: z.string().describe("Source system identifier matching the blocker to resolve"),
-    externalId: z.string().describe("Identifier within the source system matching the blocker to resolve"),
+    nodeId: z.string().describe(
+      "Node ID whose brain task has the blocker resolved",
+    ),
+    source: z.string().describe(
+      "Source system identifier matching the blocker to resolve",
+    ),
+    externalId: z.string().describe(
+      "Identifier within the source system matching the blocker to resolve",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -3325,41 +3346,25 @@ server.tool(
         `Node "${params.nodeId}" has no taskId — cannot resolve external blocker. Set taskId via update_node first.`,
       );
     }
-    const eventPayload = {
-      type: "external_blocker_resolved",
-      source: params.source,
-      externalId: params.externalId,
-    };
-    const rpc = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: {
-        name: "tasks.apply_event",
-        arguments: {
-          task_id: node.taskId,
-          event: eventPayload,
-        },
+    const result = await callBrainTool(brainExec, "tasks.apply_event", {
+      task_id: node.taskId,
+      event: {
+        type: "external_blocker_resolved",
+        source: params.source,
+        externalId: params.externalId,
       },
-      id: 1,
-    });
-    let brainResponse: unknown;
-    try {
-      const raw = await brainExec.withStdin("brain", ["mcp"], rpc, 5000);
-      brainResponse = JSON.parse(raw);
-    } catch (err) {
-      throw new Error(`brain mcp call failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    }, { timeout: 5000 });
+    const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
+      false;
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify({
             ok: true,
-            nodeId: params.nodeId,
-            taskId: node.taskId,
-            source: params.source,
+            idempotent,
             externalId: params.externalId,
-            brainResponse,
+            taskId: node.taskId,
           }),
         },
       ],
@@ -3566,6 +3571,25 @@ server.tool(
   },
   (params) => {
     const cp = deserialize(params.checkpoint);
+    const validStates = Object.values(MachineState) as string[];
+    if (!validStates.includes(cp.machineState)) {
+      throw new Error(
+        `Checkpoint has invalid machineState "${cp.machineState}". Valid states: ${
+          validStates.join(", ")
+        }`,
+      );
+    }
+    if (
+      typeof cp.graph.nodes !== "object" ||
+      cp.graph.nodes === null ||
+      Array.isArray(cp.graph.nodes)
+    ) {
+      throw new Error(
+        `Checkpoint has malformed graph.nodes — expected a record, got ${
+          Array.isArray(cp.graph.nodes) ? "array" : typeof cp.graph.nodes
+        }`,
+      );
+    }
     checkpoint = cp;
     return {
       content: [
