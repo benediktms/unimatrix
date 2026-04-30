@@ -1009,7 +1009,7 @@ Deno.test("serialize/deserialize: round trip preserves intent, tier, subgraphStr
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.6.0");
+  assertEquals(restored.version, "2.7.0");
 });
 
 // ---------------------------------------------------------------------------
@@ -1537,7 +1537,7 @@ Deno.test("deserialize: pre-2.6.0 checkpoint defaults eventLog to []", () => {
   assertEquals(cp.eventLog, []);
 });
 
-// Test EL-7: 2.6.0 round-trip preserves a non-trivial eventLog
+// Test EL-7: 2.7.0 round-trip preserves a non-trivial eventLog
 Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLog", () => {
   const graph = makeGraph([makeNode("n1")]);
   let cp = createCheckpoint([], graph);
@@ -1545,19 +1545,19 @@ Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLo
   cp = appendEvent(cp, { type: "plan_submitted" });
   cp = appendEvent(cp, { type: "plan_finalized" });
 
-  assertEquals(cp.version, "2.6.0");
+  assertEquals(cp.version, "2.7.0");
   assertEquals(cp.eventLog?.length, 2);
 
   const json = serialize(cp);
   const restored = deserialize(json);
 
-  assertEquals(restored.version, "2.6.0");
+  assertEquals(restored.version, "2.7.0");
   assertEquals(restored.eventLog?.length, 2);
   assertEquals(restored.eventLog?.[0].seq, 1);
   assertEquals(restored.eventLog?.[0].event.type, "plan_submitted");
   assertEquals(restored.eventLog?.[1].seq, 2);
   assertEquals(restored.eventLog?.[1].event.type, "plan_finalized");
-  assertEquals(restored.eventLog?.[0].checkpointVersion, "2.6.0");
+  assertEquals(restored.eventLog?.[0].checkpointVersion, "2.7.0");
 });
 
 // ---------------------------------------------------------------------------
@@ -1963,4 +1963,49 @@ Deno.test("replay: subgraph_added idempotency survives replay — double-apply i
     1,
     "idempotent replay must not double-append subgraph",
   );
+});
+
+// ---------------------------------------------------------------------------
+// iterationCount / maxIterations backfill tests (UNM-735.1)
+// ---------------------------------------------------------------------------
+
+// createCheckpoint backfills iteration defaults on nodes that omit the fields
+Deno.test("createCheckpoint: backfills iterationCount=0 and maxIterations=3 on fresh nodes", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const cp = createCheckpoint([], graph);
+  const n1 = cp.graph.nodes["n1"];
+  const n2 = cp.graph.nodes["n2"];
+  assertEquals(n1.iterationCount, 0, "iterationCount must default to 0");
+  assertEquals(n1.maxIterations, 3, "maxIterations must default to 3");
+  assertEquals(n2.iterationCount, 0, "iterationCount must default to 0");
+  assertEquals(n2.maxIterations, 3, "maxIterations must default to 3");
+});
+
+// createCheckpoint preserves explicit non-default maxIterations
+Deno.test("createCheckpoint: preserves explicit maxIterations when supplied", () => {
+  const graph = makeGraph([makeNode("n1", { maxIterations: 5, iterationCount: 2 })]);
+  const cp = createCheckpoint([], graph);
+  const n1 = cp.graph.nodes["n1"];
+  assertEquals(n1.maxIterations, 5, "explicit maxIterations must be preserved");
+  assertEquals(n1.iterationCount, 2, "explicit iterationCount must be preserved");
+});
+
+// deserialize backfills iterationCount/maxIterations on pre-2.7.0 checkpoint JSON
+Deno.test("deserialize: backfills iterationCount=0 and maxIterations=3 for pre-2.7.0 checkpoints", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const cp = createCheckpoint([], graph);
+  // Simulate a pre-2.7.0 payload by stripping the fields from the serialized JSON
+  const raw = JSON.parse(serialize(cp)) as Record<string, unknown>;
+  const nodes = (raw.graph as { nodes: Record<string, Record<string, unknown>> }).nodes;
+  for (const node of Object.values(nodes)) {
+    delete node["iterationCount"];
+    delete node["maxIterations"];
+  }
+  // Downgrade version so deserialize accepts it
+  raw["version"] = "2.6.0";
+  const restored = deserialize(JSON.stringify(raw));
+  assertEquals(restored.graph.nodes["n1"].iterationCount, 0, "backfilled iterationCount must be 0");
+  assertEquals(restored.graph.nodes["n1"].maxIterations, 3, "backfilled maxIterations must be 3");
+  assertEquals(restored.graph.nodes["n2"].iterationCount, 0);
+  assertEquals(restored.graph.nodes["n2"].maxIterations, 3);
 });

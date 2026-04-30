@@ -730,11 +730,20 @@ export function addNode(
     ? node
     : { ...node, readinessStatus: ReadinessStatus.READY };
 
+  // Backfill iteration-tracking defaults introduced in 2.7.0. Fresh nodes that
+  // do not supply these fields start at 0 / 3 respectively. Mirror the pattern
+  // used above for readinessStatus so the graph always has coherent defaults.
+  const nodeWithIterations: Node = {
+    ...nodeWithReadiness,
+    iterationCount: nodeWithReadiness.iterationCount ?? 0,
+    maxIterations: nodeWithReadiness.maxIterations ?? 3,
+  };
+
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: { ...graph.nodes, [node.id]: nodeWithReadiness },
+      nodes: { ...graph.nodes, [node.id]: nodeWithIterations },
     },
   };
 }

@@ -19,7 +19,7 @@ import { computeWaves, recomputeReadiness } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.6.0";
+const VERSION = "2.7.0";
 
 /** All checkpoint versions this runtime can load. */
 const SUPPORTED_VERSIONS = new Set([
@@ -34,6 +34,7 @@ const SUPPORTED_VERSIONS = new Set([
   "2.4.0",
   "2.5.0",
   "2.6.0",
+  "2.7.0",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -60,14 +61,20 @@ export function createCheckpoint(
   // Defensive: callers may pass a graph whose nodes lack `readinessStatus`
   // (older fixtures, manually-constructed test graphs). Backfill `READY` and
   // recompute against edge satisfaction so the checkpoint starts coherent.
+  // Also backfill 2.7.0 iteration fields (iterationCount / maxIterations) so
+  // manually-constructed test fixtures do not have to thread these defaults.
   const initialGraph = recomputeReadiness({
     ...graph,
     nodes: Object.fromEntries(
       Object.entries(graph.nodes).map(([id, node]) => [
         id,
-        node.readinessStatus !== undefined
-          ? node
-          : { ...node, readinessStatus: ReadinessStatus.READY },
+        {
+          ...(node.readinessStatus !== undefined
+            ? node
+            : { ...node, readinessStatus: ReadinessStatus.READY }),
+          iterationCount: node.iterationCount ?? 0,
+          maxIterations: node.maxIterations ?? 3,
+        },
       ]),
     ),
   });
@@ -591,6 +598,22 @@ export function deserialize(json: string): Checkpoint {
   // Backward compat: pre-2.6.0 checkpoints lack eventLog — default to [].
   // They cannot replay (the log was not written), but they round-trip cleanly.
   if (!cp.eventLog) cp.eventLog = [];
+
+  // Backward compat: pre-2.7.0 nodes lack iterationCount / maxIterations.
+  // Default iterationCount to 0 (no iterations attempted) and maxIterations to
+  // 3 (the convergence-loop cap). Optional at the type level; backfilled here
+  // for loaded checkpoints and by `addNode` in graph.ts for fresh creations.
+  for (const node of Object.values(cp.graph.nodes)) {
+    const n = node as Partial<Node>;
+    if (n.iterationCount === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).iterationCount = 0;
+    }
+    if (n.maxIterations === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).maxIterations = 3;
+    }
+  }
 
   return cp;
 }
