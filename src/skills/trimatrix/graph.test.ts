@@ -22,7 +22,6 @@ import {
   failNode,
   nextFrontierBatch,
   nextWave,
-  nodeToWave,
   parallelNodesInWave,
   serializeSubgraphBrief,
   subgraphOutcome,
@@ -2259,7 +2258,11 @@ Deno.test("computeSubgraphs: derived ID changes when own member set changes (M5 
 // ---------------------------------------------------------------------------
 
 Deno.test("canDispatch: accepts node with no requirements (undefined)", () => {
-  const caps: Capabilities = { repos: ["repo-a"], tools: ["bash"], canWrite: true };
+  const caps: Capabilities = {
+    repos: ["repo-a"],
+    tools: ["bash"],
+    canWrite: true,
+  };
   const result = canDispatch(caps, undefined);
   assertEquals(result.ok, true);
 });
@@ -2308,7 +2311,10 @@ Deno.test("canDispatch: enforces humanPresent strictly — true required but cap
 });
 
 Deno.test("validateDispatch: returns missing list in error message when requirements unmet", () => {
-  const node = makeNode({ id: "n1", requirements: { repos: ["repo-secret"], tools: ["bash"] } });
+  const node = makeNode({
+    id: "n1",
+    requirements: { repos: ["repo-secret"], tools: ["bash"] },
+  });
   const graph = makeGraph([node]);
   const caps: Capabilities = { repos: ["repo-public"], tools: [] };
   const result = validateDispatch(graph, "n1", caps);
@@ -2320,7 +2326,10 @@ Deno.test("validateDispatch: returns missing list in error message when requirem
 });
 
 Deno.test("validateDispatch: returns ok:true when all requirements are satisfied", () => {
-  const node = makeNode({ id: "n2", requirements: { repos: ["repo-a"], canWrite: true } });
+  const node = makeNode({
+    id: "n2",
+    requirements: { repos: ["repo-a"], canWrite: true },
+  });
   const graph = makeGraph([node]);
   const caps: Capabilities = { repos: ["*"], canWrite: true };
   const result = validateDispatch(graph, "n2", caps);
@@ -2339,13 +2348,37 @@ Deno.test("currentFrontier: empty graph returns []", () => {
 
 Deno.test("currentFrontier: returns only PENDING+READY nodes — excludes ACTIVE, DONE, BLOCKED, FAILED", () => {
   const g = makeGraph([
-    makeNode({ id: "pending", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "active", status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "done", status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "failed", status: NodeStatus.FAILED, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "blocked_rs", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    makeNode({
+      id: "pending",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "active",
+      status: NodeStatus.ACTIVE,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "done",
+      status: NodeStatus.DONE,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "failed",
+      status: NodeStatus.FAILED,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "blocked_rs",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.BLOCKED,
+    }),
   ]);
-  const waves: Wave[] = [{ id: 1, nodes: ["pending", "active", "done", "failed", "blocked_rs"], hasMergeGate: false }];
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["pending", "active", "done", "failed", "blocked_rs"],
+    hasMergeGate: false,
+  }];
   const result = currentFrontier(g, waves);
   assertEquals(result.length, 1);
   assertEquals(result[0].nodeId, "pending");
@@ -2355,8 +2388,16 @@ Deno.test("currentFrontier: returns only PENDING+READY nodes — excludes ACTIVE
 Deno.test("currentFrontier: returns nodes from multiple waves when deps are clear", () => {
   // wave 1: node A (PENDING+READY), wave 2: node B (PENDING+READY — deps satisfied)
   const g = makeGraph([
-    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({
+      id: "A",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "B",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
   ]);
   const waves: Wave[] = [
     { id: 1, nodes: ["A"], hasMergeGate: false },
@@ -2373,9 +2414,21 @@ Deno.test("currentFrontier: wave-3 node whose deps are satisfied appears even wh
   // Wave 1: nodeA is still PENDING (not done). Wave 3: nodeC is PENDING+READY (deps on nodeB which is DONE).
   const g = makeGraph(
     [
-      makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-      makeNode({ id: "B", status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
-      makeNode({ id: "C", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+      makeNode({
+        id: "A",
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.READY,
+      }),
+      makeNode({
+        id: "B",
+        status: NodeStatus.DONE,
+        readinessStatus: ReadinessStatus.READY,
+      }),
+      makeNode({
+        id: "C",
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.READY,
+      }),
     ],
     [{ from: "B", to: "C", type: EdgeType.DEPENDS_ON }],
   );
@@ -2393,11 +2446,27 @@ Deno.test("currentFrontier: wave-3 node whose deps are satisfied appears even wh
 
 Deno.test("currentFrontier: deterministic order across repeated calls", () => {
   const g = makeGraph([
-    makeNode({ id: "Z", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "M", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
+    makeNode({
+      id: "Z",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "A",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "M",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
   ]);
-  const waves: Wave[] = [{ id: 1, nodes: ["Z", "A", "M"], hasMergeGate: false }];
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["Z", "A", "M"],
+    hasMergeGate: false,
+  }];
   const r1 = currentFrontier(g, waves);
   const r2 = currentFrontier(g, waves);
   // Both calls must return the same order
@@ -2413,9 +2482,21 @@ Deno.test("currentFrontier: deterministic order across repeated calls", () => {
 Deno.test("nextFrontierBatch: groups by wave and returns all eligible waves at once", () => {
   // Wave 1: A (PENDING+READY), Wave 2: B (PENDING+READY), Wave 3: C (PENDING+BLOCKED)
   const g = makeGraph([
-    makeNode({ id: "A", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "C", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    makeNode({
+      id: "A",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "B",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "C",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.BLOCKED,
+    }),
   ]);
   const waves: Wave[] = [
     { id: 1, nodes: ["A"], hasMergeGate: false },
@@ -2431,10 +2512,154 @@ Deno.test("nextFrontierBatch: groups by wave and returns all eligible waves at o
 
 Deno.test("nextFrontierBatch: returns [] when no PENDING+READY nodes exist", () => {
   const g = makeGraph([
-    makeNode({ id: "A", status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
-    makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    makeNode({
+      id: "A",
+      status: NodeStatus.ACTIVE,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "B",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.BLOCKED,
+    }),
   ]);
   const waves: Wave[] = [{ id: 1, nodes: ["A", "B"], hasMergeGate: false }];
   const result = nextFrontierBatch(g, waves, 1);
   assertEquals(result, []);
+});
+
+// ---------------------------------------------------------------------------
+// externallyBlocked filter on currentFrontier / nextFrontierBatch (MAJOR #2)
+// ---------------------------------------------------------------------------
+
+Deno.test("currentFrontier: externallyBlocked nodes are excluded even when PENDING+READY", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "blocked-ext",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "clear",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: false,
+    }),
+    makeNode({
+      id: "no-flag",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+  ]);
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["blocked-ext", "clear", "no-flag"],
+    hasMergeGate: false,
+  }];
+  const result = currentFrontier(g, waves);
+
+  const ids = result.map((e) => e.nodeId).sort();
+  assertEquals(
+    ids.includes("blocked-ext"),
+    false,
+    "externallyBlocked node must not appear",
+  );
+  assertEquals(ids.includes("clear"), true, "clear node must appear");
+  assertEquals(ids.includes("no-flag"), true, "unflagged node must appear");
+});
+
+Deno.test("currentFrontier: multiple externallyBlocked nodes all excluded, unflagged nodes all present", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "ext1",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "ext2",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "ok1",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+    makeNode({
+      id: "ok2",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+  ]);
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["ext1", "ext2", "ok1", "ok2"],
+    hasMergeGate: false,
+  }];
+  const result = currentFrontier(g, waves);
+
+  assertEquals(result.length, 2);
+  const ids = result.map((e) => e.nodeId).sort();
+  assertEquals(ids, ["ok1", "ok2"]);
+});
+
+Deno.test("nextFrontierBatch: externallyBlocked nodes excluded from batches", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "ext",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "free",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+  ]);
+  const waves: Wave[] = [{
+    id: 1,
+    nodes: ["ext", "free"],
+    hasMergeGate: false,
+  }];
+  const result = nextFrontierBatch(g, waves, null);
+
+  assertEquals(result.length, 1);
+  assertEquals(result[0].nodeIds, ["free"]);
+  assertEquals(result[0].nodeIds.includes("ext"), false);
+});
+
+Deno.test("nextFrontierBatch: all externallyBlocked nodes in a wave → wave omitted from batch", () => {
+  const g = makeGraph([
+    makeNode({
+      id: "ext1",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "ext2",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+      externallyBlocked: true,
+    }),
+    makeNode({
+      id: "free",
+      status: NodeStatus.PENDING,
+      readinessStatus: ReadinessStatus.READY,
+    }),
+  ]);
+  const waves: Wave[] = [
+    { id: 1, nodes: ["ext1", "ext2"], hasMergeGate: false },
+    { id: 2, nodes: ["free"], hasMergeGate: false },
+  ];
+  const result = nextFrontierBatch(g, waves, null);
+
+  // Wave 1 is entirely blocked externally → omitted. Wave 2 has the free node.
+  assertEquals(result.length, 1);
+  assertEquals(result[0].wave, 2);
+  assertEquals(result[0].nodeIds, ["free"]);
 });

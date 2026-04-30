@@ -33,7 +33,6 @@ import {
   MachineState,
   NodeStatus,
   NodeType,
-  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
   SubgraphStrategy,
@@ -60,7 +59,6 @@ import {
   parallelNodesInWave,
   serializeSubgraphBrief,
   SUBGRAPH_SLUG_RE,
-  subgraphOutcome,
   subgraphOutcomeWithBlockers,
   unsatisfiedDependencies,
   updateNode,
@@ -82,7 +80,6 @@ import {
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
   syncGraphDepsToBrain as syncGraphDepsToBrainCore,
-  syncTaskStatus as syncTaskStatusCore,
 } from "./brain-sync.ts";
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
@@ -3236,18 +3233,6 @@ async function saveBrainSnapshot(
 // ---------------------------------------------------------------------------
 // Task status sync helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Sync a graph node's task status to the brain CLI (best-effort).
- * Delegates to syncTaskStatusCore in brain-sync.ts with the real executor.
- */
-function syncTaskStatus(
-  taskId: string,
-  action: "activate" | "block" | "close",
-  cwd?: string,
-): Promise<void> {
-  return syncTaskStatusCore(taskId, action, cwd, brainExec);
-}
 
 /**
  * Search brain's episodic memory for prior episodes (best-effort).

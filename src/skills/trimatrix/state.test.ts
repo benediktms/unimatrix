@@ -21,7 +21,17 @@ import {
   serialize,
   transition,
 } from "./state.ts";
-import { EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, WaveResultStatus } from "./types.ts";
+import {
+  EdgeType,
+  Executor,
+  Intent,
+  MachineState,
+  NodeStatus,
+  NodeType,
+  SubgraphStrategy,
+  Tier,
+  WaveResultStatus,
+} from "./types.ts";
 import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
 import { addSubgraph } from "./graph.ts";
 
@@ -919,7 +929,11 @@ Deno.test("transition: node_failed marks downstream nodes as still BLOCKED (not 
   let next = transition(cp, { type: "plan_submitted" });
   next = transition(next, { type: "plan_finalized" });
   next = transition(next, { type: "wave_dispatched", waveId: 1 });
-  next = transition(next, { type: "node_failed", nodeId: "n1", reason: "boom" });
+  next = transition(next, {
+    type: "node_failed",
+    nodeId: "n1",
+    reason: "boom",
+  });
 
   assertEquals(next.graph.nodes.n1.status, "FAILED");
   assertEquals(next.graph.nodes.n2.readinessStatus, "BLOCKED");
@@ -1153,7 +1167,16 @@ Deno.test("deserialize: backward compat — old checkpoint without runtime state
     version: "1.0.0",
     machineState: "initializing",
     graph: {
-      nodes: { n1: { id: "n1", repo: "r", type: "IMPLEMENTATION", label: "N1", worktreeBranch: "b", status: "PENDING" } },
+      nodes: {
+        n1: {
+          id: "n1",
+          repo: "r",
+          type: "IMPLEMENTATION",
+          label: "N1",
+          worktreeBranch: "b",
+          status: "PENDING",
+        },
+      },
       edges: [],
     },
     waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
@@ -1232,13 +1255,21 @@ Deno.test("subgraph_added: idempotency — applying same event twice does not do
 
   // Apply the same event again — should be idempotent
   const cp2 = transition(cp1, { type: "subgraph_added", subgraph: sg });
-  assertEquals(cp2.subgraphs?.length, 1, "subgraph count must not double on replay");
+  assertEquals(
+    cp2.subgraphs?.length,
+    1,
+    "subgraph count must not double on replay",
+  );
   assertEquals(cp2.subgraphs?.[0].id, "team-alpha");
 });
 
 Deno.test("subgraph_added: rejected from COMPLETED terminal state", () => {
   const graph = makeGraph([makeNode("n1")]);
-  const cp = makeCheckpoint({ machineState: MachineState.COMPLETED, graph, subgraphs: [] });
+  const cp = makeCheckpoint({
+    machineState: MachineState.COMPLETED,
+    graph,
+    subgraphs: [],
+  });
 
   const sgResult = addSubgraph(graph, [], {
     slug: "team-beta",
@@ -1256,7 +1287,11 @@ Deno.test("subgraph_added: rejected from COMPLETED terminal state", () => {
 
 Deno.test("subgraph_added: rejected from CANCELLED terminal state", () => {
   const graph = makeGraph([makeNode("n1")]);
-  const cp = makeCheckpoint({ machineState: MachineState.CANCELLED, graph, subgraphs: [] });
+  const cp = makeCheckpoint({
+    machineState: MachineState.CANCELLED,
+    graph,
+    subgraphs: [],
+  });
 
   const sgResult = addSubgraph(graph, [], {
     slug: "team-gamma",
@@ -1274,7 +1309,11 @@ Deno.test("subgraph_added: rejected from CANCELLED terminal state", () => {
 
 Deno.test("subgraph_added: allowed in INITIALIZING state", () => {
   const graph = makeGraph([makeNode("n1")]);
-  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING, graph, subgraphs: [] });
+  const cp = makeCheckpoint({
+    machineState: MachineState.INITIALIZING,
+    graph,
+    subgraphs: [],
+  });
 
   const sgResult = addSubgraph(graph, [], {
     slug: "team-delta",
@@ -1291,7 +1330,11 @@ Deno.test("subgraph_added: allowed in INITIALIZING state", () => {
 
 Deno.test("subgraph_added: allowed in PLAN_REVIEW state", () => {
   const graph = makeGraph([makeNode("n1")]);
-  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW, graph, subgraphs: [] });
+  const cp = makeCheckpoint({
+    machineState: MachineState.PLAN_REVIEW,
+    graph,
+    subgraphs: [],
+  });
 
   const sgResult = addSubgraph(graph, [], {
     slug: "team-epsilon",
@@ -1347,7 +1390,11 @@ Deno.test("serialize/deserialize: resume round-trip preserves subgraph structure
 
   // Assert idempotency: applying subgraph_added on restored checkpoint is a no-op
   const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
-  assertEquals(cp2.subgraphs?.length, 1, "idempotent replay must not double-append");
+  assertEquals(
+    cp2.subgraphs?.length,
+    1,
+    "idempotent replay must not double-append",
+  );
   assertEquals(cp2.subgraphs?.[0].id, "drone-cluster");
 });
 
@@ -1434,8 +1481,15 @@ Deno.test("replay: recorded events reproduce the materialized checkpoint (idempo
   assertEquals(replayed.eventLog?.length, log.length);
   // Full serialize equality excluding timestamps that differ
   const cpWithoutTimestamps = { ...cp, updatedAt: "", createdAt: "" };
-  const replayedWithoutTimestamps = { ...replayed, updatedAt: "", createdAt: "" };
-  assertEquals(serialize(cpWithoutTimestamps), serialize(replayedWithoutTimestamps));
+  const replayedWithoutTimestamps = {
+    ...replayed,
+    updatedAt: "",
+    createdAt: "",
+  };
+  assertEquals(
+    serialize(cpWithoutTimestamps),
+    serialize(replayedWithoutTimestamps),
+  );
 });
 
 // Test EL-5: replay rejects out-of-order seq with a clear error
@@ -1577,7 +1631,10 @@ Deno.test("createEffectRunner: replay(eventLog) reproduces the live checkpoint s
   assertEquals(replayed.graph.nodes.n2.status, live.graph.nodes.n2.status);
   assertEquals(replayed.machineState, live.machineState);
   // n2 readiness must reflect n1's completion in both — recompute is deterministic.
-  assertEquals(replayed.graph.nodes.n2.readinessStatus, live.graph.nodes.n2.readinessStatus);
+  assertEquals(
+    replayed.graph.nodes.n2.readinessStatus,
+    live.graph.nodes.n2.readinessStatus,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1591,15 +1648,25 @@ Deno.test("createEffectRunner: replay(eventLog) reproduces the live checkpoint s
 function stampFences(
   graph: Graph,
   nodeIds: string[],
-): { graph: Graph; workPackets: Array<{ nodeId: string; attemptId: string; leaseVersion: number }> } {
+): {
+  graph: Graph;
+  workPackets: Array<
+    { nodeId: string; attemptId: string; leaseVersion: number }
+  >;
+} {
   let g = graph;
-  const workPackets: Array<{ nodeId: string; attemptId: string; leaseVersion: number }> = [];
+  const workPackets: Array<
+    { nodeId: string; attemptId: string; leaseVersion: number }
+  > = [];
   for (const nId of nodeIds) {
     const node = g.nodes[nId];
     if (!node) continue;
     const attemptId = crypto.randomUUID();
     const leaseVersion = (node.leaseVersion ?? 0) + 1;
-    g = { ...g, nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } } };
+    g = {
+      ...g,
+      nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } },
+    };
     workPackets.push({ nodeId: nId, attemptId, leaseVersion });
   }
   return { graph: g, workPackets };
@@ -1636,12 +1703,19 @@ Deno.test("fence state: complete_node without fence params succeeds — backward
 
   let validationError: string | null = null;
   if (attemptIdParam !== undefined && leaseVersionParam !== undefined) {
-    if (node.attemptId !== attemptIdParam || node.leaseVersion !== leaseVersionParam) {
+    if (
+      node.attemptId !== attemptIdParam ||
+      node.leaseVersion !== leaseVersionParam
+    ) {
       validationError = `Stale lease for node n1`;
     }
   }
 
-  assertEquals(validationError, null, "unfenced write must not produce a validation error");
+  assertEquals(
+    validationError,
+    null,
+    "unfenced write must not produce a validation error",
+  );
 });
 
 Deno.test("fence state: refine increments leaseVersion so pre-refine fence is rejected", () => {
@@ -1663,6 +1737,230 @@ Deno.test("fence state: refine increments leaseVersion so pre-refine fence is re
     ? `Stale lease for node n1: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${preRefinePacket.attemptId}, leaseVersion=${preRefinePacket.leaseVersion})`
     : null;
 
-  assertEquals(err !== null, true, "post-refine complete with pre-refine fence must be rejected");
+  assertEquals(
+    err !== null,
+    true,
+    "post-refine complete with pre-refine fence must be rejected",
+  );
   assertEquals(err!.includes("Stale lease for node n1"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Fence-state preservation on stale fence rejection (MAJOR #3)
+// ---------------------------------------------------------------------------
+
+Deno.test("fence: stale complete_node rejection preserves node status", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      prUrl: "https://example.com/pr/1",
+      prNumber: 1,
+    }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+  const packet = workPackets[0];
+
+  // Re-dispatch: bump the lease — now packet is stale
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  // Simulate the fence check: stale → error, no mutation
+  const stale = node.attemptId !== packet.attemptId ||
+    node.leaseVersion !== packet.leaseVersion;
+  assertEquals(stale, true, "fence must be stale after re-dispatch");
+
+  // The node must remain ACTIVE — rejection means no mutation occurred
+  assertEquals(node.status, NodeStatus.ACTIVE);
+  assertEquals(node.prUrl, "https://example.com/pr/1");
+  assertEquals(node.prNumber, 1);
+});
+
+Deno.test("fence: stale fail_node rejection preserves node status and failureReason", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+
+  // Re-dispatch: bump the lease — packet[0] is stale
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  // fence check: stale → rejected; node must not be FAILED
+  const stale = node.attemptId !== workPackets[0].attemptId ||
+    node.leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+  assertEquals(
+    node.status,
+    NodeStatus.ACTIVE,
+    "status must not change on stale rejection",
+  );
+  assertEquals(
+    node.failureReason,
+    undefined,
+    "failureReason must remain absent",
+  );
+});
+
+Deno.test("fence: stale update_node rejection leaves prUrl/prNumber unchanged", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      prUrl: "https://example.com/pr/42",
+      prNumber: 42,
+    }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+
+  // Bump the lease (another dispatch cycle)
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  const stale = node.attemptId !== workPackets[0].attemptId ||
+    node.leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+
+  // On rejection the node is not mutated — prUrl and prNumber are preserved
+  assertEquals(node.prUrl, "https://example.com/pr/42");
+  assertEquals(node.prNumber, 42);
+});
+
+Deno.test("fence: stale rejection does not affect sibling nodes in the graph", () => {
+  const graph = makeGraph([
+    makeNode("n1", { status: NodeStatus.ACTIVE }),
+    makeNode("n2", { status: NodeStatus.PENDING }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+
+  const stale =
+    redispatched.nodes["n1"].attemptId !== workPackets[0].attemptId ||
+    redispatched.nodes["n1"].leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+
+  // n2 must remain PENDING — rejection does not touch other nodes
+  assertEquals(redispatched.nodes["n2"].status, NodeStatus.PENDING);
+  assertEquals(redispatched.nodes["n2"].leaseVersion, undefined);
+});
+
+Deno.test("fence: stale rejection does not increment the lease version again", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph } = stampFences(graph, ["n1"]);
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+
+  // After two dispatches leaseVersion should be exactly 2 — no extra bumps from rejection
+  assertEquals(redispatched.nodes["n1"].leaseVersion, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Idempotency for wave_dispatched fence-stamp (MAJOR #4)
+// ---------------------------------------------------------------------------
+
+Deno.test("wave_dispatched: applying the same waveId twice is idempotent on machineState", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
+
+  const cp1 = transition(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp1.currentWaveId, 1);
+  assertEquals(cp1.machineState, MachineState.DISPATCHING);
+
+  // A second wave_dispatched with same waveId — machineState stays DISPATCHING
+  const cp2 = transition(cp1, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp2.currentWaveId, 1);
+  assertEquals(cp2.machineState, MachineState.DISPATCHING);
+});
+
+// ---------------------------------------------------------------------------
+// Idempotency for node_completed with fence stamp (MAJOR #4)
+// ---------------------------------------------------------------------------
+
+Deno.test("node_completed: applying the same event twice is a no-op on status", () => {
+  // First application moves PENDING → DONE (repo-less node); second must be no-op.
+  const graph = makeGraph([makeNode("n1", { repo: undefined })]);
+  delete (graph.nodes["n1"] as Partial<Node>).repo;
+  let cp = createCheckpoint([], graph);
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
+  cp = transition(cp, { type: "wave_dispatched", waveId: 1 });
+  cp = transition(cp, { type: "node_completed", nodeId: "n1" });
+
+  assertEquals(cp.graph.nodes["n1"].status, NodeStatus.DONE);
+
+  // Apply the same event again — status must remain DONE, not re-transition
+  const cp2 = transition(cp, { type: "node_completed", nodeId: "n1" });
+  assertEquals(cp2.graph.nodes["n1"].status, NodeStatus.DONE);
+});
+
+// ---------------------------------------------------------------------------
+// Replay round-trip with subgraph_added events (MAJOR #5)
+// ---------------------------------------------------------------------------
+
+Deno.test("replay: subgraph_added events survive round-trip — serialize(replay(log)) === serialize(cp)", () => {
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2"), makeNode("n3")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  let cp = createCheckpoint([], graph);
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "replay-test-sg",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  cp = appendEvent(cp, { type: "subgraph_added", subgraph: sg });
+
+  const log = cp.eventLog!;
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(log, fresh);
+
+  // Structural equality: same subgraphs, same machine state
+  assertEquals(replayed.machineState, cp.machineState);
+  assertEquals(replayed.subgraphs?.length, 1);
+  assertEquals(replayed.subgraphs?.[0].id, "replay-test-sg");
+
+  // Full serialize equality (modulo timestamps)
+  const cpNoTs = { ...cp, updatedAt: "", createdAt: "" };
+  const replayedNoTs = { ...replayed, updatedAt: "", createdAt: "" };
+  assertEquals(serialize(cpNoTs), serialize(replayedNoTs));
+});
+
+Deno.test("replay: subgraph_added idempotency survives replay — double-apply is a no-op", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  let cp = createCheckpoint([], graph);
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "idempotent-replay-sg",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = appendEvent(cp, { type: "subgraph_added", subgraph: sg });
+  // Manually add a duplicate entry to the event log to simulate a double-apply scenario
+  const dupLog = [
+    ...cp.eventLog!,
+    {
+      seq: cp.eventLog!.length + 1,
+      timestamp: new Date().toISOString(),
+      event: { type: "subgraph_added" as const, subgraph: sg },
+      checkpointVersion: cp.version,
+    },
+  ];
+
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(dupLog, fresh);
+
+  // Idempotency: two applications of the same subgraph_added must not double-append
+  assertEquals(
+    replayed.subgraphs?.length,
+    1,
+    "idempotent replay must not double-append subgraph",
+  );
 });

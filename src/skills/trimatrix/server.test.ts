@@ -1,3 +1,5 @@
+// deno-lint-ignore-file require-await -- BrainExec mocks satisfy an async interface without awaiting
+
 /**
  * MCP-boundary tests for trimatrix server tool wiring.
  *
@@ -13,12 +15,8 @@
  * - SubgraphSummary shape conformance (M4) — tier field present
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
-import {
-  deserialize,
-  serialize,
-  transition,
-} from "./state.ts";
+import { assertEquals } from "@std/assert";
+import { deserialize, serialize, transition } from "./state.ts";
 import { addSubgraph, subgraphOutcomeWithBlockers } from "./graph.ts";
 import {
   CoordinationMode,
@@ -31,7 +29,13 @@ import {
   SubgraphFailurePolicy,
   Tier,
 } from "./types.ts";
-import type { Checkpoint, Graph, Node, Subgraph, SubgraphSummary } from "./types.ts";
+import type {
+  Checkpoint,
+  Graph,
+  Node,
+  Subgraph,
+  SubgraphSummary,
+} from "./types.ts";
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { getExternalBlockers } from "./brain-sync.ts";
 
@@ -78,7 +82,10 @@ function makeCp(graph: Graph, overrides: Partial<Checkpoint> = {}): Checkpoint {
  * Project a Subgraph into a SubgraphSummary (mirrors server.ts summarizeSubgraph).
  * Used to validate response shape conformance without importing server internals.
  */
-function summarizeSubgraph(sg: import("./types.ts").Subgraph, _graph: Graph): SubgraphSummary {
+function summarizeSubgraph(
+  sg: import("./types.ts").Subgraph,
+  _graph: Graph,
+): SubgraphSummary {
   return {
     id: sg.id,
     executor: sg.executor,
@@ -301,7 +308,10 @@ function simulateDispatch(
     if (!node) continue;
     const attemptId = crypto.randomUUID();
     const leaseVersion = (node.leaseVersion ?? 0) + 1;
-    g = { ...g, nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } } };
+    g = {
+      ...g,
+      nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } },
+    };
     workPackets.push({ nodeId: nId, attemptId, leaseVersion });
   }
   return { graph: g, workPackets };
@@ -359,7 +369,12 @@ Deno.test("fence: complete_node with matching fence succeeds (no error)", () => 
   const { graph: fencedGraph, workPackets } = simulateDispatch(graph, ["n1"]);
   const packet = workPackets[0];
 
-  const err = simulateFenceCheck(fencedGraph, "n1", packet.attemptId, packet.leaseVersion);
+  const err = simulateFenceCheck(
+    fencedGraph,
+    "n1",
+    packet.attemptId,
+    packet.leaseVersion,
+  );
   assertEquals(err, null);
 });
 
@@ -431,7 +446,11 @@ Deno.test("server.test: serialize round-trip preserves explicit subgraph after s
 
   // Idempotent replay: subgraph_added on restored must be a no-op
   const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
-  assertEquals(cp2.subgraphs?.length, 1, "idempotent replay must not double-append");
+  assertEquals(
+    cp2.subgraphs?.length,
+    1,
+    "idempotent replay must not double-append",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -445,13 +464,20 @@ function makeMockBrainExec(opts: {
   fail?: boolean;
 }): BrainExec {
   return {
-    withStdin: async (_cmd: string, _args: string[], _stdin?: string): Promise<string> => {
+    withStdin: async (
+      _cmd: string,
+      _args: string[],
+      _stdin?: string,
+    ): Promise<string> => {
       if (opts.fail) throw new Error("brain CLI unavailable");
       const blockers = opts.blockers ?? [];
-      const unresolvedCount = opts.unresolvedCount ?? blockers.filter((b) => !b.resolvedAt).length;
+      const unresolvedCount = opts.unresolvedCount ??
+        blockers.filter((b) => !b.resolvedAt).length;
       const task = {
         external_blockers: blockers,
-        dependency_summary: { external_blocker_unresolved_count: unresolvedCount },
+        dependency_summary: {
+          external_blocker_unresolved_count: unresolvedCount,
+        },
       };
       const rpcResponse = {
         jsonrpc: "2.0",
@@ -514,12 +540,20 @@ Deno.test("resolve_external_blocker: resolvedAt present yields unresolvedCount =
 Deno.test("dispatch_wave consultation: unresolved blocker marks node BLOCKED", async () => {
   // Simulate the pre-dispatch consultation logic from server.ts dispatch_wave
   const node = makeNode("n1", { taskId: "task-blocked" });
-  const exec = makeMockBrainExec({ blockers: [{ source: "jira", externalId: "X-1" }], unresolvedCount: 1 });
+  const exec = makeMockBrainExec({
+    blockers: [{ source: "jira", externalId: "X-1" }],
+    unresolvedCount: 1,
+  });
 
-  const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId!, exec);
+  const { unresolvedCount, blockers } = await getExternalBlockers(
+    node.taskId!,
+    exec,
+  );
 
   // The dispatch logic: unresolvedCount > 0 → node goes to externalBlocked list
-  const externalBlocked: Array<{ nodeId: string; blockers: ExternalBlockerSnapshot[] }> = [];
+  const externalBlocked: Array<
+    { nodeId: string; blockers: ExternalBlockerSnapshot[] }
+  > = [];
   if (unresolvedCount > 0) {
     externalBlocked.push({ nodeId: node.id, blockers });
   }
@@ -548,7 +582,10 @@ Deno.test("dispatch_wave consultation: brain CLI failure causes graceful degrada
   const exec = makeMockBrainExec({ fail: true });
 
   // getExternalBlockers must not throw — returns { unresolvedCount: 0, blockers: [] }
-  const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId!, exec);
+  const { unresolvedCount, blockers } = await getExternalBlockers(
+    node.taskId!,
+    exec,
+  );
 
   assertEquals(unresolvedCount, 0);
   assertEquals(blockers.length, 0);
@@ -573,7 +610,12 @@ Deno.test("subgraphOutcomeWithBlockers: unresolved external gate (count > 0) kee
     coordination: { mode: CoordinationMode.NONE },
     completionPolicy: SubgraphCompletionPolicy.GATED,
     failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
-    gates: [{ kind: "external", source: "jira", externalId: "X-1", taskId: "task-gate" }],
+    gates: [{
+      kind: "external",
+      source: "jira",
+      externalId: "X-1",
+      taskId: "task-gate",
+    }],
   };
 
   // Unresolved count = 1 → gate still blocked → not completed
@@ -597,7 +639,12 @@ Deno.test("subgraphOutcomeWithBlockers: resolved external gate (count = 0) allow
     completionPolicy: SubgraphCompletionPolicy.GATED,
     failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     // Gates: one node gate (n1) + one resolved external gate
-    gates: ["n1", { kind: "external", source: "jira", externalId: "X-2", taskId: "task-resolved-gate" }],
+    gates: ["n1", {
+      kind: "external",
+      source: "jira",
+      externalId: "X-2",
+      taskId: "task-resolved-gate",
+    }],
   };
 
   // External gate resolved (count = 0), node n1 is DONE → completed
@@ -605,7 +652,6 @@ Deno.test("subgraphOutcomeWithBlockers: resolved external gate (count = 0) allow
   const outcome = subgraphOutcomeWithBlockers(graph, sg, snapshot);
   assertEquals(outcome, "completed");
 });
-
 
 // ---------------------------------------------------------------------------
 // End-to-end: dispatch_wave external-blocker consultation drives activation
@@ -624,7 +670,7 @@ Deno.test("dispatch_wave consultation: blocked node is excluded from activation 
   ]);
 
   const fakeBrain: BrainExec = {
-    withStdin: async (cmd, _args, stdin) => {
+    withStdin: async (_cmd, _args, stdin) => {
       // Echo brain MCP response shape based on which task-id is asked.
       const req = JSON.parse(stdin ?? "{}");
       const taskId = req.params?.arguments?.task_id ?? "";
@@ -647,7 +693,9 @@ Deno.test("dispatch_wave consultation: blocked node is excluded from activation 
   };
 
   // Reproduce the handler's per-node consultation loop.
-  const externalBlocked: Array<{ nodeId: string; blockers: ExternalBlockerSnapshot[] }> = [];
+  const externalBlocked: Array<
+    { nodeId: string; blockers: ExternalBlockerSnapshot[] }
+  > = [];
   const clearToActivate: string[] = [];
   for (const nId of ["blocked-node", "free-node", "no-task-node"]) {
     const node = graph.nodes[nId];
@@ -655,7 +703,10 @@ Deno.test("dispatch_wave consultation: blocked node is excluded from activation 
       clearToActivate.push(nId);
       continue;
     }
-    const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId, fakeBrain);
+    const { unresolvedCount, blockers } = await getExternalBlockers(
+      node.taskId,
+      fakeBrain,
+    );
     if (unresolvedCount > 0) {
       externalBlocked.push({ nodeId: nId, blockers });
     } else {
@@ -684,7 +735,11 @@ Deno.test("dispatch_wave consultation: workPackets MUST NOT be minted for blocke
   const clearToActivate = ["b", "c"]; // "a" is externally blocked
 
   // Simulate the post-fix loop body
-  const workPackets: { nodeId: string; attemptId: string; leaseVersion: number }[] = [];
+  const workPackets: {
+    nodeId: string;
+    attemptId: string;
+    leaseVersion: number;
+  }[] = [];
   for (const nId of clearToActivate) {
     workPackets.push({
       nodeId: nId,
