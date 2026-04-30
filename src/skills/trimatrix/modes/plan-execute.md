@@ -158,9 +158,12 @@ After all adjuncts in a wave complete:
 Use Verification Gate Protocol. Run after all adjuncts in a wave complete.
 
 ### Step 8: Review
-Check dispatch plan Review Strategy:
 
-**Single:**
+Per Protocol C § C5a, classify triviality and select review tier before dispatching review.
+
+Derive `locDelta`, `fileCount`, `riskKeywords`, `crossPackage`, and `crossBrain` from `git diff` output and the routing signal file. Call `classifyTriviality()` from `src/skills/trimatrix/triviality.ts`. Apply cost-cap: if `teamReviewCount >= 5`, force single Sentinel regardless of verdict.
+
+**TRIVIAL (or cost-cap fallback or compatibility fallback):**
 Dispatch one sentinel. Prompt:
 ```
 Review the implementation against the original directive and verify correctness.
@@ -168,15 +171,15 @@ Epic task ID: <id>. Worktree branch: <branch>.
 Produce verdict: PASS / NEEDS_CHANGES / BLOCK.
 ```
 
-**Compliance matrix (sphere):**
-Deploy multiple sentinels via team. Scope each to a domain:
+**NON_TRIVIAL (and teamReviewCount < 5):**
+Deploy multiple sentinels via team (compliance matrix). Scope each to a domain:
 ```
 sentinel <designation>: Review <domain> compliance only.
 Epic task ID: <id>. Focus: <correctness | types | tests | conventions>.
 Produce verdict: PASS / NEEDS_CHANGES / BLOCK with findings.
 Coordinate with teammates — if another adjunct finds a blocking issue, acknowledge it.
 ```
-Aggregate verdicts. Any BLOCK → treat whole review as BLOCK. Any NEEDS_CHANGES → treat as NEEDS_CHANGES unless all others PASS.
+Increment `teamReviewCount`. Aggregate verdicts. Any BLOCK → treat whole review as BLOCK. Any NEEDS_CHANGES → treat as NEEDS_CHANGES unless all others PASS.
 
 ### Step 9: Handle Verdict
 - **PASS:** Task Closure Protocol (close all subtasks, then epic). Write memory episode. Call `mcp__unimatrix__save_checkpoint` to persist the final graph state. Proceed to Step 9b.

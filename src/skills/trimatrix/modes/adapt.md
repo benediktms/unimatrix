@@ -36,7 +36,12 @@ for cycle in 1..max_cycles:
 
   2b. REVIEW
       Generate designation via Designation Generation Protocol.
-      Dispatch sentinel with task ID and implementation snapshot IDs.
+      Per Protocol C § C5a, classify triviality and select review tier (derive
+      locDelta/fileCount/riskKeywords/crossPackage/crossBrain from git output and
+      routing signal file; apply cost-cap: teamReviewCount >= 5 → force single Sentinel).
+      Dispatch sentinel (TRIVIAL / cost-cap / compatibility fallback) or agent team
+      compliance matrix (NON_TRIVIAL, teamReviewCount < 5) with task ID and
+      implementation snapshot IDs.
       Wait for verdict in task comments.
 
   2c. EVALUATE

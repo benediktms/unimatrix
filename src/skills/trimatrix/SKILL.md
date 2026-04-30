@@ -347,6 +347,90 @@ stateDiagram-v2
     DONE --> [*]
 ```
 
+#### C5a: Review Tier Selection
+
+Before dispatching review (step 4 in C1), the lead derives triviality inputs from the current change set and calls `classifyTriviality()` from `src/skills/trimatrix/triviality.ts` (`unm-735.6`). The verdict selects the review tier.
+
+##### Input Derivation
+
+```bash
+# locDelta: total lines changed (insertions + deletions)
+# fileCount: number of files modified
+read added removed files <<< $(
+  git diff --shortstat <baseRef>..HEAD \
+    | awk '{print $4, $6, $1}'
+)
+locDelta=$(( added + removed ))
+fileCount=$files
+
+# riskKeywords: from the routing signal file written by the UserPromptSubmit hook
+riskKeywords=$(
+  jq '.signals.risk_keywords // 0' \
+    /tmp/unimatrix-routing-${SESSION_ID}.json
+)
+
+# crossPackage: true when changed files span >1 top-level src/ subtree
+topLevelDirs=$(
+  git diff --name-only <baseRef>..HEAD \
+    | awk -F/ '/^src\// {print $2}' \
+    | sort -u \
+    | wc -l
+)
+crossPackage=$([ "$topLevelDirs" -gt 1 ] && echo true || echo false)
+
+# crossBrain: true when the drone's checkpoint records >1 repo touched
+# Inspect the drone's completion snapshot — set when >1 repo modified.
+crossBrain=false  # default; override from checkpoint data when available
+```
+
+##### Tier Selection
+
+```typescript
+import { classifyTriviality } from "src/skills/trimatrix/triviality.ts";
+
+const verdict = classifyTriviality({
+  locDelta,
+  fileCount,
+  riskKeywords,
+  crossPackage,
+  crossBrain,
+});
+// verdict: "TRIVIAL" | "NON_TRIVIAL"
+```
+
+##### Tier Dispatch Table
+
+| Condition | Verdict | Review Path |
+|---|---|---|
+| `locDelta <= 30` AND `fileCount == 1` AND `riskKeywords == 0` AND `!crossPackage` AND `!crossBrain` | `TRIVIAL` | Single Sentinel Protocol adjunct |
+| Any criterion fails | `NON_TRIVIAL` | Agent team via `TeamCreate` + multi-sentinel compliance matrix |
+
+**TRIVIAL path:** Dispatch one Sentinel Protocol adjunct. Standard single-adjunct flow per Protocol D (T2, INDEPENDENT). No team created.
+
+**NON_TRIVIAL path:** Create a team via `TeamCreate`. Deploy multiple sentinels as a compliance matrix (Borg sphere), each scoped to a review domain (correctness, types, tests, conventions). Aggregate verdicts: any BLOCK → whole review is BLOCK; any NEEDS_CHANGES → NEEDS_CHANGES unless all others PASS. For cross-cutting changes spanning multiple repos, prefer a fresh Claude Code instance over a subagent for maximum context isolation.
+
+##### Per-Saga Cost Cap
+
+Agent-team reviews consume significantly more tokens than single-sentinel reviews. The per-saga budget is **max 5 team-reviews per saga**.
+
+The lead tracks team-review count as a session-scoped counter. Increment the counter each time a NON_TRIVIAL verdict triggers a team dispatch. Server-side enforcement is out of scope — the lead maintains the count as a discipline.
+
+**After the cap is reached**, fall back to single Sentinel regardless of the classifier verdict:
+
+```
+teamReviewCount >= 5 → force single Sentinel (cost-cap fallback)
+```
+
+Document the fallback in the node's completion comment so the post-saga report (`unm-735.8`) can include escalation counts.
+
+##### Backwards Compatibility Fallback
+
+If `classifyTriviality` is unavailable (older sessions, manual review flow, import failure), default to **single Sentinel**. This preserves the pre-`unm-735.7` shipping behavior and ensures existing sagas do not break when this version of the skill file is not present.
+
+```
+classifyTriviality unavailable → single Sentinel (compatibility fallback)
+```
+
 #### C6: MCP Primitives Reference
 
 | Primitive | Kind | Effect |
