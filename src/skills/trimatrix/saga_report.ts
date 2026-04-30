@@ -103,15 +103,14 @@ export function buildSagaReport(
       }
     } else if (node.status === NodeStatus.FAILED) {
       failed++;
-      // Detect cap-exhaustion escalations: iterationCount reached maxIterations.
-      // Also include nodes that failed after at least one failed review.
-      if (iters > 0 || node.lastReviewVerdict === "FAIL") {
+      // Escalations: only nodes where the iteration cap is exhausted.
+      // Nodes that failed with reviewVerdict=FAIL but still have retries remaining
+      // are failures — not escalations (caller may call node_reset to retry).
+      if (iters >= (node.maxIterations ?? 3)) {
         escalations.push({
           nodeId: node.id,
           reason: node.failureReason ??
-            (iters >= (node.maxIterations ?? 3)
-              ? `Cap exhausted (${iters}/${node.maxIterations ?? 3} iterations)`
-              : "Review failed"),
+            `Cap exhausted (${iters}/${node.maxIterations ?? 3} iterations)`,
           lastReviewNotes: node.lastReviewNotes,
         });
       }

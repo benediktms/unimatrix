@@ -1380,7 +1380,7 @@ server.tool(
 
 server.tool(
   "saga_report",
-  "Generate a structured aggregate report after all saga nodes reach terminal status. Summarises convergence quality: total nodes, one-shot completions, retried convergences, failures, iteration statistics, escalations, and C7 node-summary records. Call this after the final `close_node` before `tasks_close`. Supports markdown (default) and json output formats.",
+  "Generate a structured aggregate report after all saga nodes reach terminal status. Summarises convergence quality: total nodes, one-shot completions, retried convergences, failures, iteration statistics, escalations, and C7 node-summary records. Call this after the final `close_node` before `tasks_close`. Supports markdown (default) and json output formats. By default requires all nodes to be terminal; pass allowPartial: true to generate a partial report mid-saga.",
   {
     format: z.enum(["markdown", "json"]).optional().default("markdown")
       .describe(
@@ -1389,21 +1389,52 @@ server.tool(
     sessionLabel: z.string().optional().describe(
       "Session label used to filter C7 node-summary records from the brain. When omitted, nodeSummaries will be empty.",
     ),
+    allowPartial: z.boolean().optional().describe(
+      "When true, skips the terminal-saga precondition check and generates a partial report mid-execution. Defaults to false.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
     const label = params.sessionLabel ?? cp.sessionLabel;
 
+    // Precondition: all nodes must be terminal unless allowPartial is set.
+    if (!params.allowPartial) {
+      const allNodes = Object.values(cp.graph.nodes);
+      const nonTerminal = allNodes.filter(
+        (n) =>
+          n.status !== NodeStatus.DONE &&
+          n.status !== NodeStatus.MERGED &&
+          n.status !== NodeStatus.FAILED,
+      );
+      if (nonTerminal.length > 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason:
+                  `saga not terminal — ${nonTerminal.length} of ${allNodes.length} nodes still pending or active`,
+              }),
+            },
+          ],
+        };
+      }
+    }
+
     // Fetch C7 node-summary records from the brain when a session label is available.
     const nodeSummaries: NodeSummaryEntry[] = [];
     if (label) {
       try {
-        // records_list filtered by tags ["node-summary", label]
-        const listResp = await callBrainTool(brainExec, "records_list", {
+        // records.list filtered by tag "node-summary"
+        const listResp = await callBrainTool(brainExec, "records.list", {
           tag: "node-summary",
         });
-        const listData = JSON.parse(listResp as string);
-        const records: Array<{ id: string; title?: string; tags?: string[] }> =
+        const listData = listResp as {
+          records?: Array<{ id?: string; tags?: string[] }>;
+          items?: Array<{ id?: string; tags?: string[] }>;
+        };
+        const records: Array<{ id?: string; tags?: string[] }> =
           listData.records ?? listData.items ?? [];
 
         // Filter to records that carry the session label tag.
@@ -1412,15 +1443,16 @@ server.tool(
         );
 
         for (const rec of sessionRecords) {
+          if (!rec.id) continue;
           try {
             const content = await callBrainTool(
               brainExec,
-              "records_fetch_content",
+              "records.fetch_content",
               {
                 record_id: rec.id,
               },
             );
-            const parsed = JSON.parse(content as string);
+            const parsed = content as { text?: string; data?: string };
             const text: string = parsed.text ?? parsed.data ?? "";
             // Parse the C7 markdown template for key fields.
             const statusMatch = text.match(/\*\*Status:\*\*\s*(\S+)/);
@@ -1535,6 +1567,25 @@ server.tool(
     }
 
     // ---------------------------------------------------------------------------
+    // At-cap FAILED pre-rejection: nodes that are FAILED and have exhausted
+    // their iteration cap must not be re-dispatched. They are excluded from
+    // activation and returned in capExhaustedNodes for the caller to handle.
+    // ---------------------------------------------------------------------------
+    const capExhaustedNodes: string[] = [];
+    const capExhaustedRejected = new Set<string>();
+    for (const nId of regularNodeIds) {
+      if (capabilityRejected.has(nId)) continue;
+      const node = cp.graph.nodes[nId];
+      if (
+        node?.status === NodeStatus.FAILED &&
+        (node.iterationCount ?? 0) >= (node.maxIterations ?? 3)
+      ) {
+        capExhaustedNodes.push(nId);
+        capExhaustedRejected.add(nId);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
     // UNM-1b7.7: External-blocker consultation
     //
     // Before activating each regular node, check whether its brain task has
@@ -1554,10 +1605,13 @@ server.tool(
     let workingCp = cp;
 
     for (const nId of regularNodeIds) {
-      // Skip nodes already rejected by the capability gate (UNM-1b7.4).
+      // Skip nodes already rejected by the capability gate (UNM-1b7.4) or
+      // the at-cap FAILED pre-rejection above.
       // They should not be activated; they should not consume a brain
       // round-trip; they should not receive a fence.
-      if (capabilityRejected.has(nId)) continue;
+      if (capabilityRejected.has(nId) || capExhaustedRejected.has(nId)) {
+        continue;
+      }
       const node = workingCp.graph.nodes[nId];
       if (!node?.taskId) {
         clearToActivate.push(nId);
@@ -1696,6 +1750,7 @@ server.tool(
             ...(capabilityMismatches.length > 0
               ? { capabilityMismatches }
               : {}),
+            ...(capExhaustedNodes.length > 0 ? { capExhaustedNodes } : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
@@ -2132,10 +2187,35 @@ server.tool(
       throw new Error(`Node "${params.nodeId}" not found in checkpoint`);
     }
 
-    // Precondition: only FAILED nodes may be reset
+    // Idempotency: if already PENDING with the same leaseVersion, return ok without re-resetting.
+    if (resetTarget.status === NodeStatus.PENDING) {
+      const sameVersion = params.leaseVersion === undefined ||
+        resetTarget.leaseVersion === params.leaseVersion;
+      if (sameVersion) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                idempotent: true,
+                nodeId: params.nodeId,
+                leaseVersion: resetTarget.leaseVersion,
+              }),
+            },
+          ],
+        };
+      }
+      // PENDING but leaseVersion mismatch — stale fence.
+      throw new Error(
+        `Stale lease for node ${params.nodeId}: expected leaseVersion=${resetTarget.leaseVersion}, got leaseVersion=${params.leaseVersion}`,
+      );
+    }
+
+    // Precondition: only FAILED nodes may be reset (non-PENDING, non-FAILED path)
     if (resetTarget.status !== NodeStatus.FAILED) {
       throw new Error(
-        `Cannot reset node "${params.nodeId}" — node is ${resetTarget.status}, expected ${NodeStatus.FAILED}`,
+        `Cannot reset node "${params.nodeId}" — node is ${resetTarget.status} (still being executed), expected ${NodeStatus.FAILED}. Wait for completion or call fail_node first.`,
       );
     }
 
