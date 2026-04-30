@@ -2540,3 +2540,100 @@ Deno.test("failure isolation: upstream node PR metadata and review verdict prese
   assertEquals(a.lastReviewNotes, "Looks good.");
   assertEquals(a.blockedBy, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// review_passed / review_failed hardening tests (UNM-735.16 Alpha — Sentinel A)
+// ---------------------------------------------------------------------------
+
+// HIGH-A1: review_passed on a cap-exhausted FAILED node must throw
+Deno.test("transition: review_passed on FAILED node throws (HIGH-A1)", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      iterationCount: 3,
+      maxIterations: 3,
+      failureReason: "iteration cap exhausted: review failed 3/3 times",
+    }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const nodeBefore = cp.graph.nodes["n1"];
+  assertThrows(
+    () => transition(cp, { type: "review_passed", nodeId: "n1" }),
+    Error,
+    'Cannot apply review_passed to node "n1" — node is FAILED',
+  );
+  // Checkpoint must be unmodified — node state unchanged
+  assertEquals(cp.graph.nodes["n1"].status, NodeStatus.FAILED);
+  assertEquals(cp.graph.nodes["n1"].iterationCount, nodeBefore.iterationCount);
+  assertEquals(
+    cp.graph.nodes["n1"].failureReason,
+    "iteration cap exhausted: review failed 3/3 times",
+  );
+});
+
+// MEDIUM-A1: review_failed idempotent on cap-exhausted FAILED node (no 4/3 arithmetic)
+Deno.test("transition: review_failed idempotent on cap-exhausted FAILED node (MEDIUM-A1)", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.PENDING,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
+  const cp0 = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+
+  // Apply review_failed 3 times — 3rd application exhausts the cap
+  const cp1 = transition(cp0, { type: "review_failed", nodeId: "n1" });
+  const cp2 = transition(cp1, { type: "review_failed", nodeId: "n1" });
+  const cp3 = transition(cp2, { type: "review_failed", nodeId: "n1" });
+
+  assertEquals(cp3.graph.nodes["n1"].status, NodeStatus.FAILED);
+  assertEquals(cp3.graph.nodes["n1"].iterationCount, 3);
+  assertEquals(
+    cp3.graph.nodes["n1"].failureReason,
+    "iteration cap exhausted: review failed 3/3 times",
+  );
+
+  // 4th application must be a no-op (idempotent)
+  const cp4 = transition(cp3, { type: "review_failed", nodeId: "n1" });
+  assertEquals(cp4.graph.nodes["n1"].status, NodeStatus.FAILED);
+  assertEquals(cp4.graph.nodes["n1"].iterationCount, 3);
+  assertEquals(
+    cp4.graph.nodes["n1"].failureReason,
+    "iteration cap exhausted: review failed 3/3 times",
+  );
+});
+
+// LOW-A1: node_reset clears lastReviewVerdict and lastReviewNotes
+Deno.test("transition: node_reset clears lastReviewVerdict and lastReviewNotes (LOW-A1)", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      lastReviewVerdict: "FAIL",
+      lastReviewNotes: "syntax error in line 42",
+      failureReason: "iteration cap exhausted: review failed 3/3 times",
+      iterationCount: 3,
+    }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "n1" });
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
+  assertEquals(result.graph.nodes["n1"].lastReviewVerdict, undefined);
+  assertEquals(result.graph.nodes["n1"].lastReviewNotes, undefined);
+  assertEquals(result.graph.nodes["n1"].failureReason, undefined);
+});
+
+// LOW-A2: node_reset on BLOCKED node must throw (elicitation gate guard)
+Deno.test("transition: node_reset on BLOCKED node throws (LOW-A2)", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.BLOCKED,
+    }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  assertThrows(
+    () => transition(cp, { type: "node_reset", nodeId: "n1" }),
+    Error,
+    "expected FAILED",
+  );
+});

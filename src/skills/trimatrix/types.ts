@@ -296,8 +296,10 @@ export interface Node {
    */
   lastReviewNotes?: string;
   /**
-   * IDs of upstream nodes that are currently in FAILED status and block this
-   * node. Populated and cleared by `recomputeReadiness` in graph.ts:
+   * IDs of direct predecessors that are currently in NodeStatus.FAILED.
+   * Empty array (or undefined) when no direct predecessor is failed.
+   *
+   * Populated and cleared by `recomputeReadiness` in graph.ts:
    * - When a predecessor transitions to FAILED, its ID is appended here.
    * - When a predecessor is reset (back to PENDING via `node_reset`), its ID
    *   is removed; if the list empties and all other deps are satisfied the
@@ -306,6 +308,11 @@ export interface Node {
    * A non-empty `blockedBy` implies `readinessStatus === BLOCKED`.
    * An empty (or absent) `blockedBy` does NOT imply READY — there may still
    * be unsatisfied-but-not-failed predecessors (e.g. PENDING, ACTIVE).
+   *
+   * **Direct-only:** transitive failures are not propagated. In A→B→C with
+   * A FAILED and B PENDING, C.blockedBy = [] because B is not failed.
+   * Operators querying for the originating failure must walk predecessor
+   * edges. This keeps the field cheap to recompute and reset.
    *
    * Introduced alongside the failure-isolation invariant (UNM-735.9).
    * Pre-existing checkpoints treat `undefined` as `[]` (backfill compat).

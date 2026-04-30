@@ -479,10 +479,25 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "review_passed": {
       const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
       if (!node) return { ...checkpoint, updatedAt: now };
+      // Precondition: FAILED nodes cannot be un-FAILed by review_passed.
+      // Operators must call node_reset first to recover from cap-exhausted state.
+      if (node.status === NodeStatus.FAILED) {
+        throw new Error(
+          `Cannot apply review_passed to node "${event.nodeId}" — node is FAILED. ` +
+            `Use node_reset first to recover.`,
+        );
+      }
       // Derive target status matching complete_node logic
       const passedStatus = node.prUrl
         ? (node.repo ? NodeStatus.MERGED : NodeStatus.PR_CREATED)
         : NodeStatus.DONE;
+      // Design note (LOW-A4): if the node is already DONE, status is idempotent
+      // (passedStatus === DONE), but lastReviewVerdict and lastReviewNotes are
+      // still overwritten. This is intentional — event sequence (event seq) is
+      // the source of truth for freshness. A stale review event applied out of
+      // order will clobber a fresher verdict; callers are responsible for
+      // ordering. If stronger semantics are needed (e.g. seq-guarded writes),
+      // that is a future task.
       const updatedNode: Node = {
         ...node,
         status: passedStatus,
@@ -521,6 +536,16 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "review_failed": {
       const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
       if (!node) return { ...checkpoint, updatedAt: now };
+      // Idempotency guard: if the node is already in cap-exhausted FAILED state,
+      // a duplicate review_failed must not increment iterationCount further
+      // (which would produce corrupt "4/3" arithmetic). Return the checkpoint
+      // unchanged — replay-safe no-op.
+      if (
+        node.status === NodeStatus.FAILED &&
+        (node.iterationCount ?? 0) >= (node.maxIterations ?? 3)
+      ) {
+        return checkpoint; // idempotent no-op — already terminal
+      }
       const newIterationCount = (node.iterationCount ?? 0) + 1;
       const cap = node.maxIterations ?? 3;
       const capExhausted = newIterationCount >= cap;
@@ -575,6 +600,10 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         leaseVersion: (node.leaseVersion ?? 0) + 1,
         // Clear the failure reason on reset
         failureReason: undefined,
+        // Clear stale review verdict and notes — leaving these set would surface
+        // a "FAIL" verdict in saga_report and operator UIs for a recovered node.
+        lastReviewVerdict: undefined,
+        lastReviewNotes: undefined,
         // Reset iterationCount only when explicitly requested
         ...(event.resetIterationCount ? { iterationCount: 0 } : {}),
       };
