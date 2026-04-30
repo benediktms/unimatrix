@@ -4,18 +4,34 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, RoutingTrace, SubgraphStrategy, Tier } from "./types.ts";
-import { Executor, MachineState, NodeStatus } from "./types.ts";
+import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
+import {
+  Executor,
+  MachineState,
+  NodeStatus,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+} from "./types.ts";
 import { computeWaves } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.3.0";
+const VERSION = "2.4.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0", "2.2.0", "2.3.0"]);
+const SUPPORTED_VERSIONS = new Set([
+  "1.0.0",
+  "1.1.0",
+  "1.2.0",
+  "1.3.0",
+  "2.0.0",
+  "2.1.0",
+  "2.2.0",
+  "2.3.0",
+  "2.4.0",
+]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -176,6 +192,21 @@ export function canTransition(
           allowed: false,
           reason:
             `refinement_approved requires refining state, got ${machineState}`,
+        };
+      }
+      return { allowed: true };
+
+    case "subgraph_added":
+      // Adding an explicit subgraph is legal in any pre-terminal state — it
+      // declares structure, not state. Forbid only after completion/cancellation.
+      if (
+        machineState === MachineState.COMPLETED ||
+        machineState === MachineState.CANCELLED
+      ) {
+        return {
+          allowed: false,
+          reason:
+            `subgraph_added is not allowed in terminal state ${machineState}`,
         };
       }
       return { allowed: true };
@@ -388,6 +419,14 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
+    case "subgraph_added":
+      // Identity transition — the subgraph itself is appended to checkpoint.subgraphs
+      // by the caller (server tool). The event records the addition for audit.
+      return {
+        ...checkpoint,
+        updatedAt: now,
+      };
+
     case "cancel":
       return {
         ...checkpoint,
@@ -464,6 +503,15 @@ export function deserialize(json: string): Checkpoint {
 
   // Backward compat: pre-2.3.0 checkpoints lack episodeIds — default to [].
   if (!cp.episodeIds) cp.episodeIds = [];
+
+  // Backward compat: pre-2.4.0 subgraphs lack derived/policies. Older subgraphs
+  // were always auto-derived with implicit ALL/FAIL_FAST semantics — restore those.
+  for (const sg of (cp.subgraphs ?? []) as Subgraph[]) {
+    const partial = sg as Partial<Subgraph>;
+    if (partial.derived === undefined) sg.derived = true;
+    if (!sg.completionPolicy) sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    if (!sg.failurePolicy) sg.failurePolicy = SubgraphFailurePolicy.FAIL_FAST;
+  }
 
   return cp;
 }

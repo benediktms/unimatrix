@@ -803,6 +803,40 @@ Deno.test("deserialize: pre-2.3.0 checkpoint defaults episodeIds to []", () => {
   assertEquals(cp.episodeIds, []);
 });
 
+Deno.test("deserialize: pre-2.4.0 subgraphs receive default policies and derived flag", () => {
+  const raw = {
+    version: "2.3.0",
+    machineState: "dispatching",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    episodeIds: [],
+    subgraphs: [
+      {
+        id: "sg-lead",
+        nodes: ["n1"],
+        edges: [],
+        assignee: "LEAD",
+        executor: "LEAD",
+        tier: "T1",
+        coordination: { mode: "NONE" },
+        // no derived / completionPolicy / failurePolicy
+      },
+    ],
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.subgraphs?.length, 1);
+  const sg = cp.subgraphs![0];
+  assertEquals(sg.derived, true);
+  assertEquals(sg.completionPolicy, "ALL");
+  assertEquals(sg.failurePolicy, "FAIL_FAST");
+});
+
 Deno.test("deserialize: 2.3.0 checkpoint preserves existing episodeIds", () => {
   const raw = {
     version: "2.3.0",
@@ -838,7 +872,7 @@ Deno.test("serialize/deserialize: round trip preserves episodeIds", () => {
   assertEquals(restored.episodeIds, ["ep-1", "ep-2", "ep-3"]);
 });
 
-Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", () => {
+Deno.test("serialize/deserialize: round trip preserves intent, tier, subgraphStrategy", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp = createCheckpoint([], graph, {
     intent: Intent.INVESTIGATE,
@@ -851,7 +885,7 @@ Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", (
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.3.0");
+  assertEquals(restored.version, "2.4.0");
 });
 
 // ---------------------------------------------------------------------------

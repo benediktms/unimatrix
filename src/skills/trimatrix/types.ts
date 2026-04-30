@@ -190,12 +190,52 @@ export interface CoordinationContract {
 }
 
 /**
+ * How a subgraph determines its overall completion status.
+ */
+export enum SubgraphCompletionPolicy {
+  /** Subgraph completes when every member node reaches DONE/MERGED. (Default) */
+  ALL = "ALL",
+  /** Subgraph completes as soon as any member node reaches DONE/MERGED. */
+  ANY = "ANY",
+  /** Subgraph completes when every node listed in `gates` reaches DONE/MERGED. */
+  GATED = "GATED",
+}
+
+/**
+ * How node failures within a subgraph propagate to subgraph status.
+ */
+export enum SubgraphFailurePolicy {
+  /** Any node failure marks the subgraph as failed. (Default) */
+  FAIL_FAST = "FAIL_FAST",
+  /** Other nodes proceed; subgraph fails only if every node fails. */
+  CONTINUE = "CONTINUE",
+  /** Subgraph completes despite failures, provided every gate node succeeds. */
+  BEST_EFFORT = "BEST_EFFORT",
+}
+
+/**
  * A partition of the supergraph assigned to a specific executor.
  * Contains an ordered list of nodes forming the executor's strict traversal contract.
+ *
+ * Subgraphs may be **derived** (auto-computed from connectivity by `computeSubgraphs`)
+ * or **explicit** (declared by the caller via the future `add_subgraph` tool).
+ * Derived subgraphs use stable hash-based IDs so node addition/removal does not
+ * renumber siblings; explicit subgraphs use the user-supplied slug as their ID.
  */
 export interface Subgraph {
-  /** Unique subgraph identifier (e.g., "sg-lead", "sg-1"). */
+  /**
+   * Stable subgraph identifier.
+   * - `sg-lead` for the lead subgraph (always reserved).
+   * - `auto-<8-char hash>` for derived adjunct subgraphs — hash of sorted node IDs.
+   * - User-supplied slug for explicit subgraphs.
+   */
   id: string;
+  /** Optional human-readable label. Auto-derived subgraphs may omit this. */
+  label?: string;
+  /** Parent subgraph ID for hierarchical nesting. Top-level subgraphs leave this unset. */
+  parentId?: string;
+  /** True if produced by `computeSubgraphs`; false if declared via `add_subgraph`. */
+  derived: boolean;
   /** Node IDs in topological traversal order within this subgraph. */
   nodes: string[];
   /** Edges that exist entirely within this subgraph. */
@@ -208,6 +248,12 @@ export interface Subgraph {
   tier: Tier;
   /** Coordination rules for multi-subgraph execution. */
   coordination: CoordinationContract;
+  /** How the subgraph evaluates overall completion. */
+  completionPolicy: SubgraphCompletionPolicy;
+  /** How node failures propagate to subgraph status. */
+  failurePolicy: SubgraphFailurePolicy;
+  /** Gate node IDs required by `GATED` completion or `BEST_EFFORT` failure policies. */
+  gates?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -570,4 +616,5 @@ export type Event =
   | { type: "review_passed"; nodeId?: string }
   | { type: "refine" }
   | { type: "refinement_approved" }
+  | { type: "subgraph_added"; subgraphId: string }
   | { type: "cancel"; reason?: string };

@@ -6,7 +6,17 @@
  */
 
 import type { CoordinationContract, Edge, Graph, Node, Subgraph, Wave } from "./types.ts";
-import { CoordinationMode, EdgeType, Executor, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
+import {
+  CoordinationMode,
+  EdgeType,
+  Executor,
+  NodeStatus,
+  NodeType,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+  SubgraphStrategy,
+  Tier,
+} from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Refinement mutation result
@@ -807,6 +817,25 @@ function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
 }
 
 /**
+ * Stable 8-character hash of a node-ID set.
+ *
+ * Used to derive subgraph IDs (`auto-<hash>`) so subgraph identity remains
+ * constant when sibling subgraphs are added or removed. Order-insensitive —
+ * the input set is sorted before hashing. djb2-style mix; not cryptographic.
+ */
+export function hashNodeSet(nodeIds: string[]): string {
+  const sorted = [...nodeIds].sort();
+  let hash = 5381;
+  for (const id of sorted) {
+    for (let i = 0; i < id.length; i++) {
+      hash = ((hash << 5) + hash + id.charCodeAt(i)) >>> 0;
+    }
+    hash = ((hash << 5) + hash + 0x7c) >>> 0; // 0x7c = '|' separator
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 8);
+}
+
+/**
  * Extract `exports:<path>` and `imports:<path>` from node tags.
  */
 function extractTaggedPaths(
@@ -847,12 +876,15 @@ export function computeSubgraphs(
     const sorted = topoSortSubset(allNodeIds, graph.edges);
     return [{
       id: "sg-lead",
+      derived: true,
       nodes: sorted,
       edges: [...graph.edges],
       assignee: "LEAD",
       executor: Executor.LEAD,
       tier,
       coordination: { mode: CoordinationMode.NONE },
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     }];
   }
 
@@ -920,14 +952,23 @@ export function computeSubgraphs(
     const sorted = topoSortSubset(leadNodeIds, leadEdges);
     subgraphs.push({
       id: "sg-lead",
+      derived: true,
       nodes: sorted,
       edges: leadEdges,
       assignee: "LEAD",
       executor: Executor.LEAD,
       tier,
       coordination: { mode: CoordinationMode.NONE },
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     });
   }
+
+  // Pre-compute stable IDs for every adjunct component so coordination contracts
+  // can reference siblings by ID without depending on iteration order.
+  const componentIds: string[] = components.map((compNodes) =>
+    compNodes.length === 0 ? "" : `auto-${hashNodeSet(compNodes)}`
+  );
 
   // Adjunct subgraphs (one per connected component)
   for (let i = 0; i < components.length; i++) {
@@ -940,7 +981,7 @@ export function computeSubgraphs(
     );
     const sorted = topoSortSubset(compNodes, compEdges);
 
-    const sgId = `sg-${i + 1}`;
+    const sgId = componentIds[i];
 
     // Determine coordination mode
     let coordination: CoordinationContract;
@@ -958,8 +999,8 @@ export function computeSubgraphs(
           // Find which subgraph the source belongs to
           const srcComp = nodeToComponent.get(edge.from);
           if (srcComp !== undefined) {
-            const depSgId = `sg-${srcComp + 1}`;
-            if (!dependsOn.includes(depSgId)) dependsOn.push(depSgId);
+            const depSgId = componentIds[srcComp];
+            if (depSgId && !dependsOn.includes(depSgId)) dependsOn.push(depSgId);
           } else if (leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")) {
             dependsOn.push("sg-lead");
           }
@@ -981,12 +1022,15 @@ export function computeSubgraphs(
 
     subgraphs.push({
       id: sgId,
+      derived: true,
       nodes: sorted,
       edges: compEdges,
       assignee: "",  // Populated by caller after designation generation
       executor: Executor.ADJUNCT,
       tier,
       coordination,
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     });
   }
 
@@ -1007,10 +1051,25 @@ export function serializeSubgraphBrief(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`## Subgraph: ${subgraph.id}`);
+  const heading = subgraph.label
+    ? `## Subgraph: ${subgraph.id} — ${subgraph.label}`
+    : `## Subgraph: ${subgraph.id}`;
+  lines.push(heading);
+  if (subgraph.parentId) lines.push(`Parent: ${subgraph.parentId}`);
   lines.push(`Assignee: ${subgraph.assignee}`);
   lines.push(`Executor: ${subgraph.executor}`);
   lines.push(`Coordination: ${subgraph.coordination.mode}`);
+  if (
+    subgraph.completionPolicy !== SubgraphCompletionPolicy.ALL ||
+    subgraph.failurePolicy !== SubgraphFailurePolicy.FAIL_FAST
+  ) {
+    lines.push(
+      `Policies: completion=${subgraph.completionPolicy}, failure=${subgraph.failurePolicy}`,
+    );
+  }
+  if (subgraph.gates?.length) {
+    lines.push(`Gates: ${subgraph.gates.join(", ")}`);
+  }
   lines.push("");
 
   lines.push("### Traversal Order");

@@ -867,11 +867,11 @@ Deno.test("computeSubgraphs: INDEPENDENT partitions adjunct and lead nodes", () 
   const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
 
   const leadSg = sgs.find((s) => s.id === "sg-lead");
-  const adjunctSg = sgs.find((s) => s.id === "sg-1");
+  const adjunctSg = sgs.find((s) => s.executor === Executor.ADJUNCT);
   assertEquals(leadSg !== undefined, true);
   assertEquals(adjunctSg !== undefined, true);
   assertEquals(leadSg!.executor, Executor.LEAD);
-  assertEquals(adjunctSg!.executor, Executor.ADJUNCT);
+  assertEquals(adjunctSg!.id.startsWith("auto-"), true);
   assertEquals(leadSg!.nodes.includes("C"), true);
   assertEquals(adjunctSg!.nodes.includes("A"), true);
   assertEquals(adjunctSg!.nodes.includes("B"), true);
@@ -937,6 +937,50 @@ Deno.test("computeSubgraphs: empty graph returns empty", () => {
   const g = makeGraph([]);
   const sgs = computeSubgraphs(g, [], Tier.T1, SubgraphStrategy.SELF);
   assertEquals(sgs.length, 0);
+});
+
+Deno.test("computeSubgraphs: derived adjunct IDs are stable when siblings change", () => {
+  // Graph 1: components {A,B} and {C}
+  const g1 = makeGraph(
+    [
+      makeNode({ id: "A", executor: Executor.ADJUNCT }),
+      makeNode({ id: "B", executor: Executor.ADJUNCT }),
+      makeNode({ id: "C", executor: Executor.ADJUNCT }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const sgs1 = computeSubgraphs(g1, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const ab1 = sgs1.find((s) => s.nodes.includes("A"))!.id;
+  const c1 = sgs1.find((s) => s.nodes.includes("C"))!.id;
+
+  // Graph 2: drop the {C} component entirely. Positional IDs would have renumbered
+  // the {A,B} component; hash-based IDs must not.
+  const g2 = makeGraph(
+    [
+      makeNode({ id: "A", executor: Executor.ADJUNCT }),
+      makeNode({ id: "B", executor: Executor.ADJUNCT }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const sgs2 = computeSubgraphs(g2, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const ab2 = sgs2.find((s) => s.nodes.includes("A"))!.id;
+  assertEquals(ab1, ab2, "subgraph ID for {A,B} must survive removal of sibling {C}");
+  assertEquals(ab1.startsWith("auto-"), true);
+  assertEquals(c1.startsWith("auto-"), true);
+  assertEquals(ab1 !== c1, true);
+});
+
+Deno.test("computeSubgraphs: derived subgraphs carry default policies and derived flag", () => {
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", executor: Executor.ADJUNCT }),
+    ],
+  );
+  const sgs = computeSubgraphs(g, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  assertEquals(sgs.length, 1);
+  assertEquals(sgs[0].derived, true);
+  assertEquals(sgs[0].completionPolicy, "ALL");
+  assertEquals(sgs[0].failurePolicy, "FAIL_FAST");
 });
 
 // ---------------------------------------------------------------------------
