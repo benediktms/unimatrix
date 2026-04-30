@@ -677,5 +677,5 @@ export type Event =
   | { type: "review_passed"; nodeId?: string }
   | { type: "refine" }
   | { type: "refinement_approved" }
-  | { type: "subgraph_added"; subgraphId: string }
+  | { type: "subgraph_added"; subgraph: Subgraph }
   | { type: "cancel"; reason?: string };

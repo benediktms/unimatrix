@@ -21,6 +21,7 @@ import {
 } from "./state.ts";
 import { EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, WaveResultStatus } from "./types.ts";
 import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
+import { addSubgraph } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -1097,4 +1098,146 @@ Deno.test("transition: execution_completed from failed produces completed", () =
   const cp = makeCheckpoint({ machineState: MachineState.FAILED });
   const result = transition(cp, { type: "execution_completed" });
   assertEquals(result.machineState, MachineState.COMPLETED);
+});
+
+// ---------------------------------------------------------------------------
+// subgraph_added event tests
+// ---------------------------------------------------------------------------
+
+Deno.test("subgraph_added: idempotency — applying same event twice does not double-append", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const waves: Wave[] = [{ id: 1, nodes: ["n1", "n2"], hasMergeGate: false }];
+  const cp = makeCheckpoint({ graph, waves, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-alpha",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const cp1 = transition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp1.subgraphs?.length, 1);
+
+  // Apply the same event again — should be idempotent
+  const cp2 = transition(cp1, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp2.subgraphs?.length, 1, "subgraph count must not double on replay");
+  assertEquals(cp2.subgraphs?.[0].id, "team-alpha");
+});
+
+Deno.test("subgraph_added: rejected from COMPLETED terminal state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({ machineState: MachineState.COMPLETED, graph, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-beta",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, false);
+  assertEquals(result.reason?.includes("terminal"), true);
+});
+
+Deno.test("subgraph_added: rejected from CANCELLED terminal state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({ machineState: MachineState.CANCELLED, graph, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-gamma",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, false);
+  assertEquals(result.reason?.includes("terminal"), true);
+});
+
+Deno.test("subgraph_added: allowed in INITIALIZING state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({ machineState: MachineState.INITIALIZING, graph, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-delta",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, true);
+});
+
+Deno.test("subgraph_added: allowed in PLAN_REVIEW state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({ machineState: MachineState.PLAN_REVIEW, graph, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-epsilon",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, true);
+});
+
+// ---------------------------------------------------------------------------
+// Resume round-trip integrity test
+// ---------------------------------------------------------------------------
+
+Deno.test("serialize/deserialize: resume round-trip preserves subgraph structure and idempotency", () => {
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2"), makeNode("n3")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves: Wave[] = [
+    { id: 1, nodes: ["n1"], hasMergeGate: false },
+    { id: 2, nodes: ["n2", "n3"], hasMergeGate: false },
+  ];
+
+  // Build a checkpoint with one explicit subgraph
+  let cp = makeCheckpoint({ graph, waves, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "drone-cluster",
+    nodeIds: ["n1", "n2"],
+    executor: Executor.ADJUNCT,
+    tier: Tier.T2,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = transition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp.subgraphs?.length, 1);
+
+  // Serialize → deserialize
+  const json = serialize(cp);
+  const restored = deserialize(json);
+
+  // Assert structure preserved
+  assertEquals(restored.subgraphs?.length, 1);
+  assertEquals(restored.subgraphs?.[0].id, "drone-cluster");
+  assertEquals(restored.subgraphs?.[0].derived, false);
+  assertEquals(restored.subgraphs?.[0].nodes.sort(), ["n1", "n2"].sort());
+
+  // Assert idempotency: applying subgraph_added on restored checkpoint is a no-op
+  const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp2.subgraphs?.length, 1, "idempotent replay must not double-append");
+  assertEquals(cp2.subgraphs?.[0].id, "drone-cluster");
 });

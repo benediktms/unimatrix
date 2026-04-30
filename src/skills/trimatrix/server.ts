@@ -37,7 +37,7 @@ import {
   Tier,
   triageSchema,
 } from "./types.ts";
-import type { Edge, Graph, Node, Subgraph } from "./types.ts";
+import type { Edge, Graph, Node, Subgraph, SubgraphSummary } from "./types.ts";
 import { designate, Role } from "./designate.ts";
 import {
   activateNodes,
@@ -130,7 +130,63 @@ function applySubgraphs(
   }
 
   const derived = computeSubgraphs(derivationGraph, cp.waves, tier, strategy);
-  const subgraphs: Subgraph[] = [...explicit, ...derived];
+
+  // M1: Post-process derived subgraph dependsOn for cross-edge resolution.
+  // When explicit subgraphs exist, edges crossing from an explicit-subgraph
+  // member into a derived-subgraph member are inter-subgraph dependencies.
+  // These are invisible to computeSubgraphs (which only sees the unclaimed
+  // subgraph). We resolve them here so derived subgraphs know their upstream.
+  let patchedDerived = derived;
+  if (explicit.length > 0) {
+    // Build a map: nodeId → explicit subgraph ID
+    const nodeToExplicit = new Map<string, string>();
+    for (const sg of explicit) {
+      for (const nodeId of sg.nodes) {
+        nodeToExplicit.set(nodeId, sg.id);
+      }
+    }
+
+    // Build a map: nodeId → derived subgraph ID
+    const nodeToDerived = new Map<string, string>();
+    for (const sg of derived) {
+      for (const nodeId of sg.nodes) {
+        nodeToDerived.set(nodeId, sg.id);
+      }
+    }
+
+    // Walk all graph edges: for each edge where from is in an explicit subgraph
+    // and to is in a derived subgraph, record the dependency.
+    const derivedDepsMap = new Map<string, Set<string>>();
+    for (const edge of cp.graph.edges) {
+      const fromExplicit = nodeToExplicit.get(edge.from);
+      const toDerived = nodeToDerived.get(edge.to);
+      if (fromExplicit && toDerived) {
+        if (!derivedDepsMap.has(toDerived)) {
+          derivedDepsMap.set(toDerived, new Set());
+        }
+        derivedDepsMap.get(toDerived)!.add(fromExplicit);
+      }
+    }
+
+    // Patch derived subgraphs: merge discovered explicit deps into their
+    // coordination.dependsOn, skipping NONE-mode (lead subgraph in SELF strategy).
+    if (derivedDepsMap.size > 0) {
+      patchedDerived = derived.map((sg) => {
+        if (sg.coordination.mode === "NONE") return sg;
+        const newDeps = derivedDepsMap.get(sg.id);
+        if (!newDeps || newDeps.size === 0) return sg;
+        const merged = Array.from(
+          new Set([...(sg.coordination.dependsOn ?? []), ...newDeps]),
+        ).sort();
+        return {
+          ...sg,
+          coordination: { ...sg.coordination, dependsOn: merged },
+        };
+      });
+    }
+  }
+
+  const subgraphs: Subgraph[] = [...explicit, ...patchedDerived];
 
   const updatedNodes = { ...cp.graph.nodes };
   for (const sg of subgraphs) {
@@ -159,10 +215,11 @@ function generateSessionLabel(repos: RepoMetadata[]): string {
  * from the policies plus current node statuses, so callers can tell at a
  * glance whether a subgraph is pending, active, completed, or failed.
  */
-function summarizeSubgraph(sg: Subgraph, graph: Graph) {
+function summarizeSubgraph(sg: Subgraph, graph: Graph): SubgraphSummary {
   return {
     id: sg.id,
     executor: sg.executor,
+    tier: sg.tier,
     assignee: sg.assignee,
     nodeCount: sg.nodes.length,
     nodes: sg.nodes,
@@ -949,10 +1006,29 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
+    // M5: Capture old derived subgraph IDs before recompute to surface renames.
+    const oldDerived = (cp.subgraphs ?? [])
+      .filter((sg) => sg.derived)
+      .map((sg) => ({ id: sg.id, nodes: sg.nodes.slice().sort() }));
+
     checkpoint = {
       ...applySubgraphs(cp, { tier: params.tier, strategy: params.strategy }),
       updatedAt: new Date().toISOString(),
     };
+
+    const newDerived = (checkpoint!.subgraphs ?? [])
+      .filter((sg) => sg.derived)
+      .map((sg) => ({ id: sg.id, nodes: sg.nodes.slice().sort() }));
+
+    // Detect renames: old derived whose member set is preserved but ID changed.
+    const renamed: Array<{ from: string; to: string; nodes: string[] }> = [];
+    for (const oldSg of oldDerived) {
+      const oldKey = oldSg.nodes.join(",");
+      const matched = newDerived.find((n) => n.nodes.join(",") === oldKey);
+      if (matched && matched.id !== oldSg.id) {
+        renamed.push({ from: oldSg.id, to: matched.id, nodes: oldSg.nodes });
+      }
+    }
 
     return {
       content: [
@@ -963,6 +1039,7 @@ server.tool(
             subgraphs: (checkpoint!.subgraphs ?? []).map((sg) =>
               summarizeSubgraph(sg, checkpoint!.graph)
             ),
+            ...(renamed.length > 0 ? { renamed } : {}),
           }),
         },
       ],
@@ -1011,6 +1088,44 @@ server.tool(
       );
     }
 
+    // Idempotent re-add at the MCP boundary: if a subgraph with this slug already
+    // exists, check whether the spec matches. Matching spec → no-op return.
+    // Mismatched spec → throw validation error so the caller can correct the call.
+    const existingSg = (cp.subgraphs ?? []).find((sg) => sg.id === params.slug);
+    if (existingSg) {
+      // Spec-equivalence check: compare the structurally meaningful fields.
+      const specNodes = [...params.nodeIds].sort().join(",");
+      const existingNodes = [...existingSg.nodes].sort().join(",");
+      const specMatchesSg =
+        specNodes === existingNodes &&
+        existingSg.executor === params.executor &&
+        (params.tier === undefined || existingSg.tier === params.tier) &&
+        (params.completionPolicy === undefined || existingSg.completionPolicy === params.completionPolicy) &&
+        (params.failurePolicy === undefined || existingSg.failurePolicy === params.failurePolicy);
+
+      if (!specMatchesSg) {
+        throw new Error(
+          `add_subgraph idempotency violation: subgraph "${params.slug}" already exists with a different spec. ` +
+          `Existing nodes: [${existingSg.nodes.join(", ")}], executor: ${existingSg.executor}. ` +
+          `To change a subgraph's structure, cancel the session and re-declare.`,
+        );
+      }
+
+      // Idempotent no-op — existing matches spec, do not emit a second event
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              subgraph: summarizeSubgraph(existingSg, cp.graph),
+              idempotent: true,
+            }),
+          },
+        ],
+      };
+    }
+
     const result = addSubgraph(cp.graph, cp.subgraphs ?? [], {
       slug: params.slug,
       label: params.label,
@@ -1027,6 +1142,7 @@ server.tool(
     }
     const sg = result.value!;
 
+    // Stamp subgraph ID onto member nodes (graph mutation, not state machine concern)
     const updatedNodes = { ...cp.graph.nodes };
     for (const id of sg.nodes) {
       if (updatedNodes[id]) {
@@ -1034,13 +1150,14 @@ server.tool(
       }
     }
 
-    let nextCp: Checkpoint = {
+    // `transition` is the sole source of truth for cp.subgraphs mutation.
+    // It appends the subgraph idempotently via the subgraph_added handler.
+    const cpWithNodes: Checkpoint = {
       ...cp,
       graph: { ...cp.graph, nodes: updatedNodes },
-      subgraphs: [...(cp.subgraphs ?? []), sg],
       updatedAt: new Date().toISOString(),
     };
-    nextCp = transition(nextCp, { type: "subgraph_added", subgraphId: sg.id });
+    const nextCp = transition(cpWithNodes, { type: "subgraph_added", subgraph: sg });
     checkpoint = nextCp;
 
     return {
@@ -1083,6 +1200,30 @@ server.tool(
             subgraph: sg,
             brief,
           }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_subgraphs
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "list_subgraphs",
+  "List all subgraphs in the current checkpoint, split into derived (auto-computed) and explicit (user-declared) partitions.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+    const all = cp.subgraphs ?? [];
+    const derived = all.filter((sg) => sg.derived).map((sg) => summarizeSubgraph(sg, cp.graph));
+    const explicit = all.filter((sg) => !sg.derived).map((sg) => summarizeSubgraph(sg, cp.graph));
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: true, derived, explicit }),
         },
       ],
     };
@@ -2374,7 +2515,7 @@ function execWithStdin(
 /** Real BrainExec wired to execWithStdin / execFileAsync. */
 const brainExec: BrainExec = {
   withStdin: execWithStdin,
-  async exec(cmd, args, opts) {
+  exec(cmd, args, opts) {
     return execFileAsync(cmd, args, {
       timeout: opts?.timeout,
       ...(opts?.cwd ? { cwd: opts.cwd } : {}),
@@ -2610,7 +2751,7 @@ async function saveBrainSnapshot(
  * Sync a graph node's task status to the brain CLI (best-effort).
  * Delegates to syncTaskStatusCore in brain-sync.ts with the real executor.
  */
-async function syncTaskStatus(
+function syncTaskStatus(
   taskId: string,
   action: "activate" | "block" | "close",
   cwd?: string,
@@ -2622,7 +2763,7 @@ async function syncTaskStatus(
 /**
  * Search brain's episodic memory for prior episodes (best-effort).
  */
-async function searchPriorEpisodes(
+function searchPriorEpisodes(
   query: string,
   tags?: string[],
   brains?: string[],

@@ -419,13 +419,30 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "subgraph_added":
-      // Identity transition — the subgraph itself is appended to checkpoint.subgraphs
-      // by the caller (server tool). The event records the addition for audit.
+    case "subgraph_added": {
+      /**
+       * Allowed in any non-terminal state including INITIALIZING and PLAN_REVIEW.
+       * Explicit subgraphs declared pre-finalize survive `finalize_plan` because
+       * `applySubgraphs` (called by `finalize_plan`) preserves explicit subgraphs
+       * and recomputes derived only over the unclaimed-node set.
+       *
+       * Idempotent: if a subgraph with the same `id` already exists in
+       * `cp.subgraphs`, the transition is a no-op (just bumps `updatedAt`).
+       * This makes the event safe under replay AND under repeated emission.
+       */
+      const existing = (checkpoint.subgraphs ?? []).find(
+        (sg) => sg.id === event.subgraph.id,
+      );
+      if (existing) {
+        // Idempotent no-op — subgraph already present, only bump timestamp
+        return { ...checkpoint, updatedAt: now };
+      }
       return {
         ...checkpoint,
+        subgraphs: [...(checkpoint.subgraphs ?? []), event.subgraph],
         updatedAt: now,
       };
+    }
 
     case "cancel":
       return {
