@@ -100,8 +100,9 @@ hidden: true
 ---
 ```
 
-> **Note**: OpenCode derives the agent name from the filename (e.g., `drone-protocol.md`
-> → agent name "drone-protocol"). The `name` field in `claude:` is not carried over.
+> **Note**: OpenCode derives the agent name from the filename (e.g.,
+> `drone-protocol.md` → agent name "drone-protocol"). The `name` field in
+> `claude:` is not carried over.
 
 ### 1.2 Merge Rules
 
@@ -128,8 +129,8 @@ opencode:
 ---
 ```
 
-Claude output: `model: sonnet` (shared default).
-OpenCode output: `model: opus` (overridden by opencode section).
+Claude output: `model: sonnet` (shared default). OpenCode output: `model: opus`
+(overridden by opencode section).
 
 ### 1.3 Skill Frontmatter
 
@@ -166,9 +167,11 @@ description: "OpenCode-only command"
 ---
 ```
 
-Valid values: `[claude]`, `[opencode]`, `[claude, opencode]` (default if omitted).
+Valid values: `[claude]`, `[opencode]`, `[claude, opencode]` (default if
+omitted).
 
-When `platforms` is set, the file is **skipped entirely** for non-listed platforms.
+When `platforms` is set, the file is **skipped entirely** for non-listed
+platforms.
 
 ---
 
@@ -183,11 +186,15 @@ comment markers.
 Shared content appears on both platforms.
 
 <!-- @claude -->
+
 This content only appears in Claude Code output.
+
 <!-- @end -->
 
 <!-- @opencode -->
+
 This content only appears in OpenCode output.
+
 <!-- @end -->
 
 More shared content here.
@@ -195,26 +202,27 @@ More shared content here.
 
 ### 2.2 Rules
 
-| Rule | Description |
-|------|-------------|
-| **Unmarked content** | Appears on ALL platforms (default) |
-| `<!-- @claude -->` | Opens a Claude Code-only section |
-| `<!-- @opencode -->` | Opens an OpenCode-only section |
-| `<!-- @end -->` | Closes the current platform section |
-| **Own line** | Markers MUST be on their own line (no inline markers) |
-| **No nesting** | Conditional sections cannot be nested |
-| **Whitespace** | Leading/trailing blank lines inside sections are preserved |
-| **Pairing** | Every `@platform` marker must have a matching `@end` |
+| Rule                 | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| **Unmarked content** | Appears on ALL platforms (default)                         |
+| `<!-- @claude -->`   | Opens a Claude Code-only section                           |
+| `<!-- @opencode -->` | Opens an OpenCode-only section                             |
+| `<!-- @end -->`      | Closes the current platform section                        |
+| **Own line**         | Markers MUST be on their own line (no inline markers)      |
+| **No nesting**       | Conditional sections cannot be nested                      |
+| **Whitespace**       | Leading/trailing blank lines inside sections are preserved |
+| **Pairing**          | Every `@platform` marker must have a matching `@end`       |
 
 ### 2.3 Common Pattern — Dispatch Blocks
 
 The most frequent use is for agent dispatch syntax, which differs between
 platforms:
 
-```markdown
+````markdown
 ## Dispatch Workers
 
 <!-- @claude -->
+
 Use the `Agent` tool to dispatch a Drone:
 
 ```json
@@ -224,9 +232,12 @@ Use the `Agent` tool to dispatch a Drone:
   "run_in_background": true
 }
 ```
+````
+
 <!-- @end -->
 
 <!-- @opencode -->
+
 Use `task()` to dispatch a worker:
 
 ```
@@ -238,9 +249,10 @@ task(
   prompt="..."
 )
 ```
-<!-- @end -->
-```
 
+<!-- @end -->
+
+````
 ### 2.4 Adjacent Platform Blocks
 
 When providing platform-specific alternatives for the same concept, place them
@@ -255,7 +267,7 @@ Agent(subagent_type="sentinel-protocol", ...)
 Spawn the review agent:
 task(subagent_type="sentinel-protocol", ...)
 <!-- @end -->
-```
+````
 
 ---
 
@@ -263,51 +275,51 @@ task(subagent_type="sentinel-protocol", ...)
 
 ### 3.1 Agent Frontmatter — Claude Code → OpenCode
 
-| Claude Code Field | OpenCode Equivalent | Notes |
-|-------------------|---------------------|-------|
-| `name: Drone` | (filename: `drone-protocol.md`) | OpenCode derives name from filename |
-| `model: sonnet` | `model: sonnet` | Shared — identical semantics |
-| `description: "..."` | `description: "..."` | Shared — required on both platforms |
-| `permissionMode: bypassPermissions` | `permission: { "*": allow }` | Grant all tool permissions |
-| `permissionMode: auto` | *(omit or use granular)* | OpenCode default is ask-per-tool |
-| `disallowedTools: [Agent]` | `tools: { task: false }` | Disable specific tools |
-| `disallowedTools: [Agent, Write, Edit]` | `tools: { task: false, write: false, edit: false }` | Multiple tool restrictions |
-| `maxTurns: 50` | `steps: 50` | Maximum agent iterations |
-| *(n/a)* | `mode: subagent` | Required for non-primary agents |
-| *(n/a)* | `mode: primary` | Replaces the default lead agent |
-| *(n/a)* | `hidden: true` | Hide from agent selector UI |
-| *(n/a)* | `color: "#hex"` | Agent display color |
-| *(n/a)* | `temperature: 0.7` | Model temperature |
-| *(n/a)* | `reasoningEffort: high` | Reasoning budget hint |
+| Claude Code Field                       | OpenCode Equivalent                                 | Notes                               |
+| --------------------------------------- | --------------------------------------------------- | ----------------------------------- |
+| `name: Drone`                           | (filename: `drone-protocol.md`)                     | OpenCode derives name from filename |
+| `model: sonnet`                         | `model: sonnet`                                     | Shared — identical semantics        |
+| `description: "..."`                    | `description: "..."`                                | Shared — required on both platforms |
+| `permissionMode: bypassPermissions`     | `permission: { "*": allow }`                        | Grant all tool permissions          |
+| `permissionMode: auto`                  | _(omit or use granular)_                            | OpenCode default is ask-per-tool    |
+| `disallowedTools: [Agent]`              | `tools: { task: false }`                            | Disable specific tools              |
+| `disallowedTools: [Agent, Write, Edit]` | `tools: { task: false, write: false, edit: false }` | Multiple tool restrictions          |
+| `maxTurns: 50`                          | `steps: 50`                                         | Maximum agent iterations            |
+| _(n/a)_                                 | `mode: subagent`                                    | Required for non-primary agents     |
+| _(n/a)_                                 | `mode: primary`                                     | Replaces the default lead agent     |
+| _(n/a)_                                 | `hidden: true`                                      | Hide from agent selector UI         |
+| _(n/a)_                                 | `color: "#hex"`                                     | Agent display color                 |
+| _(n/a)_                                 | `temperature: 0.7`                                  | Model temperature                   |
+| _(n/a)_                                 | `reasoningEffort: high`                             | Reasoning budget hint               |
 
 ### 3.2 Complete Agent Mapping
 
-| Agent | Protocol Name | Model | Claude `permissionMode` | Claude `disallowedTools` | OC `mode` | OC `permission` | OC `tools` | OC `steps` |
-|-------|--------------|-------|------------------------|-------------------------|-----------|-----------------|------------|-----------|
-| Queen | `queen-coordination-protocol` | opus | auto | — | *(n/a — `platforms: [claude]`)* | — | — | — |
-| BorgQueen | `queen-coordination-protocol` | opus | *(n/a — `platforms: [opencode]`)* | — | primary | `"*": allow` | — | 80 |
-| Drone | `drone-protocol` | sonnet | bypassPermissions | [Agent] | subagent | `"*": allow` | `task: false` | 50 |
-| Sentinel | `sentinel-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 20 |
-| Probe | `probe-protocol` | sonnet | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 25 |
-| Designate | `designate-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
-| Locutus | `locutus-protocol` | opus | bypassPermissions | [Agent, Write, Edit] | subagent | `"*": allow` | `task: false, write: false, edit: false` | 30 |
+| Agent     | Protocol Name                 | Model  | Claude `permissionMode`           | Claude `disallowedTools` | OC `mode`                       | OC `permission` | OC `tools`                               | OC `steps` |
+| --------- | ----------------------------- | ------ | --------------------------------- | ------------------------ | ------------------------------- | --------------- | ---------------------------------------- | ---------- |
+| Queen     | `queen-coordination-protocol` | opus   | auto                              | —                        | _(n/a — `platforms: [claude]`)_ | —               | —                                        | —          |
+| BorgQueen | `queen-coordination-protocol` | opus   | _(n/a — `platforms: [opencode]`)_ | —                        | primary                         | `"*": allow`    | —                                        | 80         |
+| Drone     | `drone-protocol`              | sonnet | bypassPermissions                 | [Agent]                  | subagent                        | `"*": allow`    | `task: false`                            | 50         |
+| Sentinel  | `sentinel-protocol`           | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 20         |
+| Probe     | `probe-protocol`              | sonnet | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 25         |
+| Designate | `designate-protocol`          | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
+| Locutus   | `locutus-protocol`            | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
 
 ### 3.3 Tool Name Mapping
 
-| Claude Code Tool | OpenCode Tool | Notes |
-|------------------|---------------|-------|
-| `Agent` | `task` | Subagent dispatch |
-| `Write` | `write` | File write |
-| `Edit` | `edit` | File edit |
-| `Read` | `read` | File read |
-| `Glob` | `glob` | File search |
-| `Grep` | `grep` | Content search |
-| `Bash` | `bash` | Shell commands |
-| `WebSearch` | `google_search` / `websearch_*` | Web search |
-| `WebFetch` | `webfetch` | URL fetch |
-| `TeamCreate` | *(no equivalent)* | Use Brain tasks + records |
-| `SendMessage` | *(no equivalent)* | Use Brain task comments |
-| `TeamDelete` | *(no equivalent)* | N/A |
+| Claude Code Tool | OpenCode Tool                   | Notes                     |
+| ---------------- | ------------------------------- | ------------------------- |
+| `Agent`          | `task`                          | Subagent dispatch         |
+| `Write`          | `write`                         | File write                |
+| `Edit`           | `edit`                          | File edit                 |
+| `Read`           | `read`                          | File read                 |
+| `Glob`           | `glob`                          | File search               |
+| `Grep`           | `grep`                          | Content search            |
+| `Bash`           | `bash`                          | Shell commands            |
+| `WebSearch`      | `google_search` / `websearch_*` | Web search                |
+| `WebFetch`       | `webfetch`                      | URL fetch                 |
+| `TeamCreate`     | _(no equivalent)_               | Use Brain tasks + records |
+| `SendMessage`    | _(no equivalent)_               | Use Brain task comments   |
+| `TeamDelete`     | _(no equivalent)_               | N/A                       |
 
 ---
 
