@@ -80,7 +80,7 @@ stacked for intra-repo).
 4b. add_node for each planned node
 4c. add_edge for each dependency
 4d. validate — abort if invalid
-4e. compute_waves — transitions to dispatching, returns wave plan
+4e. compute_waves — transitions to plan_review, returns wave plan; finalize_plan transitions to dispatching after user review
 
 ### Step 4f: Session Naming Gate
 
@@ -154,6 +154,26 @@ exclusively within the assigned worktree.
 
 Use Designation Generation Protocol for each dispatched drone. Include the node ID
 in the designation context so adjuncts can be tracked per-node.
+
+## Explicit Subgraphs for Coordination Contracts
+
+<step name="declare-coordination-contracts" optional="true">
+  <when>
+    The coordination topology is known before execution — for example, a
+    contract node that must complete before implementation nodes can start.
+  </when>
+  <action>
+    Declare explicit subgraphs via `mcp__unimatrix__add_subgraph` after
+    `add_node`/`add_edge` and before `compute_waves` (Step 4e). Express the
+    coordination contract (`exports`, `imports`, `dependsOn`) explicitly
+    rather than relying on auto-derivation.
+  </action>
+  <verify>
+    Call `mcp__unimatrix__list_subgraphs` after `compute_waves` to confirm
+    the derived/explicit partition split.
+  </verify>
+  <reference path="src/skills/trimatrix/SUBGRAPHS.md"/>
+</step>
 
 ## Cross-Repo Context Passing
 

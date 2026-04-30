@@ -18,7 +18,7 @@ import {
   TaskSyncMode,
 } from "./side-effect-policy.ts";
 import type { SideEffectSpec } from "./side-effect-policy.ts";
-import { transition } from "./state.ts";
+import { appendEvent } from "./state.ts";
 import type { Checkpoint, Event } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -119,7 +119,9 @@ async function executeRecordEpisode(
     const nodeLabels = (wave?.nodes ?? [])
       .map((nid) => ctx.after.graph.nodes[nid]?.label)
       .filter(Boolean) as string[];
-    goal = `Wave ${event.waveId} dispatched for session "${ctx.after.sessionLabel ?? ctx.after.sessionId}"`;
+    goal = `Wave ${event.waveId} dispatched for session "${
+      ctx.after.sessionLabel ?? ctx.after.sessionId
+    }"`;
     actions = nodeLabels;
     outcome = "dispatching";
     tags = ["trimatrix", "wave", sessionTag];
@@ -170,7 +172,7 @@ const EXECUTORS: Record<SideEffectAction, EffectExecutor> = {
 /**
  * Create a `transitionWithEffects` function wired to the given dependencies.
  *
- * 1. Calls pure `transition(checkpoint, event)` — throws on illegal transition.
+ * 1. Calls `appendEvent(checkpoint, event)` — transitions state AND writes to the event log; throws on illegal transition.
  * 2. Looks up `SIDE_EFFECT_POLICY[event.type]` — absent = no-op.
  * 3. Executes specs sequentially, collecting checkpoint patches.
  * 4. Merges patches into the post-transition checkpoint.
@@ -183,7 +185,12 @@ export function createEffectRunner(
     checkpoint: Checkpoint,
     event: Event,
   ): Promise<TransitionResult> {
-    const after = transition(checkpoint, event);
+    // Use `appendEvent` instead of bare `transition` so every server-side
+    // mutation lands in the event log. This is the wiring contract for
+    // UNM-1b7.3 — without it, replay-on-crash is theoretical because the
+    // log never gets written. `appendEvent` itself calls `transition`
+    // internally; the seq + log-entry plumbing happens inside.
+    const after = appendEvent(checkpoint, event);
 
     const specs = SIDE_EFFECT_POLICY[event.type];
     if (!specs || specs.length === 0) {

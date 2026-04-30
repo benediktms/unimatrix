@@ -64,7 +64,7 @@ The complete collective voice rules are defined in `src/rules/personality.md`. T
 When claiming or updating brain tasks, set `assignee` to your full designation string (e.g. `Two of Two, Tertiary Sentinel Protocol of Trimatrix 042`). Include your designation in task comments as well. If you have no designation, do NOT set assignee — abort with an error.
 
 ## Neural Link Protocol
-If `NEURAL LINK ACTIVE` and a `room_id` appear in your prompt, follow the neural_link coordination protocol in AGENTS.md. Join the room with your designation, communicate findings and blockers, and send `handoff` before returning.
+If `NEURAL LINK ACTIVE` and a `room_id` appear in your prompt, follow the neural_link coordination protocol defined in `src/skills/trimatrix/SKILL.md` § Protocol F1. Join the room with your designation, communicate findings and blockers, and send `handoff` before returning.
 
 ## Workflow Process
 1. **Load the task** — use `tasks_get` with the provided task ID. Expand children if the input is a parent task.

@@ -22,25 +22,49 @@ import type {
   ElicitationRequestedSchema,
   ElicitResult,
   RepoMetadata,
+  WorkPacket,
 } from "./types.ts";
-import { approvalSchema, EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
-import { designate, deriveTrimatrixId, Role } from "./designate.ts";
+import {
+  approvalSchema,
+  CoordinationMode,
+  EdgeType,
+  Executor,
+  Intent,
+  MachineState,
+  NodeStatus,
+  NodeType,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+  SubgraphStrategy,
+  Tier,
+  triageSchema,
+} from "./types.ts";
+import type { Edge, Graph, Node, Subgraph, SubgraphSummary } from "./types.ts";
+import { deriveTrimatrixId, designate, Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
   addNode,
+  addSubgraph,
+  canDispatch,
   clearGate,
+  closeNodeGuard,
   completeNode,
   computeSubgraphs,
   computeWaves,
   computeWavesFromRefinement,
+  currentFrontier,
   failNode,
+  nextFrontierBatch,
   nextWave,
   parallelNodesInWave,
+  serializeSubgraphBrief,
+  SUBGRAPH_SLUG_RE,
+  subgraphOutcomeWithBlockers,
   unsatisfiedDependencies,
   updateNode,
-  serializeSubgraphBrief,
   validate,
+  validateDispatch,
   waveStatus,
 } from "./graph.ts";
 import {
@@ -49,14 +73,17 @@ import {
   deserialize,
   pendingGates,
   serialize,
+  transition,
 } from "./state.ts";
 import {
+  buildExternalBlockerResponse,
+  callBrainTool,
+  getExternalBlockers,
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
   syncGraphDepsToBrain as syncGraphDepsToBrainCore,
-  syncTaskStatus as syncTaskStatusCore,
 } from "./brain-sync.ts";
-import type { BrainExec } from "./brain-sync.ts";
+import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
 
 // ---------------------------------------------------------------------------
@@ -76,18 +103,102 @@ function generateSessionId(): string {
 }
 
 /**
- * Compute subgraph partitions and stamp each node with its subgraph ID.
+ * Recompute subgraph partitions and stamp each node with its subgraph ID.
  * Returns a new immutable checkpoint. No-op if tier/strategy are absent.
+ *
+ * Explicit subgraphs (`derived: false`) are preserved as-is; derived subgraphs
+ * are recomputed against the set of nodes not already claimed by an explicit
+ * subgraph. This lets a caller declare structure once via `add_subgraph` and
+ * have subsequent `compute_subgraphs` runs honor it instead of overwriting.
  */
 function applySubgraphs(
   cp: Checkpoint,
   overrides?: { tier: Tier; strategy: SubgraphStrategy },
 ): Checkpoint {
   const tier = overrides?.tier ?? cp.tier;
-  const strategy = overrides?.strategy ?? cp.subgraphStrategy ?? SubgraphStrategy.SELF;
+  const strategy = overrides?.strategy ?? cp.subgraphStrategy ??
+    SubgraphStrategy.SELF;
   if (!tier) return cp;
 
-  const subgraphs = computeSubgraphs(cp.graph, cp.waves, tier, strategy);
+  const explicit = (cp.subgraphs ?? []).filter((sg) => !sg.derived);
+
+  let derivationGraph: Graph = cp.graph;
+  if (explicit.length > 0) {
+    const claimed = new Set<string>();
+    for (const sg of explicit) {
+      for (const id of sg.nodes) claimed.add(id);
+    }
+    if (claimed.size > 0) {
+      const remainingNodes: Record<string, Node> = {};
+      for (const [id, node] of Object.entries(cp.graph.nodes)) {
+        if (!claimed.has(id)) remainingNodes[id] = node;
+      }
+      const remainingEdges: Edge[] = cp.graph.edges.filter(
+        (e) => !claimed.has(e.from) && !claimed.has(e.to),
+      );
+      derivationGraph = { nodes: remainingNodes, edges: remainingEdges };
+    }
+  }
+
+  const derived = computeSubgraphs(derivationGraph, cp.waves, tier, strategy);
+
+  // M1: Post-process derived subgraph dependsOn for cross-edge resolution.
+  // When explicit subgraphs exist, edges crossing from an explicit-subgraph
+  // member into a derived-subgraph member are inter-subgraph dependencies.
+  // These are invisible to computeSubgraphs (which only sees the unclaimed
+  // subgraph). We resolve them here so derived subgraphs know their upstream.
+  let patchedDerived = derived;
+  if (explicit.length > 0) {
+    // Build a map: nodeId → explicit subgraph ID
+    const nodeToExplicit = new Map<string, string>();
+    for (const sg of explicit) {
+      for (const nodeId of sg.nodes) {
+        nodeToExplicit.set(nodeId, sg.id);
+      }
+    }
+
+    // Build a map: nodeId → derived subgraph ID
+    const nodeToDerived = new Map<string, string>();
+    for (const sg of derived) {
+      for (const nodeId of sg.nodes) {
+        nodeToDerived.set(nodeId, sg.id);
+      }
+    }
+
+    // Walk all graph edges: for each edge where from is in an explicit subgraph
+    // and to is in a derived subgraph, record the dependency.
+    const derivedDepsMap = new Map<string, Set<string>>();
+    for (const edge of cp.graph.edges) {
+      const fromExplicit = nodeToExplicit.get(edge.from);
+      const toDerived = nodeToDerived.get(edge.to);
+      if (fromExplicit && toDerived) {
+        if (!derivedDepsMap.has(toDerived)) {
+          derivedDepsMap.set(toDerived, new Set());
+        }
+        derivedDepsMap.get(toDerived)!.add(fromExplicit);
+      }
+    }
+
+    // Patch derived subgraphs: merge discovered explicit deps into their
+    // coordination.dependsOn, skipping NONE-mode (lead subgraph in SELF strategy).
+    if (derivedDepsMap.size > 0) {
+      patchedDerived = derived.map((sg) => {
+        if (sg.coordination.mode === CoordinationMode.NONE) return sg;
+        const newDeps = derivedDepsMap.get(sg.id);
+        if (!newDeps || newDeps.size === 0) return sg;
+        const merged = Array.from(
+          new Set([...(sg.coordination.dependsOn ?? []), ...newDeps]),
+        ).sort();
+        return {
+          ...sg,
+          coordination: { ...sg.coordination, dependsOn: merged },
+        };
+      });
+    }
+  }
+
+  const subgraphs: Subgraph[] = [...explicit, ...patchedDerived];
+
   const updatedNodes = { ...cp.graph.nodes };
   for (const sg of subgraphs) {
     for (const nodeId of sg.nodes) {
@@ -105,6 +216,64 @@ function applySubgraphs(
 
 function generateSessionLabel(repos: RepoMetadata[]): string {
   return repos.map((r) => r.name).join(", ");
+}
+
+/**
+ * Project a Subgraph into the JSON shape returned by tool responses.
+ *
+ * Includes the new explicit-subgraph fields (label, parentId, derived,
+ * completionPolicy, failurePolicy, gates) and a computed `outcome` derived
+ * from the policies plus current node statuses, so callers can tell at a
+ * glance whether a subgraph is pending, active, completed, or failed.
+ */
+/**
+ * Build a `Map<taskId, unresolvedCount>` from the cached `externalBlockers`
+ * fields stamped on graph nodes by the most recent `dispatch_wave` brain
+ * consultation. The map is consumed by `subgraphOutcomeWithBlockers` so the
+ * status response reflects whether external gates have cleared without a
+ * fresh brain round-trip on every status read.
+ *
+ * Each `Node.externalBlockers[]` entry is treated as unresolved unless its
+ * `resolvedAt` field is set (matches the brain `external_blocker_resolved`
+ * event semantics).
+ */
+function externalBlockerSnapshot(graph: Graph): Map<string, number> {
+  const snapshot = new Map<string, number>();
+  for (const node of Object.values(graph.nodes)) {
+    if (!node.taskId || !node.externalBlockers) continue;
+    const unresolved = node.externalBlockers.filter((b) =>
+      b.resolvedAt === undefined
+    ).length;
+    if (unresolved > 0) snapshot.set(node.taskId, unresolved);
+  }
+  return snapshot;
+}
+
+function summarizeSubgraph(sg: Subgraph, graph: Graph): SubgraphSummary {
+  return {
+    id: sg.id,
+    executor: sg.executor,
+    tier: sg.tier,
+    assignee: sg.assignee,
+    nodeCount: sg.nodes.length,
+    nodes: sg.nodes,
+    coordination: sg.coordination,
+    derived: sg.derived,
+    completionPolicy: sg.completionPolicy,
+    failurePolicy: sg.failurePolicy,
+    // Use the blocker-aware variant so GATED outcomes correctly reflect
+    // external-blocker state cached on the graph from prior dispatch_wave
+    // consultations. Falls through to the blocker-blind path when no
+    // external blockers are present (snapshot is empty).
+    outcome: subgraphOutcomeWithBlockers(
+      graph,
+      sg,
+      externalBlockerSnapshot(graph),
+    ),
+    ...(sg.label !== undefined ? { label: sg.label } : {}),
+    ...(sg.parentId !== undefined ? { parentId: sg.parentId } : {}),
+    ...(sg.gates ? { gates: sg.gates } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -280,12 +449,17 @@ server.tool(
         stackedOn: z.string().optional(),
         nodeId: z.string(),
       }),
-    ).optional().describe("Worktree metadata (can be added later via add_node)"),
+    ).optional().describe(
+      "Worktree metadata (can be added later via add_node)",
+    ),
   },
   (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_repo requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -338,11 +512,17 @@ server.tool(
   "Add a node to the execution graph.",
   {
     id: z.string().describe("Unique node identifier"),
-    repo: z.string().optional().describe("Brain name or ref for the target repository (absent for single-repo nodes)"),
+    repo: z.string().optional().describe(
+      "Brain name or ref for the target repository (absent for single-repo nodes)",
+    ),
     type: z.nativeEnum(NodeType).describe("Node type"),
     label: z.string().describe("Human-readable description"),
-    tags: z.array(z.string()).optional().describe("Optional tags for categorisation"),
-    worktreeBranch: z.string().optional().describe("Worktree branch name for this node (absent for single-repo nodes)"),
+    tags: z.array(z.string()).optional().describe(
+      "Optional tags for categorisation",
+    ),
+    worktreeBranch: z.string().optional().describe(
+      "Worktree branch name for this node (absent for single-repo nodes)",
+    ),
     stackedOn: z.string().optional().describe(
       "Node ID this node is stacked on within the same repository",
     ),
@@ -399,7 +579,10 @@ server.tool(
   async (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_node requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -408,10 +591,17 @@ server.tool(
     // Validate taskId exists in brain if provided
     if (params.taskId) {
       try {
-        await execFileAsync(BRAIN_CLI, ["tasks", "get", params.taskId, "--json"], { timeout: 5000 });
-      } catch {
+        await execFileAsync(BRAIN_CLI, [
+          "tasks",
+          "get",
+          params.taskId,
+          "--json",
+        ], { timeout: 5000 });
+      } catch (err) {
+        const stderr = (err as { stderr?: string }).stderr?.trim();
+        const detail = stderr ? ` (${stderr})` : "";
         throw new Error(
-          `Task ID "${params.taskId}" does not exist in brain — cannot associate with node "${params.id}"`,
+          `Task ID "${params.taskId}" does not exist in brain — cannot associate with node "${params.id}"${detail}`,
         );
       }
     }
@@ -422,8 +612,10 @@ server.tool(
       if (!repoExists) {
         throw new Error(
           `Node "${params.id}" references unknown repo "${params.repo}". ` +
-          `Available repos: ${cp.repos.map((r) => r.name).join(", ") || "(none)"}. ` +
-          `Add repo via add_repo first.`,
+            `Available repos: ${
+              cp.repos.map((r) => r.name).join(", ") || "(none)"
+            }. ` +
+            `Add repo via add_repo first.`,
         );
       }
     }
@@ -435,7 +627,9 @@ server.tool(
         );
       }
     } else {
-      if (params.elicitPrompt !== undefined || params.elicitSchema !== undefined) {
+      if (
+        params.elicitPrompt !== undefined || params.elicitSchema !== undefined
+      ) {
         throw new Error(
           `elicitPrompt/elicitSchema are only valid for ELICIT_GATE nodes, got type ${params.type}`,
         );
@@ -448,18 +642,28 @@ server.tool(
       type: params.type,
       label: params.label,
       ...(params.tags !== undefined ? { tags: params.tags } : {}),
-      ...(params.worktreeBranch !== undefined ? { worktreeBranch: params.worktreeBranch } : {}),
+      ...(params.worktreeBranch !== undefined
+        ? { worktreeBranch: params.worktreeBranch }
+        : {}),
       ...(params.stackedOn !== undefined
         ? { stackedOn: params.stackedOn }
         : {}),
       ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
-      ...(params.elicitPrompt !== undefined ? { elicitPrompt: params.elicitPrompt } : {}),
-      ...(params.elicitSchema !== undefined ? { elicitSchema: params.elicitSchema } : {}),
+      ...(params.elicitPrompt !== undefined
+        ? { elicitPrompt: params.elicitPrompt }
+        : {}),
+      ...(params.elicitSchema !== undefined
+        ? { elicitSchema: params.elicitSchema }
+        : {}),
       status: NodeStatus.PENDING,
       executor: params.executor ?? Executor.LEAD,
     };
 
-    const result = addNode(cp.graph, node, cp.machineState === MachineState.REFINING);
+    const result = addNode(
+      cp.graph,
+      node,
+      cp.machineState === MachineState.REFINING,
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -493,7 +697,10 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
 
-    if (cp.machineState !== MachineState.INITIALIZING && cp.machineState !== MachineState.REFINING) {
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
       throw new Error(
         `add_edge requires initializing or refining state, got ${cp.machineState}`,
       );
@@ -505,7 +712,11 @@ server.tool(
       type: params.type,
     };
 
-    const result = addEdge(cp.graph, edge, cp.machineState === MachineState.REFINING);
+    const result = addEdge(
+      cp.graph,
+      edge,
+      cp.machineState === MachineState.REFINING,
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -542,6 +753,9 @@ server.tool(
       throw new Error(`Cannot enter refining state: ${check.reason}`);
     }
 
+    // Lease-fence invalidation moved into the `refine` transition (state.ts)
+    // so event-log replay reproduces the bump. The server tool just emits
+    // the event; transition increments leaseVersion on every node.
     const result = await transitionWithEffects(cp, { type: "refine" });
     checkpoint = result.checkpoint;
 
@@ -645,13 +859,17 @@ server.tool(
 
       // Build elicitation message summarising the proposed changes
       const completedWavesSummary = completedWaves.length > 0
-        ? `Completed waves (read-only): ${completedWaves.map((w) => `Wave ${w.id}`).join(", ")}`
+        ? `Completed waves (read-only): ${
+          completedWaves.map((w) => `Wave ${w.id}`).join(", ")
+        }`
         : "No completed waves.";
 
       const revisedWavesSummary = newWaves.length > 0
         ? `Revised future waves (${newWaves.length}): ${
           newWaves.map((w) =>
-            `Wave ${w.id} — ${w.nodes.length} node${w.nodes.length === 1 ? "" : "s"}`
+            `Wave ${w.id} — ${w.nodes.length} node${
+              w.nodes.length === 1 ? "" : "s"
+            }`
           ).join("; ")
         }`
         : "No future waves after refinement.";
@@ -662,8 +880,7 @@ server.tool(
         `New repos: ${addedRepos.length}`,
       ].join(" | ");
 
-      const elicitMessage =
-        `Refinement ready to apply.\n\n` +
+      const elicitMessage = `Refinement ready to apply.\n\n` +
         `Changes: ${changesSummary}\n\n` +
         `${completedWavesSummary}\n` +
         `${revisedWavesSummary}\n\n` +
@@ -677,7 +894,9 @@ server.tool(
         }),
       );
 
-      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+      if (
+        elicitResult.action === "decline" || elicitResult.action === "cancel"
+      ) {
         const noCapability = elicitResult.action === "decline" &&
           !server.server.getClientCapabilities()?.elicitation;
         return {
@@ -747,12 +966,9 @@ server.tool(
               refinementHistory: checkpoint.refinementHistory,
               ...(checkpoint.subgraphs?.length
                 ? {
-                  subgraphs: checkpoint.subgraphs.map((sg) => ({
-                    id: sg.id,
-                    executor: sg.executor,
-                    nodeCount: sg.nodes.length,
-                    coordination: sg.coordination.mode,
-                  })),
+                  subgraphs: checkpoint.subgraphs.map((sg) =>
+                    summarizeSubgraph(sg, checkpoint!.graph)
+                  ),
                 }
                 : {}),
             }),
@@ -809,7 +1025,9 @@ server.tool(
       throw new Error(`Cannot finalize plan: ${check.reason}`);
     }
 
-    const finalizeResult = await transitionWithEffects(cp, { type: "plan_finalized" });
+    const finalizeResult = await transitionWithEffects(cp, {
+      type: "plan_finalized",
+    });
     checkpoint = applySubgraphs(finalizeResult.checkpoint);
 
     return {
@@ -822,12 +1040,9 @@ server.tool(
             waves: checkpoint.waves,
             ...(checkpoint.subgraphs?.length
               ? {
-                subgraphs: checkpoint.subgraphs.map((sg) => ({
-                  id: sg.id,
-                  executor: sg.executor,
-                  nodeCount: sg.nodes.length,
-                  coordination: sg.coordination.mode,
-                })),
+                subgraphs: checkpoint.subgraphs.map((sg) =>
+                  summarizeSubgraph(sg, checkpoint!.graph)
+                ),
               }
               : {}),
           }),
@@ -853,7 +1068,9 @@ server.tool(
       throw new Error(`Cannot revise plan: ${check.reason}`);
     }
 
-    const reviseResult = await transitionWithEffects(cp, { type: "plan_revision_requested" });
+    const reviseResult = await transitionWithEffects(cp, {
+      type: "plan_revision_requested",
+    });
     checkpoint = reviseResult.checkpoint;
 
     return {
@@ -863,7 +1080,8 @@ server.tool(
           text: JSON.stringify({
             ok: true,
             machineState: checkpoint.machineState,
-            message: "Plan revision requested. State returned to initializing — modify nodes/edges then call compute_waves again.",
+            message:
+              "Plan revision requested. State returned to initializing — modify nodes/edges then call compute_waves again.",
           }),
         },
       ],
@@ -880,15 +1098,36 @@ server.tool(
   "Recompute subgraph partitions from the current graph. Use after refinement or when changing tier/strategy.",
   {
     tier: z.nativeEnum(Tier).describe("Execution tier"),
-    strategy: z.nativeEnum(SubgraphStrategy).describe("Subgraph partitioning strategy"),
+    strategy: z.nativeEnum(SubgraphStrategy).describe(
+      "Subgraph partitioning strategy",
+    ),
   },
   (params) => {
     const cp = requireCheckpoint();
+
+    // M5: Capture old derived subgraph IDs before recompute to surface renames.
+    const oldDerived = (cp.subgraphs ?? [])
+      .filter((sg) => sg.derived)
+      .map((sg) => ({ id: sg.id, nodes: sg.nodes.slice().sort() }));
 
     checkpoint = {
       ...applySubgraphs(cp, { tier: params.tier, strategy: params.strategy }),
       updatedAt: new Date().toISOString(),
     };
+
+    const newDerived = (checkpoint!.subgraphs ?? [])
+      .filter((sg) => sg.derived)
+      .map((sg) => ({ id: sg.id, nodes: sg.nodes.slice().sort() }));
+
+    // Detect renames: old derived whose member set is preserved but ID changed.
+    const renamed: Array<{ from: string; to: string; nodes: string[] }> = [];
+    for (const oldSg of oldDerived) {
+      const oldKey = oldSg.nodes.join(",");
+      const matched = newDerived.find((n) => n.nodes.join(",") === oldKey);
+      if (matched && matched.id !== oldSg.id) {
+        renamed.push({ from: oldSg.id, to: matched.id, nodes: oldSg.nodes });
+      }
+    }
 
     return {
       content: [
@@ -896,14 +1135,146 @@ server.tool(
           type: "text",
           text: JSON.stringify({
             ok: true,
-            subgraphs: (checkpoint!.subgraphs ?? []).map((sg) => ({
-              id: sg.id,
-              executor: sg.executor,
-              assignee: sg.assignee,
-              nodeCount: sg.nodes.length,
-              nodes: sg.nodes,
-              coordination: sg.coordination,
-            })),
+            subgraphs: (checkpoint!.subgraphs ?? []).map((sg) =>
+              summarizeSubgraph(sg, checkpoint!.graph)
+            ),
+            ...(renamed.length > 0 ? { renamed } : {}),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: add_subgraph
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "add_subgraph",
+  `Declare an explicit subgraph with a stable slug, hierarchy, and completion/failure policies. Explicit subgraphs are preserved across compute_subgraphs runs. Slug becomes the subgraph ID — must match ${SUBGRAPH_SLUG_RE.source}, cannot be 'sg-lead' or start with 'auto-'.`,
+  {
+    slug: z.string().describe(
+      "Stable subgraph identifier (also used as the ID). Lowercase letters, digits, hyphens, 1–41 chars, must start with a letter. Cannot be 'sg-lead' or start with 'auto-'.",
+    ),
+    nodeIds: z.array(z.string()).min(1).describe(
+      "Member node IDs. Must exist in the graph; must not overlap any other explicit subgraph.",
+    ),
+    executor: z.nativeEnum(Executor).describe("LEAD or ADJUNCT"),
+    label: z.string().optional().describe("Optional human-readable label"),
+    parentId: z.string().optional().describe(
+      "Optional parent subgraph ID for hierarchical nesting. Must reference an existing subgraph.",
+    ),
+    tier: z.nativeEnum(Tier).optional().describe(
+      "Execution tier. Defaults to the checkpoint tier when omitted.",
+    ),
+    completionPolicy: z.nativeEnum(SubgraphCompletionPolicy).optional()
+      .describe(
+        "ALL (default) | ANY | GATED. GATED requires the gates field.",
+      ),
+    failurePolicy: z.nativeEnum(SubgraphFailurePolicy).optional().describe(
+      "FAIL_FAST (default) | CONTINUE | BEST_EFFORT.",
+    ),
+    gates: z.array(
+      z.union([
+        z.string(),
+        z.object({
+          kind: z.literal("external"),
+          source: z.string().min(1),
+          externalId: z.string().min(1),
+          url: z.string().optional(),
+          taskId: z.string().optional(),
+        }),
+      ]),
+    ).optional().describe(
+      "Gate references required by GATED completion or BEST_EFFORT failure policies. Each entry is either a node ID (string, must be a member of nodeIds) or an external blocker object {kind:'external', source, externalId, url?, taskId?}.",
+    ),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const tier = params.tier ?? cp.tier;
+    if (!tier) {
+      throw new Error(
+        "Tier required — provide via add_subgraph or set on checkpoint via init.",
+      );
+    }
+
+    // Idempotency is enforced inside `addSubgraph`: matching spec returns the
+    // existing subgraph; differing spec returns an error. We detect the
+    // idempotent-no-op case by checking pre-existence so we can surface the
+    // `idempotent: true` signal to the caller without re-emitting the event.
+    const wasPreExisting = (cp.subgraphs ?? []).some((sg) =>
+      sg.id === params.slug
+    );
+
+    const result = addSubgraph(cp.graph, cp.subgraphs ?? [], {
+      slug: params.slug,
+      label: params.label,
+      parentId: params.parentId,
+      executor: params.executor,
+      nodeIds: params.nodeIds,
+      tier,
+      completionPolicy: params.completionPolicy,
+      failurePolicy: params.failurePolicy,
+      gates: params.gates,
+    });
+    if (!result.ok) {
+      throw new Error(`add_subgraph failed: ${result.error}`);
+    }
+    const sg = result.value!;
+
+    if (wasPreExisting) {
+      // Idempotent no-op — addSubgraph confirmed the spec matches the existing
+      // subgraph. Do not re-emit the event or re-run subgraph derivation.
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              subgraph: summarizeSubgraph(sg, cp.graph),
+              idempotent: true,
+            }),
+          },
+        ],
+      };
+    }
+
+    // Stamp subgraph ID onto member nodes (graph mutation, not state machine concern)
+    const updatedNodes = { ...cp.graph.nodes };
+    for (const id of sg.nodes) {
+      if (updatedNodes[id]) {
+        updatedNodes[id] = { ...updatedNodes[id], subgraph: sg.id };
+      }
+    }
+
+    // `transition` is the sole source of truth for cp.subgraphs mutation.
+    // It appends the subgraph idempotently via the subgraph_added handler.
+    const cpWithNodes: Checkpoint = {
+      ...cp,
+      graph: { ...cp.graph, nodes: updatedNodes },
+      updatedAt: new Date().toISOString(),
+    };
+    const eventCp = transition(cpWithNodes, {
+      type: "subgraph_added",
+      subgraph: sg,
+    });
+
+    // Refresh derived sibling membership: any derived subgraph that previously
+    // contained nodes now claimed by this explicit subgraph must shed them so
+    // list_subgraphs / summarizeSubgraph do not report the same node twice.
+    // applySubgraphs is a no-op when tier is unset.
+    const nextCp = applySubgraphs(eventCp);
+    checkpoint = nextCp;
+
+    const finalSg = nextCp.subgraphs?.find((s) => s.id === sg.id) ?? sg;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            subgraph: summarizeSubgraph(finalSg, nextCp.graph),
           }),
         },
       ],
@@ -919,7 +1290,9 @@ server.tool(
   "get_subgraph",
   "Retrieve a single subgraph by ID, including its serialized dispatch brief for adjunct injection.",
   {
-    subgraphId: z.string().describe("Subgraph ID (e.g., sg-lead, sg-1)"),
+    subgraphId: z.string().describe(
+      "Subgraph ID — `sg-lead` (lead subgraph), `auto-<8-char-hash>` (derived adjunct), or a user-supplied slug (explicit).",
+    ),
   },
   (params) => {
     const cp = requireCheckpoint();
@@ -944,14 +1317,51 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: list_subgraphs
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "list_subgraphs",
+  "List all subgraphs in the current checkpoint, split into derived (auto-computed) and explicit (user-declared) partitions.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+    const all = cp.subgraphs ?? [];
+    const derived = all.filter((sg) => sg.derived).map((sg) =>
+      summarizeSubgraph(sg, cp.graph)
+    );
+    const explicit = all.filter((sg) => !sg.derived).map((sg) =>
+      summarizeSubgraph(sg, cp.graph)
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: true, derived, explicit }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: dispatch_wave
 // ---------------------------------------------------------------------------
 
 server.tool(
   "dispatch_wave",
-  "Activate all nodes in the specified wave and record it as the current wave.",
+  "Activate all nodes in the specified wave and record it as the current wave. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch).",
   {
     waveId: z.coerce.number().int().describe("Wave index to dispatch"),
+    capabilities: z.object({
+      repos: z.array(z.string()).optional(),
+      tools: z.array(z.string()).optional(),
+      canWrite: z.boolean().optional(),
+      humanPresent: z.boolean().optional(),
+      labels: z.array(z.string()).optional(),
+    }).optional().describe(
+      "Dispatcher capabilities for capability-match gating. When provided, every node's `requirements` is checked via `validateDispatch`; mismatches are reported in the response under `capabilityMismatches[]`.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -977,16 +1387,116 @@ server.tool(
       (nId) => cp.graph.nodes[nId]?.type !== NodeType.ELICIT_GATE,
     );
 
-    // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types
+    // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types.
+    // Validated first — before capability checks or brain round-trips.
     if (elicitGateIds.length > 0 && regularNodeIds.length > 0) {
       throw new Error(
-        `Wave ${params.waveId} mixes ELICIT_GATE nodes (${elicitGateIds.join(", ")}) with regular nodes (${regularNodeIds.join(", ")}). ` +
-        `ELICIT_GATE nodes must be in their own wave — use DEPENDS_ON edges to separate them.`,
+        `Wave ${params.waveId} mixes ELICIT_GATE nodes (${
+          elicitGateIds.join(", ")
+        }) with regular nodes (${regularNodeIds.join(", ")}). ` +
+          `ELICIT_GATE nodes must be in their own wave — use DEPENDS_ON edges to separate them.`,
       );
     }
 
+    // Capability matching (UNM-1b7.4): if the caller advertises capabilities,
+    // gate every regular node's requirements against them. Mismatches are
+    // surfaced and the node is held back from activation. Backward-compat:
+    // when `capabilities` is undefined, the check is skipped entirely.
+    const capabilityMismatches: Array<{ nodeId: string; missing: string[] }> =
+      [];
+    const capabilityRejected = new Set<string>();
+    if (params.capabilities) {
+      for (const nId of regularNodeIds) {
+        const result = validateDispatch(cp.graph, nId, params.capabilities);
+        if (!result.ok) {
+          // The validateDispatch error message includes the missing list;
+          // re-derive the structured form via canDispatch for the response.
+          const node = cp.graph.nodes[nId];
+          const detail = canDispatch(params.capabilities, node?.requirements);
+          if (!detail.ok) {
+            capabilityMismatches.push({ nodeId: nId, missing: detail.missing });
+            capabilityRejected.add(nId);
+          }
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // UNM-1b7.7: External-blocker consultation
+    //
+    // Before activating each regular node, check whether its brain task has
+    // unresolved external blockers. Nodes with blockers are NOT activated —
+    // they are marked BLOCKED (readinessStatus) and collected in externalBlocked.
+    // Brain CLI failures are treated as "no blockers" (graceful degradation).
+    // This section runs BEFORE WorkPacket minting (Drone Delta's lease-fencing
+    // section follows in a subsequent merge).
+    // ---------------------------------------------------------------------------
+    const externalBlocked: Array<{
+      nodeId: string;
+      blockers: ExternalBlockerSnapshot[];
+    }> = [];
+    const clearToActivate: string[] = [];
+
+    // Mutable working copy of the checkpoint for stamping blocker snapshots.
+    let workingCp = cp;
+
+    for (const nId of regularNodeIds) {
+      // Skip nodes already rejected by the capability gate (UNM-1b7.4).
+      // They should not be activated; they should not consume a brain
+      // round-trip; they should not receive a fence.
+      if (capabilityRejected.has(nId)) continue;
+      const node = workingCp.graph.nodes[nId];
+      if (!node?.taskId) {
+        clearToActivate.push(nId);
+        continue;
+      }
+      const { unresolvedCount, blockers } = await getExternalBlockers(
+        node.taskId,
+        brainExec,
+      );
+      if (unresolvedCount > 0) {
+        // Stamp cached snapshot onto the node and mark `externallyBlocked`.
+        // Do NOT touch `readinessStatus` — that's the topology axis, owned by
+        // `recomputeReadiness`. `externallyBlocked` is the orthogonal axis
+        // owned by this consultation; `currentFrontier` filters on both.
+        workingCp = {
+          ...workingCp,
+          graph: {
+            ...workingCp.graph,
+            nodes: {
+              ...workingCp.graph.nodes,
+              [nId]: {
+                ...node,
+                externallyBlocked: true,
+                externalBlockers: blockers,
+              },
+            },
+          },
+        };
+        externalBlocked.push({ nodeId: nId, blockers });
+      } else {
+        // Clear the external-blocker axis explicitly. Stale resolved snapshots
+        // are kept on the node for audit but `externallyBlocked` flips to false.
+        workingCp = {
+          ...workingCp,
+          graph: {
+            ...workingCp.graph,
+            nodes: {
+              ...workingCp.graph.nodes,
+              [nId]: {
+                ...node,
+                externallyBlocked: false,
+                externalBlockers: blockers.length > 0 ? blockers : undefined,
+              },
+            },
+          },
+        };
+        clearToActivate.push(nId);
+      }
+    }
+
     // Activate regular nodes; set elicit gates to BLOCKED with resolved schema
-    let updatedGraph = activateNodes(cp.graph, regularNodeIds);
+    let updatedGraph = activateNodes(workingCp.graph, clearToActivate);
     for (const gateId of elicitGateIds) {
       const gateNode = updatedGraph.nodes[gateId];
       if (gateNode) {
@@ -1005,8 +1515,29 @@ server.tool(
       }
     }
 
+    // Lease fencing (UNM-1b7.6): mint a fresh attemptId and increment leaseVersion
+    // ONLY for nodes that were actually activated. Externally-blocked nodes are
+    // kept PENDING and must NOT receive a fresh fence — otherwise they leak into
+    // workPackets[] alongside externalBlocked[] and a caller could attempt to
+    // mark progress on a node that was never dispatched.
+    const workPackets: WorkPacket[] = [];
+    for (const nId of clearToActivate) {
+      const node = updatedGraph.nodes[nId];
+      if (!node) continue;
+      const attemptId = crypto.randomUUID();
+      const leaseVersion = (node.leaseVersion ?? 0) + 1;
+      updatedGraph = {
+        ...updatedGraph,
+        nodes: {
+          ...updatedGraph.nodes,
+          [nId]: { ...node, attemptId, leaseVersion },
+        },
+      };
+      workPackets.push({ nodeId: nId, attemptId, leaseVersion });
+    }
+
     const dispatchResult = await transitionWithEffects(
-      { ...cp, graph: updatedGraph },
+      { ...workingCp, graph: updatedGraph },
       { type: "wave_dispatched", waveId: params.waveId },
     );
     if (dispatchResult.shouldSaveCheckpoint) {
@@ -1019,6 +1550,11 @@ server.tool(
       : dispatchResult.checkpoint;
 
     // Compute per-node execution info and parallelism groups
+    const activatedNodes = wave.nodes.filter(
+      (nId) =>
+        !externalBlocked.some((eb) => eb.nodeId === nId) &&
+        !capabilityRejected.has(nId),
+    );
     const nodeExecution = wave.nodes.map((nId) => {
       const node = checkpoint!.graph.nodes[nId];
       return {
@@ -1038,16 +1574,21 @@ server.tool(
           text: JSON.stringify({
             ok: true,
             waveId: params.waveId,
-            activatedNodes: wave.nodes,
+            activatedNodes,
             machineState: checkpoint.machineState,
             nodeExecution,
             parallelBatches: batches,
+            workPackets,
+            ...(externalBlocked.length > 0 ? { externalBlocked } : {}),
+            ...(capabilityMismatches.length > 0
+              ? { capabilityMismatches }
+              : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
                   nodeId: nId,
-                  prompt: cp.graph.nodes[nId]?.elicitPrompt,
-                  schema: cp.graph.nodes[nId]?.elicitSchema,
+                  prompt: checkpoint!.graph.nodes[nId]?.elicitPrompt,
+                  schema: checkpoint!.graph.nodes[nId]?.elicitSchema,
                 })),
               }
               : {}),
@@ -1064,9 +1605,15 @@ server.tool(
 
 server.tool(
   "complete_node",
-  "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion.",
+  "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to complete"),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1076,8 +1623,23 @@ server.tool(
       throw new Error(`Node "${params.nodeId}" not found in graph`);
     }
 
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    // Backward compat: if neither is provided, the write proceeds unfenced.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        node.attemptId !== params.attemptId ||
+        node.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
+    }
+
     // Guard: ELICIT_GATE nodes must be cleared via clear_gate, not completed directly
-    if (node.type === NodeType.ELICIT_GATE && node.elicitResponse === undefined) {
+    if (
+      node.type === NodeType.ELICIT_GATE && node.elicitResponse === undefined
+    ) {
       throw new Error(
         `ELICIT_GATE node "${params.nodeId}" has not been cleared — use clear_gate to collect the user response first`,
       );
@@ -1088,7 +1650,9 @@ server.tool(
     if (unsatisfied.length > 0) {
       throw new Error(
         `Cannot complete node "${params.nodeId}" — unsatisfied dependencies: ${
-          unsatisfied.map((u) => `${u.edge.from} → ${u.edge.to} (${u.edge.type}): ${u.reason}`).join("; ")
+          unsatisfied.map((u) =>
+            `${u.edge.from} → ${u.edge.to} (${u.edge.type}): ${u.reason}`
+          ).join("; ")
         }`,
       );
     }
@@ -1146,21 +1710,50 @@ server.tool(
 
 server.tool(
   "update_node",
-  "Update metadata on a node without changing its status. Use to attach PR info (prUrl, prNumber) before calling complete_node.",
+  "Update metadata on a node without changing its status. Use to attach PR info (prUrl, prNumber) before calling complete_node. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to update"),
     prUrl: z.string().optional().describe("URL of the pull request"),
-    prNumber: z.coerce.number().int().optional().describe("Pull request number"),
+    prNumber: z.coerce.number().int().optional().describe(
+      "Pull request number",
+    ),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
+
+    const updateTarget = cp.graph.nodes[params.nodeId];
+    if (!updateTarget) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        updateTarget.attemptId !== params.attemptId ||
+        updateTarget.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${updateTarget.attemptId}, leaseVersion=${updateTarget.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
+    }
 
     const patch: { prUrl?: string; prNumber?: number } = {};
     if (params.prUrl !== undefined) patch.prUrl = params.prUrl;
     if (params.prNumber !== undefined) patch.prNumber = params.prNumber;
 
     const updatedGraph = updateNode(cp.graph, params.nodeId, patch);
-    checkpoint = { ...cp, graph: updatedGraph, updatedAt: new Date().toISOString() };
+    checkpoint = {
+      ...cp,
+      graph: updatedGraph,
+      updatedAt: new Date().toISOString(),
+    };
     await saveCheckpointToBrain(checkpoint);
 
     return {
@@ -1194,33 +1787,30 @@ server.tool(
     const cp = requireCheckpoint();
 
     const node = cp.graph.nodes[params.nodeId];
-    if (!node) {
-      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    const guard = closeNodeGuard(node, params.nodeId);
+    if (!guard.ok) {
+      throw new Error(guard.error);
     }
-    if (!node.taskId) {
-      throw new Error(`Node "${params.nodeId}" has no associated taskId — cannot close`);
-    }
-
-    // Guard: node must be in a completed status
-    const completedStatuses = [NodeStatus.DONE, NodeStatus.MERGED, NodeStatus.PR_CREATED];
-    if (!completedStatuses.includes(node.status)) {
-      throw new Error(
-        `Node "${params.nodeId}" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`,
-      );
-    }
+    // closeNodeGuard.ok === true implies node and node.taskId are defined.
+    const taskId = node!.taskId!;
 
     // Validate task exists in brain
     try {
-      await execFileAsync(BRAIN_CLI, ["tasks", "get", node.taskId, "--json"], { timeout: 5000 });
+      await execFileAsync(BRAIN_CLI, ["tasks", "get", taskId, "--json"], {
+        timeout: 5000,
+      });
     } catch {
       throw new Error(
-        `Task "${node.taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
+        `Task "${taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
       );
     }
 
-    // Close the task — must succeed
-    const cwd = repoRoot(node.repo);
-    await syncTaskStatus(node.taskId, "close", cwd);
+    // Close the task — must succeed (fail-loud: errors bubble to caller)
+    const cwd = repoRoot(node!.repo);
+    await brainExec.exec(BRAIN_CLI, ["tasks", "close", taskId], {
+      timeout: 5000,
+      ...(cwd ? { cwd } : {}),
+    });
 
     return {
       content: [
@@ -1229,7 +1819,7 @@ server.tool(
           text: JSON.stringify({
             ok: true,
             nodeId: params.nodeId,
-            taskId: node.taskId,
+            taskId,
             closed: true,
           }),
         },
@@ -1244,20 +1834,30 @@ server.tool(
 
 server.tool(
   "fail_node",
-  "Mark a node as failed with a human-readable reason.",
+  "Mark a node as failed with a human-readable reason. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to fail"),
     reason: z.string().describe("Human-readable failure reason"),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
 
     // Guard: BLOCKED gate nodes cannot be failed directly — clear or cancel the wave
     const failTarget = cp.graph.nodes[params.nodeId];
-    if (failTarget?.status === NodeStatus.BLOCKED && (
-      failTarget.type === NodeType.ELICIT_GATE ||
-      cp.graph.edges.some((e) => e.to === params.nodeId && e.type === EdgeType.MERGE_GATE)
-    )) {
+    if (
+      failTarget?.status === NodeStatus.BLOCKED && (
+        failTarget.type === NodeType.ELICIT_GATE ||
+        cp.graph.edges.some((e) =>
+          e.to === params.nodeId && e.type === EdgeType.MERGE_GATE
+        )
+      )
+    ) {
       throw new Error(
         `Node "${params.nodeId}" is BLOCKED by a gate — use clear_gate or cancel instead of fail_node`,
       );
@@ -1268,6 +1868,18 @@ server.tool(
       throw new Error(
         `Cannot fail node "${params.nodeId}" — node is PENDING and has not been dispatched`,
       );
+    }
+
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        failTarget?.attemptId !== params.attemptId ||
+        failTarget?.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${failTarget?.attemptId}, leaseVersion=${failTarget?.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
     }
 
     const check = canTransition(cp, {
@@ -1327,10 +1939,13 @@ server.tool(
       `Reason: ${params.reason}\n\n` +
       `Choose how to proceed with this failure.`;
 
-    const elicitResult = await elicitForm(message, triageSchema({
-      decisionTitle: "Triage decision",
-      contextTitle: "Additional context (optional)",
-    }));
+    const elicitResult = await elicitForm(
+      message,
+      triageSchema({
+        decisionTitle: "Triage decision",
+        contextTitle: "Additional context (optional)",
+      }),
+    );
 
     if (elicitResult.action === "accept") {
       const decision = elicitResult.content.decision as string;
@@ -1364,7 +1979,9 @@ server.tool(
           text: JSON.stringify({
             ...failureData,
             triageSkipped: true,
-            ...(noCapability ? { reason: "Client lacks elicitation capability." } : {}),
+            ...(noCapability
+              ? { reason: "Client lacks elicitation capability." }
+              : {}),
           }),
         },
       ],
@@ -1412,7 +2029,9 @@ server.tool(
       }
 
       // Extract owner/repo from PR URL (e.g., https://github.com/owner/repo/pull/123)
-      const prUrlMatch = sourceNode.prUrl.match(/github\.com\/([^/]+\/[^/]+)\/pull\//);
+      const prUrlMatch = sourceNode.prUrl.match(
+        /github\.com\/([^/]+\/[^/]+)\/pull\//,
+      );
       if (!prUrlMatch) {
         throw new Error(
           `Cannot parse repository from PR URL: ${sourceNode.prUrl}`,
@@ -1422,9 +2041,13 @@ server.tool(
 
       try {
         const { stdout } = await execFileAsync("gh", [
-          "pr", "view", String(sourceNode.prNumber),
-          "--repo", repoSlug,
-          "--json", "state",
+          "pr",
+          "view",
+          String(sourceNode.prNumber),
+          "--repo",
+          repoSlug,
+          "--json",
+          "state",
         ], { timeout: 10000 });
         const prState = JSON.parse(stdout);
         if (prState.state !== "MERGED") {
@@ -1433,7 +2056,10 @@ server.tool(
           );
         }
       } catch (err) {
-        if (err instanceof Error && err.message.includes("Cannot clear merge gate")) {
+        if (
+          err instanceof Error &&
+          err.message.includes("Cannot clear merge gate")
+        ) {
           throw err;
         }
         throw new Error(
@@ -1460,14 +2086,19 @@ server.tool(
     // Validate response against elicitSchema for ELICIT_GATE nodes
     const cpForTransition = checkpoint ?? cp;
     const gateNode = cpForTransition.graph.nodes[params.nodeId];
-    if (gateNode?.type === NodeType.ELICIT_GATE && gateNode.elicitSchema && params.response) {
+    if (
+      gateNode?.type === NodeType.ELICIT_GATE && gateNode.elicitSchema &&
+      params.response
+    ) {
       const response = params.response;
       const schemaProps = Object.keys(gateNode.elicitSchema.properties);
       const responseKeys = Object.keys(response);
       const unknownKeys = responseKeys.filter((k) => !schemaProps.includes(k));
       if (unknownKeys.length > 0) {
         throw new Error(
-          `Response contains keys not in elicitSchema: ${unknownKeys.join(", ")}`,
+          `Response contains keys not in elicitSchema: ${
+            unknownKeys.join(", ")
+          }`,
         );
       }
       const missingRequired = (gateNode.elicitSchema.required ?? []).filter(
@@ -1521,7 +2152,9 @@ server.tool(
   "cancel",
   "Cancel the current trimatrix execution. Transitions to cancelled state. Requires user confirmation.",
   {
-    reason: z.string().optional().describe("Human-readable cancellation reason"),
+    reason: z.string().optional().describe(
+      "Human-readable cancellation reason",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1533,8 +2166,7 @@ server.tool(
     const activeNodes = Object.values(cp.graph.nodes).filter(
       (n) => n.status === NodeStatus.ACTIVE,
     );
-    const elicitMessage =
-      `Cancel trimatrix execution?\n\n` +
+    const elicitMessage = `Cancel trimatrix execution?\n\n` +
       `State: ${cp.machineState} | Nodes: ${nodeCount} | Active: ${activeNodes.length}\n` +
       (params.reason ? `Reason: ${params.reason}\n` : "") +
       `\nThis action is irreversible.`;
@@ -1552,7 +2184,9 @@ server.tool(
       !server.server.getClientCapabilities()?.elicitation;
 
     if (!proceedWithoutApproval) {
-      if (elicitResult.action === "decline" || elicitResult.action === "cancel") {
+      if (
+        elicitResult.action === "decline" || elicitResult.action === "cancel"
+      ) {
         return {
           content: [
             {
@@ -1592,7 +2226,12 @@ server.tool(
       }
     }
 
-    const cancelResult = await transitionWithEffects(cp, { type: "cancel", reason: params.reason });
+    // Lease-fence invalidation for cancel lives in the `cancel` transition
+    // (state.ts) so event-log replay reproduces the bump.
+    const cancelResult = await transitionWithEffects(cp, {
+      type: "cancel",
+      reason: params.reason,
+    });
     checkpoint = cancelResult.checkpoint;
     if (cancelResult.shouldSaveCheckpoint) {
       await saveCheckpointToBrain(checkpoint);
@@ -1634,23 +2273,33 @@ server.tool(
     ]);
     const nodes = Object.values(cp.graph.nodes);
     const statusCounts: Record<string, number> = {};
-    const nonTerminalNodes: Array<{ id: string; label: string; status: string }> = [];
+    const nonTerminalNodes: Array<
+      { id: string; label: string; status: string }
+    > = [];
 
     for (const node of nodes) {
       statusCounts[node.status] = (statusCounts[node.status] ?? 0) + 1;
       if (!TERMINAL_STATUSES.has(node.status)) {
-        nonTerminalNodes.push({ id: node.id, label: node.label, status: node.status });
+        nonTerminalNodes.push({
+          id: node.id,
+          label: node.label,
+          status: node.status,
+        });
       }
     }
 
     const warnings: string[] = [];
     if (nonTerminalNodes.length > 0) {
       warnings.push(
-        `${nonTerminalNodes.length} node(s) in non-terminal state: ${nonTerminalNodes.map((n) => `${n.id}(${n.status})`).join(", ")}`,
+        `${nonTerminalNodes.length} node(s) in non-terminal state: ${
+          nonTerminalNodes.map((n) => `${n.id}(${n.status})`).join(", ")
+        }`,
       );
     }
 
-    const result = await transitionWithEffects(cp, { type: "execution_completed" });
+    const result = await transitionWithEffects(cp, {
+      type: "execution_completed",
+    });
     checkpoint = result.checkpoint;
     if (result.shouldSaveCheckpoint) {
       await saveCheckpointToBrain(checkpoint);
@@ -1684,12 +2333,17 @@ server.tool(
   "archive",
   "Archive a trimatrix checkpoint artifact. Requires completed or cancelled state.",
   {
-    artifactId: z.string().describe("Brain artifact ID of the checkpoint to archive"),
+    artifactId: z.string().describe(
+      "Brain artifact ID of the checkpoint to archive",
+    ),
     reason: z.string().optional().describe("Archival reason"),
   },
   async (params) => {
     const cp = requireCheckpoint();
-    if (cp.machineState !== MachineState.COMPLETED && cp.machineState !== MachineState.CANCELLED) {
+    if (
+      cp.machineState !== MachineState.COMPLETED &&
+      cp.machineState !== MachineState.CANCELLED
+    ) {
       throw new Error(
         `archive requires completed or cancelled state, got ${cp.machineState}`,
       );
@@ -1702,7 +2356,9 @@ server.tool(
       await execFileAsync("brain", args);
     } catch (err) {
       throw new Error(
-        `Failed to archive artifact: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to archive artifact: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
     return {
@@ -1823,12 +2479,13 @@ server.tool(
       .map((nodeId) => {
         const node = cp.graph.nodes[nodeId];
         if (!node) return `  - ${nodeId} (unknown)`;
-        return `  - ${node.id} | repo: ${node.repo ?? "single-repo"} | ${node.label} | branch: ${node.worktreeBranch ?? "n/a"}`;
+        return `  - ${node.id} | repo: ${
+          node.repo ?? "single-repo"
+        } | ${node.label} | branch: ${node.worktreeBranch ?? "n/a"}`;
       })
       .join("\n");
 
-    const message =
-      `Wave ${wave.id + 1} is ready for dispatch.\n` +
+    const message = `Wave ${wave.id + 1} is ready for dispatch.\n` +
       `Nodes (${wave.nodes.length}):\n${nodeSummaries}\n\n` +
       `Approve this wave to proceed with execution.`;
 
@@ -1893,6 +2550,41 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: next_frontier (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "next_frontier",
+  "Return the continuous frontier — every PENDING + READY node across all waves whose dependencies have cleared, regardless of wave order. The frontier crosses wave boundaries: a wave-3 node whose deps are satisfied appears even when wave-1 is incomplete. Filters out nodes flagged `externallyBlocked` (orthogonal axis from `readinessStatus`). Returns batches grouped by wave for downstream batching/UI. Advisory only — `dispatch_wave` remains the authoritative activation point.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+    const frontier = currentFrontier(cp.graph, cp.waves);
+    const batches = nextFrontierBatch(cp.graph, cp.waves, cp.currentWaveId);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            frontier,
+            batches,
+            // Surface contract: frontier is read-time advisory. dispatch_wave
+            // remains authoritative — fence minting and external-blocker
+            // re-consultation happen there. Two callers reading the same
+            // frontier may both see the same node; only one's dispatch will
+            // succeed (the other's WorkPacket gets invalidated on the next
+            // mint).
+            advisoryNote:
+              "Frontier is advisory. dispatch_wave is the authoritative activation point and may reject nodes the frontier listed (stale fence, fresh external blocker, capability mismatch).",
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: status
 // ---------------------------------------------------------------------------
 
@@ -1919,6 +2611,7 @@ server.tool(
         id,
         {
           status: node.status,
+          readinessStatus: node.readinessStatus ?? "READY",
           repo: node.repo,
           label: node.label,
           type: node.type,
@@ -1962,13 +2655,9 @@ server.tool(
               : {}),
             ...(cp.subgraphs?.length
               ? {
-                subgraphs: cp.subgraphs.map((sg) => ({
-                  id: sg.id,
-                  executor: sg.executor,
-                  assignee: sg.assignee,
-                  nodeCount: sg.nodes.length,
-                  coordination: sg.coordination.mode,
-                })),
+                subgraphs: cp.subgraphs.map((sg) =>
+                  summarizeSubgraph(sg, cp.graph)
+                ),
               }
               : {}),
             ...(cp.cancellationReason
@@ -1979,8 +2668,7 @@ server.tool(
               ? {
                 pendingElicitGates: pendingGates(cp)
                   .filter(
-                    (nId) =>
-                      cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
+                    (nId) => cp.graph.nodes[nId]?.type === NodeType.ELICIT_GATE,
                   )
                   .map((nId) => ({
                     nodeId: nId,
@@ -2048,7 +2736,11 @@ server.tool(
   "List all trimatrix sessions: the active in-memory session (if any) plus persisted checkpoint sessions across all brains.",
   {},
   async () => {
-    type CheckpointEntry = { recordId: string; title: string; updatedAt: string };
+    type CheckpointEntry = {
+      recordId: string;
+      title: string;
+      updatedAt: string;
+    };
     type SessionEntry = {
       sessionId: string;
       brain: string;
@@ -2094,8 +2786,8 @@ server.tool(
     const prefixMap = new Map<string, string>();
     try {
       const { stdout: lsOut } = await execFileAsync("brain", ["ls", "--json"]);
-      const brains: { brains: Array<{ name: string; prefix: string }> } =
-        JSON.parse(lsOut);
+      const brains: { brains: Array<{ name: string; prefix: string }> } = JSON
+        .parse(lsOut);
       for (const b of brains.brains) prefixMap.set(b.prefix, b.name);
     } catch {
       // Best-effort — brain field falls back to raw prefix
@@ -2113,9 +2805,12 @@ server.tool(
 
     try {
       const { stdout } = await execFileAsync("brain", [
-        "--sqlite-db", unifiedDb,
-        "snapshots", "list",
-        "--tag", "trimatrix-checkpoint",
+        "--sqlite-db",
+        unifiedDb,
+        "snapshots",
+        "list",
+        "--tag",
+        "trimatrix-checkpoint",
         "--json",
       ]);
       const data = JSON.parse(stdout);
@@ -2134,7 +2829,9 @@ server.tool(
       for (const record of records) {
         const match = record.title.match(sessionRe);
         const sessionKey = match ? match[1] : "untagged";
-        const displayTitle = match ? record.title.slice(match[0].length) : record.title;
+        const displayTitle = match
+          ? record.title.slice(match[0].length)
+          : record.title;
         if (!sessionMap.has(sessionKey)) {
           // Brain attribution uses the first record's prefix; cross-brain
           // sessions (rare) will only report the originating brain.
@@ -2157,9 +2854,14 @@ server.tool(
           const dates = checkpoints.map((c) => c.updatedAt).sort();
           // Extract machineState from the latest checkpoint title
           // Title format: checkpoint:<sessionId>:wave-<waveId>:<machineState>
-          const latest = checkpoints.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
+          const latest = checkpoints.reduce((
+            a,
+            b,
+          ) => (a.updatedAt > b.updatedAt ? a : b));
           const titleParts = latest.title.split(":");
-          const machineState = titleParts.length >= 4 ? titleParts[titleParts.length - 1] : null;
+          const machineState = titleParts.length >= 4
+            ? titleParts[titleParts.length - 1]
+            : null;
           return {
             sessionId,
             brain,
@@ -2215,8 +2917,12 @@ function execWithStdin(
     });
     let stdout = "";
     let stderr = "";
-    proc.stdout.on("data", (d) => { stdout += String(d); });
-    proc.stderr.on("data", (d) => { stderr += String(d); });
+    proc.stdout.on("data", (d) => {
+      stdout += String(d);
+    });
+    proc.stderr.on("data", (d) => {
+      stderr += String(d);
+    });
     proc.on("error", reject);
     proc.on("close", (code) => {
       if (code === 0) resolve(stdout);
@@ -2232,7 +2938,7 @@ function execWithStdin(
 /** Real BrainExec wired to execWithStdin / execFileAsync. */
 const brainExec: BrainExec = {
   withStdin: execWithStdin,
-  async exec(cmd, args, opts) {
+  exec(cmd, args, opts) {
     return execFileAsync(cmd, args, {
       timeout: opts?.timeout,
       ...(opts?.cwd ? { cwd: opts.cwd } : {}),
@@ -2255,7 +2961,8 @@ async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
     const serialized = JSON.stringify(cp);
     const waveId = cp.currentWaveId ?? "latest";
     const sessionId = cp.sessionId ?? "unknown";
-    const title = `[session:${sessionId}] checkpoint:${sessionId}:wave-${waveId}:${cp.machineState}`;
+    const title =
+      `[session:${sessionId}] checkpoint:${sessionId}:wave-${waveId}:${cp.machineState}`;
     const rpc = JSON.stringify({
       jsonrpc: "2.0",
       method: "tools/call",
@@ -2264,7 +2971,11 @@ async function saveCheckpointToBrain(cp: Checkpoint): Promise<void> {
         arguments: {
           title,
           text: serialized,
-          tags: ["trimatrix-checkpoint", `session:${cp.sessionId ?? "unknown"}`, `state:${cp.machineState}`],
+          tags: [
+            "trimatrix-checkpoint",
+            `trimatrix-session:${cp.sessionId ?? "unknown"}`,
+            `state:${cp.machineState}`,
+          ],
         },
       },
       id: 1,
@@ -2297,7 +3008,10 @@ interface BrainTask {
 async function queryBrainTasks(status: string): Promise<BrainTask[]> {
   try {
     const { stdout } = await execFileAsync(BRAIN_CLI, [
-      "tasks", "list", "--json", `--status=${status}`,
+      "tasks",
+      "list",
+      "--json",
+      `--status=${status}`,
     ], { timeout: 5000 });
     const parsed = JSON.parse(stdout);
     if (Array.isArray(parsed)) return parsed;
@@ -2311,7 +3025,10 @@ async function queryBrainTasks(status: string): Promise<BrainTask[]> {
 async function queryBrainBlockedTasks(): Promise<BrainTask[]> {
   try {
     const { stdout } = await execFileAsync(BRAIN_CLI, [
-      "tasks", "list", "--json", "--blocked",
+      "tasks",
+      "list",
+      "--json",
+      "--blocked",
     ], { timeout: 5000 });
     const parsed = JSON.parse(stdout);
     if (Array.isArray(parsed)) return parsed;
@@ -2322,7 +3039,9 @@ async function queryBrainBlockedTasks(): Promise<BrainTask[]> {
   }
 }
 
-async function readJsonFile(path: string): Promise<Record<string, unknown> | null> {
+async function readJsonFile(
+  path: string,
+): Promise<Record<string, unknown> | null> {
   try {
     const data = await readFile(path, "utf-8");
     return JSON.parse(data);
@@ -2341,7 +3060,8 @@ function formatTaskTable(
   const sep = "| " + columns.map(() => "---").join(" | ") + " |";
   const rows = tasks.slice(0, 15).map((t) => {
     const cells = columns.map((col) => {
-      const key = COLUMN_KEY_MAP[col.toLowerCase()] ?? col.toLowerCase().replace(/ /g, "_");
+      const key = COLUMN_KEY_MAP[col.toLowerCase()] ??
+        col.toLowerCase().replace(/ /g, "_");
       return String((t as unknown as Record<string, unknown>)[key] ?? "-");
     });
     return "| " + cells.join(" | ") + " |";
@@ -2350,7 +3070,10 @@ function formatTaskTable(
 }
 
 function formatAgents(agentsState: Record<string, unknown>): string {
-  const active = (agentsState.active ?? {}) as Record<string, Record<string, unknown>>;
+  const active = (agentsState.active ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
   if (Object.keys(active).length === 0) return "";
   const now = Date.now() / 1000;
   return Object.entries(active).map(([aid, info]) => {
@@ -2377,19 +3100,39 @@ function buildCheckpointMarkdown(
   },
 ): string {
   const sections: string[] = [];
-  sections.push(`# Post-Compaction Checkpoint (compaction #${opts.compactionNum})`);
+  sections.push(
+    `# Post-Compaction Checkpoint (compaction #${opts.compactionNum})`,
+  );
 
   if (opts.tasksInProgress.length > 0) {
     sections.push("\n## In-Progress Tasks");
-    sections.push(formatTaskTable(opts.tasksInProgress, ["ID", "Title", "Status", "Assignee", "Priority"]));
+    sections.push(
+      formatTaskTable(opts.tasksInProgress, [
+        "ID",
+        "Title",
+        "Status",
+        "Assignee",
+        "Priority",
+      ]),
+    );
   }
   if (opts.tasksOpen.length > 0) {
     sections.push("\n## Open Tasks");
-    sections.push(formatTaskTable(opts.tasksOpen, ["ID", "Title", "Status", "Assignee", "Priority"]));
+    sections.push(
+      formatTaskTable(opts.tasksOpen, [
+        "ID",
+        "Title",
+        "Status",
+        "Assignee",
+        "Priority",
+      ]),
+    );
   }
   if (opts.tasksBlocked.length > 0) {
     sections.push("\n## Blocked Tasks");
-    sections.push(formatTaskTable(opts.tasksBlocked, ["ID", "Title", "Status", "Priority"]));
+    sections.push(
+      formatTaskTable(opts.tasksBlocked, ["ID", "Title", "Status", "Priority"]),
+    );
   }
 
   const agentsMd = opts.agentsState ? formatAgents(opts.agentsState) : "";
@@ -2413,17 +3156,28 @@ function buildCheckpointMarkdown(
 
   const statsParts = [`Compactions: ${opts.compactionNum}`];
   if (totalCost > 0) statsParts.push(`Subagent cost: $${totalCost.toFixed(2)}`);
-  if (totalTime > 0) statsParts.push(`Subagent time: ${Math.floor(totalTime)}s`);
+  if (totalTime > 0) {
+    statsParts.push(`Subagent time: ${Math.floor(totalTime)}s`);
+  }
 
   const nActive = opts.agentsState
-    ? Object.keys((opts.agentsState.active ?? {}) as Record<string, unknown>).length
+    ? Object.keys((opts.agentsState.active ?? {}) as Record<string, unknown>)
+      .length
     : 0;
   const taskSummary: string[] = [];
-  if (opts.tasksInProgress.length > 0) taskSummary.push(`${opts.tasksInProgress.length} in-progress`);
-  if (opts.tasksOpen.length > 0) taskSummary.push(`${opts.tasksOpen.length} open`);
-  if (opts.tasksBlocked.length > 0) taskSummary.push(`${opts.tasksBlocked.length} blocked`);
+  if (opts.tasksInProgress.length > 0) {
+    taskSummary.push(`${opts.tasksInProgress.length} in-progress`);
+  }
+  if (opts.tasksOpen.length > 0) {
+    taskSummary.push(`${opts.tasksOpen.length} open`);
+  }
+  if (opts.tasksBlocked.length > 0) {
+    taskSummary.push(`${opts.tasksBlocked.length} blocked`);
+  }
   if (nActive > 0) taskSummary.push(`${nActive} subagents active`);
-  if (taskSummary.length > 0) statsParts.push("Tasks: " + taskSummary.join(", "));
+  if (taskSummary.length > 0) {
+    statsParts.push("Tasks: " + taskSummary.join(", "));
+  }
 
   sections.push("\n## Session Stats");
   sections.push(statsParts.join(" | "));
@@ -2435,7 +3189,7 @@ function buildCheckpointMarkdown(
     sections.push("\n## Recommended Action");
     sections.push(
       "Subagents were lost during compaction. Resume with the task ID — " +
-      "dispatch drones for the remaining tasks.",
+        "dispatch drones for the remaining tasks.",
     );
   }
 
@@ -2450,10 +3204,14 @@ async function saveBrainSnapshot(
   try {
     const tagArgs = tags.flatMap((t) => ["--tag", t]);
     await execWithStdin(BRAIN_CLI, [
-      "snapshots", "save", "--stdin",
-      "--title", title,
+      "snapshots",
+      "save",
+      "--stdin",
+      "--title",
+      title,
       ...tagArgs,
-      "--media-type", "text/markdown",
+      "--media-type",
+      "text/markdown",
     ], content);
   } catch {
     // Best-effort — do not fail the tool call
@@ -2465,22 +3223,9 @@ async function saveBrainSnapshot(
 // ---------------------------------------------------------------------------
 
 /**
- * Sync a graph node's task status to the brain CLI (best-effort).
- * Delegates to syncTaskStatusCore in brain-sync.ts with the real executor.
- */
-async function syncTaskStatus(
-  taskId: string,
-  action: "activate" | "block" | "close",
-  cwd?: string,
-): Promise<void> {
-  return syncTaskStatusCore(taskId, action, cwd, brainExec);
-}
-
-
-/**
  * Search brain's episodic memory for prior episodes (best-effort).
  */
-async function searchPriorEpisodes(
+function searchPriorEpisodes(
   query: string,
   tags?: string[],
   brains?: string[],
@@ -2489,6 +3234,114 @@ async function searchPriorEpisodes(
 ) {
   return searchEpisodesCore(query, tags, brains, budget, cwd, brainExec);
 }
+
+// ---------------------------------------------------------------------------
+// Tool: add_external_blocker
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "add_external_blocker",
+  "Add an external blocker to the brain task associated with a graph node. The node must have a taskId set.",
+  {
+    nodeId: z.string().describe(
+      "Node ID whose brain task receives the blocker",
+    ),
+    source: z.string().describe(
+      "Source system identifier (e.g. 'jira', 'github-pr', 'linear')",
+    ),
+    externalId: z.string().describe("Identifier within the source system"),
+    url: z.string().optional().describe("Optional URL for human navigation"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+    if (!node.taskId) {
+      throw new Error(
+        `Node "${params.nodeId}" has no taskId — cannot add external blocker. Set taskId via update_node first.`,
+      );
+    }
+    const result = await callBrainTool(brainExec, "tasks.apply_event", {
+      task_id: node.taskId,
+      event: {
+        type: "external_blocker_added",
+        source: params.source,
+        externalId: params.externalId,
+        ...(params.url ? { url: params.url } : {}),
+      },
+    }, { timeout: 5000 });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            buildExternalBlockerResponse(
+              node.taskId,
+              params.externalId,
+              result,
+            ),
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_external_blocker
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "resolve_external_blocker",
+  "Resolve an external blocker on the brain task associated with a graph node. The node must have a taskId set.",
+  {
+    nodeId: z.string().describe(
+      "Node ID whose brain task has the blocker resolved",
+    ),
+    source: z.string().describe(
+      "Source system identifier matching the blocker to resolve",
+    ),
+    externalId: z.string().describe(
+      "Identifier within the source system matching the blocker to resolve",
+    ),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+    if (!node.taskId) {
+      throw new Error(
+        `Node "${params.nodeId}" has no taskId — cannot resolve external blocker. Set taskId via update_node first.`,
+      );
+    }
+    const result = await callBrainTool(brainExec, "tasks.apply_event", {
+      task_id: node.taskId,
+      event: {
+        type: "external_blocker_resolved",
+        source: params.source,
+        externalId: params.externalId,
+      },
+    }, { timeout: 5000 });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            buildExternalBlockerResponse(
+              node.taskId,
+              params.externalId,
+              result,
+            ),
+          ),
+        },
+      ],
+    };
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Tool: reflect_session
@@ -2501,7 +3354,9 @@ server.tool(
   async () => {
     const cp = requireCheckpoint();
     if (!cp.sessionId) {
-      throw new Error("No sessionId on checkpoint — cannot gather session episodes.");
+      throw new Error(
+        "No sessionId on checkpoint — cannot gather session episodes.",
+      );
     }
 
     const sessionTag = `session:${cp.sessionId}`;
@@ -2538,13 +3393,20 @@ server.tool(
             episodeIds: cp.episodeIds ?? [],
             episodes,
             ...(episodes.length === 0 && (cp.episodeIds ?? []).length === 0
-              ? { note: "No episodes recorded during this session. Nothing to reflect on." }
+              ? {
+                note:
+                  "No episodes recorded during this session. Nothing to reflect on.",
+              }
               : {
                 reflectionPrompt:
-                  `Synthesize a reflection for session "${cp.sessionLabel ?? cp.sessionId}". ` +
+                  `Synthesize a reflection for session "${
+                    cp.sessionLabel ?? cp.sessionId
+                  }". ` +
                   `Summarize key decisions, obstacles encountered, and lessons learned. ` +
                   `Use memory_reflect with mode="commit" to persist the reflection, ` +
-                  `linking to source episode IDs: [${(cp.episodeIds ?? []).join(", ")}].`,
+                  `linking to source episode IDs: [${
+                    (cp.episodeIds ?? []).join(", ")
+                  }].`,
               }),
           }),
         },
@@ -2601,7 +3463,9 @@ server.tool(
       [agentsState, costsState, compactionsState] = await Promise.all([
         readJsonFile(join(STATE_DIR, `unimatrix-agents-${runtimeKey}.json`)),
         readJsonFile(join(STATE_DIR, `unimatrix-costs-${runtimeKey}.json`)),
-        readJsonFile(join(STATE_DIR, `unimatrix-compactions-${runtimeKey}.json`)),
+        readJsonFile(
+          join(STATE_DIR, `unimatrix-compactions-${runtimeKey}.json`),
+        ),
       ]);
     }
 
@@ -2630,13 +3494,17 @@ server.tool(
     if (checkpoint.sessionLabel) parts.push(checkpoint.sessionLabel);
     parts.push(`Compaction #${compactionNum}`);
     const counts: string[] = [];
-    if (tasksInProgress.length > 0) counts.push(`${tasksInProgress.length} in-progress`);
+    if (tasksInProgress.length > 0) {
+      counts.push(`${tasksInProgress.length} in-progress`);
+    }
     if (tasksOpen.length > 0) counts.push(`${tasksOpen.length} open`);
     if (tasksBlocked.length > 0) counts.push(`${tasksBlocked.length} blocked`);
     if (counts.length > 0) parts.push(counts.join(", "));
     parts.push("graph attached");
 
-    const titlePrefix = checkpoint.sessionId ? `[session:${checkpoint.sessionId}] ` : "";
+    const titlePrefix = checkpoint.sessionId
+      ? `[session:${checkpoint.sessionId}] `
+      : "";
     const title = titlePrefix + parts.join(" — ");
 
     await saveBrainSnapshot(title, snapshotTags, markdown);
@@ -2674,6 +3542,25 @@ server.tool(
   },
   (params) => {
     const cp = deserialize(params.checkpoint);
+    const validStates = Object.values(MachineState) as string[];
+    if (!validStates.includes(cp.machineState)) {
+      throw new Error(
+        `Checkpoint has invalid machineState "${cp.machineState}". Valid states: ${
+          validStates.join(", ")
+        }`,
+      );
+    }
+    if (
+      typeof cp.graph.nodes !== "object" ||
+      cp.graph.nodes === null ||
+      Array.isArray(cp.graph.nodes)
+    ) {
+      throw new Error(
+        `Checkpoint has malformed graph.nodes — expected a record, got ${
+          Array.isArray(cp.graph.nodes) ? "array" : typeof cp.graph.nodes
+        }`,
+      );
+    }
     checkpoint = cp;
     return {
       content: [
@@ -2724,7 +3611,7 @@ server.tool(
       } else {
         console.error(
           "[trimatrix/designate] No active session — trimatrix_id will be random. " +
-          "Call init or restore_checkpoint first for deterministic IDs.",
+            "Call init or restore_checkpoint first for deterministic IDs.",
         );
       }
     }
@@ -2856,7 +3743,8 @@ server.tool(
         const s = await stat(resolved);
         if (!s.isDirectory()) {
           results.push({
-            error: `'${ref}' is not a registered brain and not a valid directory`,
+            error:
+              `'${ref}' is not a registered brain and not a valid directory`,
             ref,
           });
           hasErrors = true;
@@ -2979,8 +3867,8 @@ server.tool(
     if (!repoExists) {
       throw new Error(
         `Brain "${params.name}" not found in checkpoint repos. ` +
-        `Available: ${cp.repos.map((r) => r.name).join(", ") || "(none)"}. ` +
-        `Register via add_repo first.`,
+          `Available: ${cp.repos.map((r) => r.name).join(", ") || "(none)"}. ` +
+          `Register via add_repo first.`,
       );
     }
 

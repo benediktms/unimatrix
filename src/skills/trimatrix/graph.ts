@@ -5,8 +5,30 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { CoordinationContract, Edge, Graph, Node, Subgraph, Wave } from "./types.ts";
-import { CoordinationMode, EdgeType, Executor, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
+import type {
+  Capabilities,
+  CoordinationContract,
+  Edge,
+  FrontierEntry,
+  Graph,
+  Node,
+  Requirements,
+  Subgraph,
+  SubgraphGate,
+  Wave,
+} from "./types.ts";
+import {
+  CoordinationMode,
+  EdgeType,
+  Executor,
+  NodeStatus,
+  NodeType,
+  ReadinessStatus,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+  SubgraphStrategy,
+  Tier,
+} from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Refinement mutation result
@@ -25,6 +47,146 @@ export interface MutationResult<T> {
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+}
+
+// ---------------------------------------------------------------------------
+// close_node guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate that a node is in a state where its brain task can be closed.
+ *
+ * Pure function — extracted from the `close_node` MCP handler so tests can
+ * exercise the actual guard logic without reimplementing it. Production code
+ * and tests must converge on this single source of truth.
+ *
+ * Returns:
+ * - `{ ok: true }` if `node` exists, has a `taskId`, and is in DONE / MERGED /
+ *   PR_CREATED status.
+ * - `{ ok: false, error }` otherwise, with a caller-meaningful error message.
+ */
+export function closeNodeGuard(
+  node: Node | undefined,
+  nodeId: string,
+): { ok: true } | { ok: false; error: string } {
+  if (!node) {
+    return { ok: false, error: `Node "${nodeId}" not found in graph` };
+  }
+  if (!node.taskId) {
+    return {
+      ok: false,
+      error: `Node "${nodeId}" has no associated taskId — cannot close`,
+    };
+  }
+  const completedStatuses: NodeStatus[] = [
+    NodeStatus.DONE,
+    NodeStatus.MERGED,
+    NodeStatus.PR_CREATED,
+  ];
+  if (!completedStatuses.includes(node.status)) {
+    return {
+      ok: false,
+      error:
+        `Node "${nodeId}" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`,
+    };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Capability matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a dispatcher's capabilities satisfy a node's requirements.
+ *
+ * Subset semantics:
+ * - Every required `repos[]` entry must appear in `capabilities.repos`, or
+ *   `capabilities.repos` must include `"*"` (write-anywhere).
+ * - Every required `tools[]` entry must appear in `capabilities.tools`.
+ * - If `requirements.canWrite` is true, `capabilities.canWrite` must be true.
+ * - If `requirements.humanPresent` is true, `capabilities.humanPresent` must be true.
+ * - Every required `labels[]` entry must appear in `capabilities.labels`.
+ *
+ * Returns `{ ok: true }` when all requirements are met, or
+ * `{ ok: false, missing: [...] }` with concrete unmet items
+ * (e.g. `"repo:foo"`, `"tool:bash"`, `"canWrite"`, `"humanPresent"`, `"label:urgent"`).
+ */
+export function canDispatch(
+  capabilities: Capabilities,
+  requirements: Requirements | undefined,
+): { ok: true } | { ok: false; missing: string[] } {
+  if (!requirements) return { ok: true };
+
+  const missing: string[] = [];
+
+  if (requirements.repos && requirements.repos.length > 0) {
+    const capRepos = capabilities.repos ?? [];
+    const wildcard = capRepos.includes("*");
+    for (const repo of requirements.repos) {
+      if (!wildcard && !capRepos.includes(repo)) {
+        missing.push(`repo:${repo}`);
+      }
+    }
+  }
+
+  if (requirements.tools && requirements.tools.length > 0) {
+    const capTools = capabilities.tools ?? [];
+    for (const tool of requirements.tools) {
+      if (!capTools.includes(tool)) {
+        missing.push(`tool:${tool}`);
+      }
+    }
+  }
+
+  if (requirements.canWrite === true && !capabilities.canWrite) {
+    missing.push("canWrite");
+  }
+
+  if (requirements.humanPresent === true && !capabilities.humanPresent) {
+    missing.push("humanPresent");
+  }
+
+  if (requirements.labels && requirements.labels.length > 0) {
+    const capLabels = capabilities.labels ?? [];
+    for (const label of requirements.labels) {
+      if (!capLabels.includes(label)) {
+        missing.push(`label:${label}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) return { ok: false, missing };
+  return { ok: true };
+}
+
+/**
+ * Validate that the given dispatcher can handle a specific node's requirements.
+ *
+ * Looks up `nodeId` in the graph, evaluates `canDispatch`, and returns a
+ * `MutationResult<void>` with a human-readable error message on mismatch.
+ *
+ * Does NOT wire into `dispatch_wave` — caller is responsible for integration.
+ */
+export function validateDispatch(
+  graph: Graph,
+  nodeId: string,
+  capabilities: Capabilities,
+): MutationResult<void> {
+  const node = graph.nodes[nodeId];
+  if (!node) {
+    return { ok: false, error: `Node "${nodeId}" not found in graph` };
+  }
+
+  const result = canDispatch(capabilities, node.requirements);
+  if (result.ok) return { ok: true };
+
+  return {
+    ok: false,
+    error: `Node ${nodeId} requires ${
+      result.missing.join(", ")
+    }; dispatcher lacks these capabilities`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +371,10 @@ export function computeWaves(graph: Graph): Wave[] {
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
+      const bump =
+        (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON)
+          ? 1
+          : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -229,7 +394,9 @@ export function computeWaves(graph: Graph): Wave[] {
   // Determine which wave IDs have outgoing MERGE_GATE or DEPENDS_ON edges into a later wave
   const gateSourceLevels = new Set<number>();
   for (const edge of graph.edges) {
-    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
+    if (
+      edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON
+    ) {
       const fromLevel = level.get(edge.from) ?? 0;
       gateSourceLevels.add(fromLevel);
     }
@@ -270,6 +437,44 @@ export interface UnsatisfiedDependency {
 }
 
 /**
+ * Recompute the topology `readinessStatus` for every node in the graph.
+ *
+ * - A node with no unsatisfied incoming deps becomes `READY`.
+ * - A node with at least one unsatisfied incoming dep becomes `BLOCKED`.
+ * - Nodes already marked `INVALIDATED` are preserved as-is — invalidation is
+ *   set explicitly by refinement code and only cleared by re-dispatch, never
+ *   by automatic recompute.
+ *
+ * This is the topology axis (orthogonal to `NodeStatus`). The execution layer
+ * (`compute_waves`, `dispatch_wave`) reads this to decide whether a `PENDING`
+ * node is actually claimable.
+ *
+ * Returns a new `Graph` value — pure function, no mutation.
+ */
+export function recomputeReadiness(graph: Graph): Graph {
+  const updatedNodes: Record<string, Node> = {};
+  let changed = false;
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (node.readinessStatus === ReadinessStatus.INVALIDATED) {
+      updatedNodes[id] = node;
+      continue;
+    }
+    const unsatisfied = unsatisfiedDependencies(graph, id);
+    const next = unsatisfied.length === 0
+      ? ReadinessStatus.READY
+      : ReadinessStatus.BLOCKED;
+    if (node.readinessStatus !== next) {
+      updatedNodes[id] = { ...node, readinessStatus: next };
+      changed = true;
+    } else {
+      updatedNodes[id] = node;
+    }
+  }
+  if (!changed) return graph;
+  return { ...graph, nodes: updatedNodes };
+}
+
+/**
  * Return all unsatisfied incoming dependencies for a node.
  * Empty array means all dependencies are satisfied.
  */
@@ -287,18 +492,27 @@ export function unsatisfiedDependencies(
     }
     if (edge.type === EdgeType.DEPENDS_ON) {
       if (!DEPENDS_ON_SATISFIED.includes(source.status)) {
-        result.push({ edge, reason: `source is ${source.status}, requires DONE or MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires DONE or MERGED`,
+        });
       }
     } else if (edge.type === EdgeType.MERGE_GATE) {
       if (source.status !== MERGE_GATE_SATISFIED) {
-        result.push({ edge, reason: `source is ${source.status}, requires MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires MERGED`,
+        });
       } else if (!source.prUrl) {
         result.push({ edge, reason: `source is MERGED but lacks prUrl` });
       }
     } else {
       // STACKED
       if (!STACKED_SATISFIED.includes(source.status)) {
-        result.push({ edge, reason: `source is ${source.status}, requires PR_CREATED or MERGED` });
+        result.push({
+          edge,
+          reason: `source is ${source.status}, requires PR_CREATED or MERGED`,
+        });
       }
     }
   }
@@ -376,7 +590,11 @@ export function clearGate(graph: Graph, nodeId: string): Graph {
     ...graph,
     nodes: {
       ...graph.nodes,
-      [nodeId]: { ...node, status: NodeStatus.ACTIVE, failureReason: undefined },
+      [nodeId]: {
+        ...node,
+        status: NodeStatus.ACTIVE,
+        failureReason: undefined,
+      },
     },
   };
 }
@@ -395,7 +613,9 @@ export function completeNode(
   if (!node) return graph;
   const updated: Node = {
     ...node,
-    status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
+    status: node.prUrl
+      ? NodeStatus.PR_CREATED
+      : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
   };
   return {
     ...graph,
@@ -503,11 +723,18 @@ export function addNode(
     }
   }
 
+  // Backfill readinessStatus default for callers that haven't migrated to
+  // the 2.5.0 schema yet (`undefined` → `READY`). The next `recomputeReadiness`
+  // pass corrects it based on actual edge satisfaction.
+  const nodeWithReadiness: Node = node.readinessStatus !== undefined
+    ? node
+    : { ...node, readinessStatus: ReadinessStatus.READY };
+
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: { ...graph.nodes, [node.id]: node },
+      nodes: { ...graph.nodes, [node.id]: nodeWithReadiness },
     },
   };
 }
@@ -634,7 +861,10 @@ export function computeWavesFromRefinement(
     const curLevel = level.get(id) ?? 0;
     for (const nb of adjAll.get(id) ?? []) {
       const eType = edgeType.get(`${id}::${nb}`);
-      const bump = (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON) ? 1 : 0;
+      const bump =
+        (eType === EdgeType.MERGE_GATE || eType === EdgeType.DEPENDS_ON)
+          ? 1
+          : 0;
       const newLevel = curLevel + bump;
       if (newLevel > (level.get(nb) ?? 0)) {
         level.set(nb, newLevel);
@@ -654,7 +884,9 @@ export function computeWavesFromRefinement(
   // Determine wave IDs with outgoing MERGE_GATE or DEPENDS_ON edges into later waves
   const gateSourceLevels = new Set<number>();
   for (const edge of activeEdges) {
-    if (edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON) {
+    if (
+      edge.type === EdgeType.MERGE_GATE || edge.type === EdgeType.DEPENDS_ON
+    ) {
       const fromLevel = level.get(edge.from) ?? 0;
       gateSourceLevels.add(fromLevel);
     }
@@ -689,9 +921,13 @@ export function waveStatus(
 ): "pending" | "active" | "completed" | "partial_failure" | "failed" {
   if (wave.nodes.length === 0) return "completed";
 
-  const statuses = wave.nodes.map((id) => graph.nodes[id]?.status ?? NodeStatus.PENDING);
+  const statuses = wave.nodes.map((id) =>
+    graph.nodes[id]?.status ?? NodeStatus.PENDING
+  );
 
-  const allTerminal = statuses.every((s) => s === NodeStatus.MERGED || s === NodeStatus.DONE);
+  const allTerminal = statuses.every((s) =>
+    s === NodeStatus.MERGED || s === NodeStatus.DONE
+  );
   if (allTerminal) return "completed";
 
   const failedOrBlocked = (s: NodeStatus | undefined) =>
@@ -701,7 +937,9 @@ export function waveStatus(
 
   const hasFailure = statuses.some(failedOrBlocked);
   const hasCompleted = statuses.some(
-    (s) => s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED || s === NodeStatus.DONE,
+    (s) =>
+      s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED ||
+      s === NodeStatus.DONE,
   );
   if (hasFailure && hasCompleted) return "partial_failure";
   if (hasFailure) return "failed";
@@ -774,7 +1012,9 @@ function connectedComponents(nodeIds: string[], edges: Edge[]): string[][] {
  */
 function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
   const nodeSet = new Set(nodeIds);
-  const relevant = edges.filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to));
+  const relevant = edges.filter((e) =>
+    nodeSet.has(e.from) && nodeSet.has(e.to)
+  );
 
   const inDegree = new Map<string, number>();
   const adj = new Map<string, string[]>();
@@ -804,6 +1044,31 @@ function topoSortSubset(nodeIds: string[], edges: Edge[]): string[] {
   }
 
   return sorted;
+}
+
+/**
+ * Stable 8-character hash of a node-ID set.
+ *
+ * Used to derive subgraph IDs (`auto-<hash>`) so subgraph identity remains
+ * constant when sibling subgraphs are added or removed. Order-insensitive —
+ * the input set is sorted before hashing. djb2-style mix; not cryptographic.
+ *
+ * Output space is 32 bits (~4.3B). Birthday-collision probability rises near
+ * ~65k components per session — well above any realistic graph. The
+ * `applySubgraphs` post-condition throws on collision rather than silently
+ * merging; widen the suffix length here if subgraph counts ever approach
+ * that scale.
+ */
+export function hashNodeSet(nodeIds: string[]): string {
+  const sorted = [...nodeIds].sort();
+  let hash = 5381;
+  for (const id of sorted) {
+    for (let i = 0; i < id.length; i++) {
+      hash = ((hash << 5) + hash + id.charCodeAt(i)) >>> 0;
+    }
+    hash = ((hash << 5) + hash + 0x7c) >>> 0; // 0x7c = '|' separator
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 8);
 }
 
 /**
@@ -847,12 +1112,15 @@ export function computeSubgraphs(
     const sorted = topoSortSubset(allNodeIds, graph.edges);
     return [{
       id: "sg-lead",
+      derived: true,
       nodes: sorted,
       edges: [...graph.edges],
       assignee: "LEAD",
       executor: Executor.LEAD,
       tier,
       coordination: { mode: CoordinationMode.NONE },
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     }];
   }
 
@@ -920,13 +1188,32 @@ export function computeSubgraphs(
     const sorted = topoSortSubset(leadNodeIds, leadEdges);
     subgraphs.push({
       id: "sg-lead",
+      derived: true,
       nodes: sorted,
       edges: leadEdges,
       assignee: "LEAD",
       executor: Executor.LEAD,
       tier,
       coordination: { mode: CoordinationMode.NONE },
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     });
+  }
+
+  // Pre-compute stable IDs for every adjunct component so coordination contracts
+  // can reference siblings by ID without depending on iteration order.
+  const componentIds: string[] = components.map((compNodes) =>
+    compNodes.length === 0 ? "" : `auto-${hashNodeSet(compNodes)}`
+  );
+
+  // Post-condition: no two non-empty components may produce the same hash ID.
+  // A collision would silently merge distinct subgraphs — fail loudly instead.
+  const nonEmptyIds = componentIds.filter((id) => id !== "");
+  if (new Set(nonEmptyIds).size !== nonEmptyIds.length) {
+    throw new Error(
+      "Hash collision detected in computeSubgraphs: two adjunct components produced the same auto-<hash> ID. " +
+        "This is probabilistically near-impossible with distinct node sets — inspect inputs for duplicated node IDs.",
+    );
   }
 
   // Adjunct subgraphs (one per connected component)
@@ -940,7 +1227,7 @@ export function computeSubgraphs(
     );
     const sorted = topoSortSubset(compNodes, compEdges);
 
-    const sgId = `sg-${i + 1}`;
+    const sgId = componentIds[i];
 
     // Determine coordination mode
     let coordination: CoordinationContract;
@@ -958,16 +1245,22 @@ export function computeSubgraphs(
           // Find which subgraph the source belongs to
           const srcComp = nodeToComponent.get(edge.from);
           if (srcComp !== undefined) {
-            const depSgId = `sg-${srcComp + 1}`;
-            if (!dependsOn.includes(depSgId)) dependsOn.push(depSgId);
-          } else if (leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")) {
+            const depSgId = componentIds[srcComp];
+            if (depSgId && !dependsOn.includes(depSgId)) {
+              dependsOn.push(depSgId);
+            }
+          } else if (
+            leadNodeIds.includes(edge.from) && !dependsOn.includes("sg-lead")
+          ) {
             dependsOn.push("sg-lead");
           }
         }
       }
 
       coordination = {
-        mode: isReadOnly ? CoordinationMode.ADVERSARIAL : CoordinationMode.PARTITIONED,
+        mode: isReadOnly
+          ? CoordinationMode.ADVERSARIAL
+          : CoordinationMode.PARTITIONED,
         ...(dependsOn.length > 0 ? { dependsOn } : {}),
         exports: extractTaggedPaths(graph, compNodes, "exports"),
         imports: extractTaggedPaths(graph, compNodes, "imports"),
@@ -981,16 +1274,496 @@ export function computeSubgraphs(
 
     subgraphs.push({
       id: sgId,
+      derived: true,
       nodes: sorted,
       edges: compEdges,
-      assignee: "",  // Populated by caller after designation generation
+      assignee: "", // Populated by caller after designation generation
       executor: Executor.ADJUNCT,
       tier,
       coordination,
+      completionPolicy: SubgraphCompletionPolicy.ALL,
+      failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
     });
   }
 
   return subgraphs;
+}
+
+// ---------------------------------------------------------------------------
+// Explicit subgraph creation
+// ---------------------------------------------------------------------------
+
+/**
+ * Specification for adding an explicit (non-derived) subgraph.
+ */
+export interface AddSubgraphSpec {
+  /** Stable subgraph slug. Must match `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` (length 1–41,
+   * trailing character must be alphanumeric), not equal `sg-lead`, not start with `auto-`. */
+  slug: string;
+  /** Optional human-readable label. */
+  label?: string;
+  /** Optional parent subgraph ID for hierarchical nesting. */
+  parentId?: string;
+  /** Who executes nodes in this subgraph. */
+  executor: Executor;
+  /** Member node IDs. Must exist in the graph; must not overlap any other explicit subgraph. */
+  nodeIds: string[];
+  /** Execution tier. */
+  tier: Tier;
+  /** Optional coordination contract. Defaults to `{ mode: NONE }`. */
+  coordination?: CoordinationContract;
+  /** Optional completion policy. Defaults to `ALL`. */
+  completionPolicy?: SubgraphCompletionPolicy;
+  /** Optional failure policy. Defaults to `FAIL_FAST`. */
+  failurePolicy?: SubgraphFailurePolicy;
+  /** Optional gate references. Node-ID gates must be members of `nodeIds`.
+   * External gates (object form) require non-empty `source` and `externalId`. */
+  gates?: SubgraphGate[];
+}
+
+export const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
+
+/**
+ * Validate a spec and produce a new explicit Subgraph value, leaving the graph
+ * itself untouched. Caller is responsible for appending the result to the
+ * checkpoint's subgraphs and stamping `node.subgraph` onto member nodes.
+ *
+ * Validation:
+ * - slug matches `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` (length 1–41, trailing char alphanumeric),
+ *   isn't `sg-lead`, doesn't start with `auto-`
+ * - slug is unique among existing subgraph IDs (idempotent re-add: same spec returns existing;
+ *   differing spec returns error)
+ * - all `nodeIds` exist in the graph and are unique
+ * - `parentId` (if set) refers to an existing subgraph
+ * - no `nodeId` already belongs to another explicit subgraph
+ * - node-ID gates are members of `nodeIds`; external gates have non-empty `source` and `externalId`
+ * - `BEST_EFFORT` failure policy requires at least one gate (otherwise degenerates to CONTINUE)
+ */
+/**
+ * Compare two SubgraphGate arrays for semantic equality.
+ * Order-insensitive for both node-ID gates and external gates.
+ */
+function gatesEqual(
+  a: SubgraphGate[] | undefined,
+  b: SubgraphGate[] | undefined,
+): boolean {
+  const aArr = a ?? [];
+  const bArr = b ?? [];
+  if (aArr.length !== bArr.length) return false;
+
+  const stringify = (g: SubgraphGate): string => {
+    if (typeof g === "string") return `node:${g}`;
+    return `external:${g.source}:${g.externalId}`;
+  };
+
+  const aSet = new Set(aArr.map(stringify));
+  const bSet = new Set(bArr.map(stringify));
+  if (aSet.size !== bSet.size) return false;
+  for (const s of aSet) {
+    if (!bSet.has(s)) return false;
+  }
+  return true;
+}
+
+/**
+ * Check whether an existing subgraph's spec matches the incoming spec field-by-field.
+ * Used to implement idempotent re-add semantics.
+ */
+function subgraphsEquivalent(
+  existing: Subgraph,
+  spec: AddSubgraphSpec,
+): boolean {
+  // Slug already matched by the caller. Check the remaining fields.
+  const existingNodeSet = new Set(existing.nodes);
+  const specNodeSet = new Set(spec.nodeIds);
+  if (existingNodeSet.size !== specNodeSet.size) return false;
+  for (const id of existingNodeSet) {
+    if (!specNodeSet.has(id)) return false;
+  }
+
+  if (existing.executor !== spec.executor) return false;
+  if (existing.tier !== spec.tier) return false;
+
+  const effectiveCompletion = spec.completionPolicy ??
+    SubgraphCompletionPolicy.ALL;
+  const effectiveFailure = spec.failurePolicy ??
+    SubgraphFailurePolicy.FAIL_FAST;
+  if (existing.completionPolicy !== effectiveCompletion) return false;
+  if (existing.failurePolicy !== effectiveFailure) return false;
+
+  // parentId
+  const specParent = spec.parentId ?? undefined;
+  if (existing.parentId !== specParent) return false;
+
+  if (!gatesEqual(existing.gates, spec.gates)) return false;
+
+  return true;
+}
+
+export function addSubgraph(
+  graph: Graph,
+  currentSubgraphs: Subgraph[],
+  spec: AddSubgraphSpec,
+): MutationResult<Subgraph> {
+  if (!SUBGRAPH_SLUG_RE.test(spec.slug)) {
+    return {
+      ok: false,
+      error:
+        `Invalid slug "${spec.slug}" — must match ${SUBGRAPH_SLUG_RE.source}`,
+    };
+  }
+  if (spec.slug === "sg-lead") {
+    return {
+      ok: false,
+      error: `Slug "sg-lead" is reserved for the auto-derived lead subgraph`,
+    };
+  }
+  if (spec.slug.startsWith("auto-")) {
+    return {
+      ok: false,
+      error:
+        `Slug "${spec.slug}" is reserved — the "auto-" prefix is used for auto-derived subgraph IDs`,
+    };
+  }
+
+  // Idempotency: if slug already exists, compare specs.
+  const existing = currentSubgraphs.find((sg) => sg.id === spec.slug);
+  if (existing) {
+    if (subgraphsEquivalent(existing, spec)) {
+      return { ok: true, value: existing };
+    }
+    return {
+      ok: false,
+      error:
+        `Subgraph "${spec.slug}" already exists with a different spec — re-add rejected`,
+    };
+  }
+
+  if (spec.nodeIds.length === 0) {
+    return { ok: false, error: "Subgraph must contain at least one node" };
+  }
+  if (new Set(spec.nodeIds).size !== spec.nodeIds.length) {
+    return { ok: false, error: "Duplicate node IDs in spec" };
+  }
+  for (const nodeId of spec.nodeIds) {
+    if (!(nodeId in graph.nodes)) {
+      return { ok: false, error: `Node "${nodeId}" does not exist in graph` };
+    }
+  }
+  if (
+    spec.parentId && !currentSubgraphs.some((sg) => sg.id === spec.parentId)
+  ) {
+    return {
+      ok: false,
+      error: `Parent subgraph "${spec.parentId}" does not exist`,
+    };
+  }
+
+  // No overlap with other explicit subgraphs. Derived subgraphs are allowed to
+  // overlap; they are recomputed against the unclaimed-node set on next
+  // compute_subgraphs run.
+  const explicitMembership = new Map<string, string>();
+  for (const sg of currentSubgraphs) {
+    if (sg.derived) continue;
+    for (const id of sg.nodes) explicitMembership.set(id, sg.id);
+  }
+  for (const nodeId of spec.nodeIds) {
+    if (explicitMembership.has(nodeId)) {
+      return {
+        ok: false,
+        error: `Node "${nodeId}" already belongs to explicit subgraph "${
+          explicitMembership.get(nodeId)
+        }"`,
+      };
+    }
+  }
+
+  // M2: BEST_EFFORT requires at least one gate; without gates it degenerates to CONTINUE.
+  const failurePolicy = spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST;
+  if (failurePolicy === SubgraphFailurePolicy.BEST_EFFORT) {
+    if (!spec.gates || spec.gates.length === 0) {
+      return {
+        ok: false,
+        error:
+          "BEST_EFFORT failure policy requires at least one gate — without gates it degenerates to CONTINUE",
+      };
+    }
+  }
+
+  if (spec.gates) {
+    const memberSet = new Set(spec.nodeIds);
+    for (const gate of spec.gates) {
+      if (typeof gate === "string") {
+        // Node-ID gate: must be a member of nodeIds.
+        if (!memberSet.has(gate)) {
+          return {
+            ok: false,
+            error: `Gate node "${gate}" is not a member of this subgraph`,
+          };
+        }
+      } else {
+        // External gate: source and externalId must be non-empty.
+        if (!gate.source || gate.source.trim() === "") {
+          return {
+            ok: false,
+            error: `External gate is missing a non-empty "source" field`,
+          };
+        }
+        if (!gate.externalId || gate.externalId.trim() === "") {
+          return {
+            ok: false,
+            error: `External gate is missing a non-empty "externalId" field`,
+          };
+        }
+      }
+    }
+  }
+
+  const sortedNodes = topoSortSubset(spec.nodeIds, graph.edges);
+  const memberSet = new Set(spec.nodeIds);
+  const internalEdges = graph.edges.filter(
+    (e) => memberSet.has(e.from) && memberSet.has(e.to),
+  );
+
+  const subgraph: Subgraph = {
+    id: spec.slug,
+    derived: false,
+    nodes: sortedNodes,
+    edges: internalEdges,
+    assignee: spec.executor === Executor.LEAD ? "LEAD" : "",
+    executor: spec.executor,
+    tier: spec.tier,
+    coordination: spec.coordination ?? { mode: CoordinationMode.NONE },
+    completionPolicy: spec.completionPolicy ?? SubgraphCompletionPolicy.ALL,
+    failurePolicy,
+    ...(spec.label !== undefined ? { label: spec.label } : {}),
+    ...(spec.parentId !== undefined ? { parentId: spec.parentId } : {}),
+    ...(spec.gates ? { gates: spec.gates } : {}),
+  };
+
+  return { ok: true, value: subgraph };
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph completion / failure evaluation
+// ---------------------------------------------------------------------------
+
+/** Outcome of evaluating a subgraph's nodes against its policies. */
+export type SubgraphOutcome = "pending" | "active" | "completed" | "failed";
+
+const TERMINAL_OK: NodeStatus[] = [
+  NodeStatus.DONE,
+  NodeStatus.MERGED,
+  NodeStatus.PR_CREATED,
+];
+
+/**
+ * Evaluate a subgraph's overall status against its `completionPolicy` and
+ * `failurePolicy`, given the current node states.
+ *
+ * **Evaluation order**: failure policy is checked **before** completion policy.
+ * This means a tripped failure policy always wins, even when the completion
+ * policy could also be satisfied simultaneously.
+ *
+ * **ANY + FAIL_FAST ordering example** (intentional, locked by contract):
+ * Given nodes `[DONE, FAILED]`, `completionPolicy=ANY`, `failurePolicy=FAIL_FAST`:
+ * - FAIL_FAST trips first (a FAILED node exists) → outcome is `"failed"`.
+ * - The ANY completion check never runs.
+ * This is intentional: failure short-circuits. Use `CONTINUE` or `BEST_EFFORT`
+ * if you want failures to be tolerated alongside ANY completion.
+ *
+ * **GATED + external gates**: gates may be node IDs or external gate objects
+ * (see `SubgraphGate`). This function is the **synchronous variant** — it
+ * conservatively treats every external gate as unresolved, making it safe for
+ * in-loop callers that have no async boundary. A subgraph with any external
+ * gates will therefore never reach `"completed"` via GATED in this variant, and
+ * BEST_EFFORT will always trip on an external gate as failed.
+ *
+ * For the snapshot-aware async-boundary variant that resolves external gates
+ * against pre-fetched blocker counts, see `subgraphOutcomeWithBlockers`.
+ *
+ * Failure policy is checked first; if it has tripped, the subgraph is failed.
+ * Otherwise, completion policy is evaluated against "settled" nodes — a node
+ * is settled when it is OK (DONE/MERGED/PR_CREATED) **or** failed in a way
+ * the failure policy tolerates (CONTINUE tolerates any FAILED; BEST_EFFORT
+ * tolerates FAILED non-gate nodes).
+ *
+ * Returns:
+ * - `failed` — failure policy threshold tripped
+ * - `completed` — completion policy is satisfied
+ * - `active` — at least one node is ACTIVE
+ * - `pending` — none of the above
+ */
+export function subgraphOutcome(
+  graph: Graph,
+  subgraph: Subgraph,
+): SubgraphOutcome {
+  type Member = { id: string; status: NodeStatus };
+  const members: Member[] = subgraph.nodes
+    .map((id) => ({ id, status: graph.nodes[id]?.status }))
+    .filter((m): m is Member => m.status !== undefined);
+  if (members.length === 0) return "pending";
+
+  // Partition gates into node-ID gates (resolvable here) and external gates.
+  const rawGates = subgraph.gates ?? [];
+  const nodeGateIds = new Set<string>(
+    rawGates.filter((g): g is string => typeof g === "string"),
+  );
+  const externalGates = rawGates.filter((g) => typeof g !== "string");
+  // External gates without a cached blocker snapshot are treated as unresolved.
+  // Resolution requires the async getExternalBlockers call at the dispatch boundary
+  // in server.ts; see subgraphOutcomeWithBlockers for the snapshot-aware variant.
+  const hasUnresolvedExternalGates = externalGates.length > 0;
+
+  const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
+
+  const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
+  const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
+
+  // Failure policy first — a tripped subgraph is terminal regardless of remaining work.
+  switch (subgraph.failurePolicy) {
+    case SubgraphFailurePolicy.FAIL_FAST:
+      if (members.some((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.CONTINUE:
+      if (members.every((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.BEST_EFFORT:
+      // External gates are always unresolved — treat as failed for BEST_EFFORT.
+      if (hasUnresolvedExternalGates) return "failed";
+      if (nodeGates.some((g) => isFailed(g.status))) return "failed";
+      break;
+  }
+
+  // A node is "settled" when it is terminal-OK or its failure is tolerated by policy.
+  const settled = (m: Member): boolean => {
+    if (isOk(m.status)) return true;
+    if (!isFailed(m.status)) return false;
+    if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
+    if (
+      subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
+      !nodeGateIds.has(m.id)
+    ) return true;
+    return false;
+  };
+
+  switch (subgraph.completionPolicy) {
+    case SubgraphCompletionPolicy.ALL:
+      if (members.every(settled)) return "completed";
+      break;
+    case SubgraphCompletionPolicy.ANY:
+      if (members.some((m) => isOk(m.status))) return "completed";
+      break;
+    case SubgraphCompletionPolicy.GATED: {
+      // External gates are always unresolved — GATED never completes if any are present.
+      if (hasUnresolvedExternalGates) break;
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) {
+        return "completed";
+      }
+      break;
+    }
+  }
+
+  if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
+  return "pending";
+}
+
+/**
+ * Snapshot-aware variant of `subgraphOutcome` that incorporates pre-fetched
+ * external-blocker counts.
+ *
+ * **Design rationale**: `subgraphOutcome` is intentionally synchronous so it
+ * can be called freely during graph traversal without async overhead. Making it
+ * async would be a breaking change to every call site. The async
+ * `getExternalBlockers` call happens once at the dispatch boundary in server.ts;
+ * the resolved counts are placed in `blockerSnapshot` keyed by brain task ID.
+ *
+ * External gates that carry a `taskId` look up their unresolved count from the
+ * snapshot: count === 0 means the gate is resolved. Gates without a `taskId`
+ * fall back to the conservative "always unresolved" behavior.
+ *
+ * @param graph - The full execution graph.
+ * @param subgraph - The subgraph to evaluate.
+ * @param blockerSnapshot - Map of `taskId → unresolved external blocker count`
+ *   collected at the dispatch boundary. Pass an empty Map to reproduce the
+ *   behavior of `subgraphOutcome` (all external gates treated as unresolved).
+ */
+export function subgraphOutcomeWithBlockers(
+  graph: Graph,
+  subgraph: Subgraph,
+  blockerSnapshot: Map<string, number>,
+): SubgraphOutcome {
+  type Member = { id: string; status: NodeStatus };
+  const members: Member[] = subgraph.nodes
+    .map((id) => ({ id, status: graph.nodes[id]?.status }))
+    .filter((m): m is Member => m.status !== undefined);
+  if (members.length === 0) return "pending";
+
+  const rawGates = subgraph.gates ?? [];
+  const nodeGateIds = new Set<string>(
+    rawGates.filter((g): g is string => typeof g === "string"),
+  );
+  const externalGates = rawGates.filter((g) => typeof g !== "string");
+
+  // Resolve each external gate using the snapshot. A gate is unresolved when:
+  // - it has no taskId (no lookup possible), OR
+  // - its taskId is absent from the snapshot (never queried), OR
+  // - the snapshot reports unresolvedCount > 0.
+  const hasUnresolvedExternalGates = externalGates.some((g) => {
+    if (typeof g === "string") return false;
+    const tId = (g as { taskId?: string }).taskId;
+    if (!tId) return true; // no taskId → conservative: treat as unresolved
+    const count = blockerSnapshot.get(tId);
+    return count === undefined || count > 0;
+  });
+
+  const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
+
+  const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
+  const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
+
+  switch (subgraph.failurePolicy) {
+    case SubgraphFailurePolicy.FAIL_FAST:
+      if (members.some((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.CONTINUE:
+      if (members.every((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.BEST_EFFORT:
+      if (hasUnresolvedExternalGates) return "failed";
+      if (nodeGates.some((g) => isFailed(g.status))) return "failed";
+      break;
+  }
+
+  const settled = (m: Member): boolean => {
+    if (isOk(m.status)) return true;
+    if (!isFailed(m.status)) return false;
+    if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
+    if (
+      subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
+      !nodeGateIds.has(m.id)
+    ) return true;
+    return false;
+  };
+
+  switch (subgraph.completionPolicy) {
+    case SubgraphCompletionPolicy.ALL:
+      if (members.every(settled)) return "completed";
+      break;
+    case SubgraphCompletionPolicy.ANY:
+      if (members.some((m) => isOk(m.status))) return "completed";
+      break;
+    case SubgraphCompletionPolicy.GATED: {
+      if (hasUnresolvedExternalGates) break;
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) {
+        return "completed";
+      }
+      break;
+    }
+  }
+
+  if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
+  return "pending";
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,10 +1780,28 @@ export function serializeSubgraphBrief(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`## Subgraph: ${subgraph.id}`);
+  const heading = subgraph.label
+    ? `## Subgraph: ${subgraph.id} — ${subgraph.label}`
+    : `## Subgraph: ${subgraph.id}`;
+  lines.push(heading);
+  if (subgraph.parentId) lines.push(`Parent: ${subgraph.parentId}`);
   lines.push(`Assignee: ${subgraph.assignee}`);
   lines.push(`Executor: ${subgraph.executor}`);
   lines.push(`Coordination: ${subgraph.coordination.mode}`);
+  if (
+    subgraph.completionPolicy !== SubgraphCompletionPolicy.ALL ||
+    subgraph.failurePolicy !== SubgraphFailurePolicy.FAIL_FAST
+  ) {
+    lines.push(
+      `Policies: completion=${subgraph.completionPolicy}, failure=${subgraph.failurePolicy}`,
+    );
+  }
+  if (subgraph.gates?.length) {
+    const gateStrs = subgraph.gates.map((g) =>
+      typeof g === "string" ? g : `external:${g.source}:${g.externalId}`
+    );
+    lines.push(`Gates: ${gateStrs.join(", ")}`);
+  }
   lines.push("");
 
   lines.push("### Traversal Order");
@@ -1112,4 +1903,110 @@ export function parallelNodesInWave(
   }
 
   return batches;
+}
+
+// ---------------------------------------------------------------------------
+// Continuous frontier scheduling (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a lookup map from node ID → wave number.
+ *
+ * Nodes absent from every wave are not included in the map.
+ */
+export function nodeToWave(graph: Graph, waves: Wave[]): Map<string, number> {
+  void graph; // graph param is reserved for future node-existence validation
+  const result = new Map<string, number>();
+  for (const wave of waves) {
+    for (const nodeId of wave.nodes) {
+      result.set(nodeId, wave.id);
+    }
+  }
+  return result;
+}
+
+/**
+ * Return the continuous frontier: every node that is simultaneously
+ * `NodeStatus.PENDING` and `ReadinessStatus.READY`, regardless of which wave
+ * it belongs to.
+ *
+ * This unlocks cross-wave parallelism: when a later-wave node's dependencies
+ * clear before earlier-wave nodes finish, it appears on the frontier and can
+ * be dispatched immediately — no wave-serialization barrier.
+ *
+ * Entries are sorted by (wave asc, nodeId asc) for deterministic output.
+ * The wave number is carried purely as a dispatch hint; consumers may group,
+ * filter, or ignore it.
+ *
+ * Nodes whose `readinessStatus` is undefined are treated as `READY` (backwards
+ * compatibility with pre-2.5.0 checkpoints that lack the field).
+ *
+ * **Advisory contract**: `currentFrontier` is read-time advisory. It does
+ * NOT consult lease fences (a parallel caller may have already dispatched
+ * the node), capability requirements (those are checked by `dispatch_wave`
+ * with caller `Capabilities`), or fresh external-blocker state (the cached
+ * `externallyBlocked` axis is honored, but the brain may have updated since).
+ * Authoritative activation lives in `dispatch_wave`, which mints fences,
+ * re-consults brain, and rejects on capability mismatch. Two callers reading
+ * the same frontier may both see the same node; only one's WorkPacket
+ * survives the next mint. Use the frontier for batching and UI; use
+ * `dispatch_wave` for actual activation.
+ */
+export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
+  const waveOf = nodeToWave(graph, waves);
+  const entries: FrontierEntry[] = [];
+
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    if (node.status !== NodeStatus.PENDING) continue;
+    // Treat undefined readinessStatus as READY (pre-2.5.0 compat)
+    const ready = node.readinessStatus === undefined ||
+      node.readinessStatus === ReadinessStatus.READY;
+    if (!ready) continue;
+    // Filter on the orthogonal external-blocker axis. A node with unresolved
+    // external blockers is topologically READY (edges satisfied) but not
+    // frontier-eligible — `dispatch_wave` would refuse activation. Treating
+    // both axes as required avoids the frontier lying about dispatchability.
+    if (node.externallyBlocked === true) continue;
+    const wave = waveOf.get(nodeId) ?? 0;
+    entries.push({ nodeId, wave });
+  }
+
+  // Sort by (wave asc, nodeId asc) for determinism
+  entries.sort((a, b) =>
+    a.wave !== b.wave ? a.wave - b.wave : a.nodeId.localeCompare(b.nodeId)
+  );
+
+  return entries;
+}
+
+/**
+ * Return one dispatch batch per wave that has at least one frontier-eligible
+ * node, across all waves simultaneously (continuous-frontier alternative to
+ * `nextWave`).
+ *
+ * Each batch contains the wave number and the IDs of PENDING+READY nodes in
+ * that wave. Batches are ordered by wave number (ascending). Empty waves are
+ * omitted.
+ *
+ * The `currentWaveId` parameter is retained for API symmetry with `nextWave`
+ * and caller context; this function does NOT filter by it — the continuous
+ * frontier is wave-order-independent.
+ */
+export function nextFrontierBatch(
+  graph: Graph,
+  waves: Wave[],
+  _currentWaveId: number | null,
+): { wave: number; nodeIds: string[] }[] {
+  const frontier = currentFrontier(graph, waves);
+  if (frontier.length === 0) return [];
+
+  // Group entries by wave, preserving sort order from currentFrontier
+  const byWave = new Map<number, string[]>();
+  for (const entry of frontier) {
+    if (!byWave.has(entry.wave)) byWave.set(entry.wave, []);
+    byWave.get(entry.wave)!.push(entry.nodeId);
+  }
+
+  // Return as array of {wave, nodeIds}, wave-ascending (already ordered by insertion)
+  return [...byWave.entries()].map(([wave, nodeIds]) => ({ wave, nodeIds }));
 }

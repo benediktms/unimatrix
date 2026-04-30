@@ -4,18 +4,37 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, RoutingTrace, SubgraphStrategy, Tier } from "./types.ts";
-import { Executor, MachineState, NodeStatus } from "./types.ts";
-import { computeWaves } from "./graph.ts";
+import type { Checkpoint, Event, EventLogEntry, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
+import {
+  Executor,
+  MachineState,
+  NodeStatus,
+  ReadinessStatus,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+} from "./types.ts";
+import { computeWaves, recomputeReadiness } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.3.0";
+const VERSION = "2.6.0";
 
 /** All checkpoint versions this runtime can load. */
-const SUPPORTED_VERSIONS = new Set(["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0", "2.2.0", "2.3.0"]);
+const SUPPORTED_VERSIONS = new Set([
+  "1.0.0",
+  "1.1.0",
+  "1.2.0",
+  "1.3.0",
+  "2.0.0",
+  "2.1.0",
+  "2.2.0",
+  "2.3.0",
+  "2.4.0",
+  "2.5.0",
+  "2.6.0",
+]);
 
 // ---------------------------------------------------------------------------
 // Checkpoint creation
@@ -38,11 +57,25 @@ export function createCheckpoint(
   },
 ): Checkpoint {
   const now = new Date().toISOString();
+  // Defensive: callers may pass a graph whose nodes lack `readinessStatus`
+  // (older fixtures, manually-constructed test graphs). Backfill `READY` and
+  // recompute against edge satisfaction so the checkpoint starts coherent.
+  const initialGraph = recomputeReadiness({
+    ...graph,
+    nodes: Object.fromEntries(
+      Object.entries(graph.nodes).map(([id, node]) => [
+        id,
+        node.readinessStatus !== undefined
+          ? node
+          : { ...node, readinessStatus: ReadinessStatus.READY },
+      ]),
+    ),
+  });
   return {
     version: VERSION,
     machineState: MachineState.INITIALIZING,
-    graph,
-    waves: computeWaves(graph),
+    graph: initialGraph,
+    waves: computeWaves(initialGraph),
     currentWaveId: null,
     repos,
     waveHistory: [],
@@ -51,6 +84,7 @@ export function createCheckpoint(
     updatedAt: now,
     subgraphs: [],
     episodeIds: [],
+    eventLog: [],
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
@@ -180,6 +214,21 @@ export function canTransition(
       }
       return { allowed: true };
 
+    case "subgraph_added":
+      // Adding an explicit subgraph is legal in any pre-terminal state — it
+      // declares structure, not state. Forbid only after completion/cancellation.
+      if (
+        machineState === MachineState.COMPLETED ||
+        machineState === MachineState.CANCELLED
+      ) {
+        return {
+          allowed: false,
+          reason:
+            `subgraph_added is not allowed in terminal state ${machineState}`,
+        };
+      }
+      return { allowed: true };
+
     case "cancel":
       if (machineState === MachineState.COMPLETED || machineState === MachineState.CANCELLED) {
         return {
@@ -253,15 +302,16 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         ...node,
         status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
       };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
       return {
         ...checkpoint,
-        graph: {
-          ...checkpoint.graph,
-          nodes: {
-            ...checkpoint.graph.nodes,
-            [event.nodeId]: updatedNode,
-          },
-        },
+        graph: nextGraph,
         updatedAt: now,
       };
     }
@@ -274,15 +324,16 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         status: NodeStatus.FAILED,
         failureReason: event.reason,
       };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
       return {
         ...checkpoint,
-        graph: {
-          ...checkpoint.graph,
-          nodes: {
-            ...checkpoint.graph.nodes,
-            [event.nodeId]: updatedNode,
-          },
-        },
+        graph: nextGraph,
         updatedAt: now,
       };
     }
@@ -329,7 +380,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // Mark the node as active to clear its blocked state
       const node = checkpoint.graph.nodes[event.nodeId];
       const updatedGraph = node
-        ? {
+        ? recomputeReadiness({
           ...checkpoint.graph,
           nodes: {
             ...checkpoint.graph.nodes,
@@ -342,7 +393,7 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
                 : {}),
             },
           },
-        }
+        })
         : checkpoint.graph;
 
       // Check whether all pending gates in the current wave are cleared
@@ -367,12 +418,22 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "refine":
+    case "refine": {
+      // Lease-fence invalidation lives in the transition (not the server tool)
+      // so event-log replay reproduces the bump. Every node's `leaseVersion`
+      // is incremented by 1, invalidating any in-flight WorkPackets — the
+      // contract is global re-fencing on refinement, conservative-safe.
+      const refinedNodes: Record<string, Node> = {};
+      for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
+        refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+      }
       return {
         ...checkpoint,
+        graph: { ...checkpoint.graph, nodes: refinedNodes },
         machineState: MachineState.REFINING,
         updatedAt: now,
       };
+    }
 
     case "refinement_approved":
       return {
@@ -388,14 +449,52 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "cancel":
+    case "subgraph_added": {
+      /**
+       * Allowed in any non-terminal state including INITIALIZING and PLAN_REVIEW.
+       * Explicit subgraphs declared pre-finalize survive `finalize_plan` because
+       * `applySubgraphs` (called by `finalize_plan`) preserves explicit subgraphs
+       * and recomputes derived only over the unclaimed-node set.
+       *
+       * Idempotent: if a subgraph with the same `id` already exists in
+       * `cp.subgraphs`, the transition is a no-op (just bumps `updatedAt`).
+       * This makes the event safe under replay AND under repeated emission.
+       */
+      const existing = (checkpoint.subgraphs ?? []).find(
+        (sg) => sg.id === event.subgraph.id,
+      );
+      if (existing) {
+        // Idempotent no-op — subgraph already present, only bump timestamp
+        return { ...checkpoint, updatedAt: now };
+      }
       return {
         ...checkpoint,
+        subgraphs: [...(checkpoint.subgraphs ?? []), event.subgraph],
+        updatedAt: now,
+      };
+    }
+
+    case "cancel": {
+      // Lease-fence invalidation lives in the transition so event-log replay
+      // reproduces the bump. Only PENDING / ACTIVE nodes carry in-flight
+      // WorkPackets worth invalidating; terminal nodes are left untouched.
+      const cancelledNodes: Record<string, Node> = {};
+      for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
+        if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
+          cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        } else {
+          cancelledNodes[nId] = node;
+        }
+      }
+      return {
+        ...checkpoint,
+        graph: { ...checkpoint.graph, nodes: cancelledNodes },
         machineState: MachineState.CANCELLED,
         cancellationReason: event.reason,
         cancelledAt: now,
         updatedAt: now,
       };
+    }
   }
 }
 
@@ -465,7 +564,118 @@ export function deserialize(json: string): Checkpoint {
   // Backward compat: pre-2.3.0 checkpoints lack episodeIds — default to [].
   if (!cp.episodeIds) cp.episodeIds = [];
 
+  // Backward compat: pre-2.4.0 subgraphs lack derived/policies. Older subgraphs
+  // were always auto-derived with implicit ALL/FAIL_FAST semantics — restore those.
+  for (const sg of (cp.subgraphs ?? []) as Subgraph[]) {
+    const partial = sg as Partial<Subgraph>;
+    if (partial.derived === undefined) sg.derived = true;
+    if (!sg.completionPolicy) sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    if (!sg.failurePolicy) sg.failurePolicy = SubgraphFailurePolicy.FAIL_FAST;
+  }
+
+  // Backward compat: pre-2.5.0 nodes lack readinessStatus. Default to READY,
+  // then recompute against actual edge satisfaction so an old checkpoint
+  // resumes with topology consistency.
+  let needsReadinessRecompute = false;
+  for (const node of Object.values(cp.graph.nodes)) {
+    if ((node as Partial<Node>).readinessStatus === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).readinessStatus = ReadinessStatus.READY;
+      needsReadinessRecompute = true;
+    }
+  }
+  if (needsReadinessRecompute) {
+    cp.graph = recomputeReadiness(cp.graph);
+  }
+
+  // Backward compat: pre-2.6.0 checkpoints lack eventLog — default to [].
+  // They cannot replay (the log was not written), but they round-trip cleanly.
+  if (!cp.eventLog) cp.eventLog = [];
+
   return cp;
+}
+
+// ---------------------------------------------------------------------------
+// Event-log persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply an event to a checkpoint AND append the event to the checkpoint's
+ * event log. Returns a new immutable checkpoint with the log entry appended.
+ *
+ * The `transition` function itself remains pure and does NOT write to the log;
+ * the log is opt-in via this function.
+ *
+ * Invariant: after a sequence of `appendEvent` calls,
+ *   `serialize(replay(checkpoint.eventLog)) === serialize(checkpoint)`
+ *
+ * @param checkpoint - Current checkpoint (must have `eventLog` initialized).
+ * @param event      - Event to apply and record.
+ * @returns New checkpoint with the transition applied and the entry logged.
+ */
+export function appendEvent(checkpoint: Checkpoint, event: Event): Checkpoint {
+  const next = transition(checkpoint, event);
+  const prevLog = checkpoint.eventLog ?? [];
+  const seq = prevLog.length + 1;
+  const entry: EventLogEntry = {
+    seq,
+    timestamp: new Date().toISOString(),
+    event,
+    checkpointVersion: VERSION,
+  };
+  return {
+    ...next,
+    eventLog: [...prevLog, entry],
+  };
+}
+
+/**
+ * Reconstruct a checkpoint by replaying an ordered event log from left to right.
+ *
+ * Starting from `initial` (or a fresh empty checkpoint when absent), each
+ * event is applied via `transition`. The seq values are validated for
+ * monotonicity and gaplessness — any out-of-order or missing entry throws.
+ *
+ * @param events  - Ordered event log (must be gapless, starting at seq 1).
+ * @param initial - Optional starting checkpoint. Defaults to a fresh empty
+ *                  checkpoint when absent.
+ * @returns The checkpoint produced after applying all events.
+ * @throws If seq values are out-of-order, if a gap exists, or if any
+ *         transition is rejected by the state machine.
+ */
+export function replay(
+  events: EventLogEntry[],
+  initial?: Checkpoint,
+): Checkpoint {
+  const now = new Date().toISOString();
+  let cp: Checkpoint = initial ?? {
+    version: VERSION,
+    machineState: MachineState.INITIALIZING,
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: now,
+    updatedAt: now,
+    subgraphs: [],
+    episodeIds: [],
+    eventLog: [],
+  };
+
+  for (let i = 0; i < events.length; i++) {
+    const entry = events[i];
+    const expectedSeq = i + 1;
+    if (entry.seq !== expectedSeq) {
+      throw new Error(
+        `Event log replay failed — out-of-order seq: expected ${expectedSeq}, got ${entry.seq} at index ${i}`,
+      );
+    }
+    cp = transition(cp, entry.event);
+  }
+
+  return { ...cp, eventLog: events };
 }
 
 // ---------------------------------------------------------------------------

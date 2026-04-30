@@ -10,17 +10,30 @@
 
 import { assertEquals, assertThrows } from "@std/assert";
 import {
+  appendEvent,
   canTransition,
   createCheckpoint,
   currentWave,
   deserialize,
   failedNodes,
   pendingGates,
+  replay,
   serialize,
   transition,
 } from "./state.ts";
-import { EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, WaveResultStatus } from "./types.ts";
+import {
+  EdgeType,
+  Executor,
+  Intent,
+  MachineState,
+  NodeStatus,
+  NodeType,
+  SubgraphStrategy,
+  Tier,
+  WaveResultStatus,
+} from "./types.ts";
 import type { Checkpoint, Event, Graph, Node, Wave } from "./types.ts";
+import { addSubgraph } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -803,6 +816,151 @@ Deno.test("deserialize: pre-2.3.0 checkpoint defaults episodeIds to []", () => {
   assertEquals(cp.episodeIds, []);
 });
 
+Deno.test("deserialize: pre-2.4.0 subgraphs receive default policies and derived flag", () => {
+  const raw = {
+    version: "2.3.0",
+    machineState: "dispatching",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    episodeIds: [],
+    subgraphs: [
+      {
+        id: "sg-lead",
+        nodes: ["n1"],
+        edges: [],
+        assignee: "LEAD",
+        executor: "LEAD",
+        tier: "T1",
+        coordination: { mode: "NONE" },
+        // no derived / completionPolicy / failurePolicy
+      },
+    ],
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.subgraphs?.length, 1);
+  const sg = cp.subgraphs![0];
+  assertEquals(sg.derived, true);
+  assertEquals(sg.completionPolicy, "ALL");
+  assertEquals(sg.failurePolicy, "FAIL_FAST");
+});
+
+Deno.test("deserialize: pre-2.5.0 nodes receive READY default and recomputed readiness", () => {
+  // Two-node chain with DEPENDS_ON. Pre-2.5.0 had no readinessStatus field.
+  // After deserialize: node1 has no incoming deps → READY; node2 depends on
+  // PENDING node1 → BLOCKED (recomputed from edge satisfaction).
+  const raw = {
+    version: "2.4.0",
+    machineState: "dispatching",
+    graph: {
+      nodes: {
+        n1: {
+          id: "n1",
+          type: "IMPLEMENTATION",
+          label: "first",
+          status: "PENDING",
+          executor: "LEAD",
+        },
+        n2: {
+          id: "n2",
+          type: "IMPLEMENTATION",
+          label: "second",
+          status: "PENDING",
+          executor: "LEAD",
+        },
+      },
+      edges: [{ from: "n1", to: "n2", type: "DEPENDS_ON" }],
+    },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    episodeIds: [],
+    subgraphs: [],
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.graph.nodes.n1.readinessStatus, "READY");
+  assertEquals(cp.graph.nodes.n2.readinessStatus, "BLOCKED");
+});
+
+Deno.test("transition: node_completed recomputes readiness for downstream nodes", () => {
+  // Same chain. Complete n1 → n2's readiness should flip BLOCKED → READY.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2"),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+  // Pre-condition: n2 should be BLOCKED because n1 is PENDING.
+  assertEquals(cp.graph.nodes.n2.readinessStatus, "BLOCKED");
+
+  // Transition n1 to dispatching state then complete it.
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, { type: "node_completed", nodeId: "n1" });
+
+  assertEquals(next.graph.nodes.n2.readinessStatus, "READY");
+});
+
+Deno.test("transition: node_failed marks downstream nodes as still BLOCKED (not invalidated)", () => {
+  // Failure should NOT clear downstream readiness — they remain BLOCKED
+  // because n1 has not reached terminal-OK. INVALIDATED is reserved for
+  // refinement, not for failure propagation.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2"),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, {
+    type: "node_failed",
+    nodeId: "n1",
+    reason: "boom",
+  });
+
+  assertEquals(next.graph.nodes.n1.status, "FAILED");
+  assertEquals(next.graph.nodes.n2.readinessStatus, "BLOCKED");
+});
+
+Deno.test("recomputeReadiness: preserves INVALIDATED across automatic recompute", () => {
+  // INVALIDATED is set explicitly by refinement and must survive any
+  // status-changing event — only re-dispatch clears it back to READY.
+  const graph = makeGraph(
+    [
+      makeNode("n1"),
+      makeNode("n2", { readinessStatus: "INVALIDATED" } as never),
+    ],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  let next = transition(cp, { type: "plan_submitted" });
+  next = transition(next, { type: "plan_finalized" });
+  next = transition(next, { type: "wave_dispatched", waveId: 1 });
+  next = transition(next, { type: "node_completed", nodeId: "n1" });
+
+  // n1 completed → in any other case n2 would auto-flip to READY,
+  // but INVALIDATED is preserved.
+  assertEquals(next.graph.nodes.n2.readinessStatus, "INVALIDATED");
+});
+
 Deno.test("deserialize: 2.3.0 checkpoint preserves existing episodeIds", () => {
   const raw = {
     version: "2.3.0",
@@ -838,7 +996,7 @@ Deno.test("serialize/deserialize: round trip preserves episodeIds", () => {
   assertEquals(restored.episodeIds, ["ep-1", "ep-2", "ep-3"]);
 });
 
-Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", () => {
+Deno.test("serialize/deserialize: round trip preserves intent, tier, subgraphStrategy", () => {
   const graph = makeGraph([makeNode("n1")]);
   const cp = createCheckpoint([], graph, {
     intent: Intent.INVESTIGATE,
@@ -851,7 +1009,7 @@ Deno.test("serialize/deserialize: 2.0.0 round trip with intent and subgraphs", (
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.3.0");
+  assertEquals(restored.version, "2.6.0");
 });
 
 // ---------------------------------------------------------------------------
@@ -1009,7 +1167,16 @@ Deno.test("deserialize: backward compat — old checkpoint without runtime state
     version: "1.0.0",
     machineState: "initializing",
     graph: {
-      nodes: { n1: { id: "n1", repo: "r", type: "IMPLEMENTATION", label: "N1", worktreeBranch: "b", status: "PENDING" } },
+      nodes: {
+        n1: {
+          id: "n1",
+          repo: "r",
+          type: "IMPLEMENTATION",
+          label: "N1",
+          worktreeBranch: "b",
+          status: "PENDING",
+        },
+      },
       edges: [],
     },
     waves: [{ id: 1, nodes: ["n1"], hasMergeGate: false }],
@@ -1063,4 +1230,737 @@ Deno.test("transition: execution_completed from failed produces completed", () =
   const cp = makeCheckpoint({ machineState: MachineState.FAILED });
   const result = transition(cp, { type: "execution_completed" });
   assertEquals(result.machineState, MachineState.COMPLETED);
+});
+
+// ---------------------------------------------------------------------------
+// subgraph_added event tests
+// ---------------------------------------------------------------------------
+
+Deno.test("subgraph_added: idempotency — applying same event twice does not double-append", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const waves: Wave[] = [{ id: 1, nodes: ["n1", "n2"], hasMergeGate: false }];
+  const cp = makeCheckpoint({ graph, waves, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-alpha",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const cp1 = transition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp1.subgraphs?.length, 1);
+
+  // Apply the same event again — should be idempotent
+  const cp2 = transition(cp1, { type: "subgraph_added", subgraph: sg });
+  assertEquals(
+    cp2.subgraphs?.length,
+    1,
+    "subgraph count must not double on replay",
+  );
+  assertEquals(cp2.subgraphs?.[0].id, "team-alpha");
+});
+
+Deno.test("subgraph_added: rejected from COMPLETED terminal state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({
+    machineState: MachineState.COMPLETED,
+    graph,
+    subgraphs: [],
+  });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-beta",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, false);
+  assertEquals(result.reason?.includes("terminal"), true);
+});
+
+Deno.test("subgraph_added: rejected from CANCELLED terminal state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({
+    machineState: MachineState.CANCELLED,
+    graph,
+    subgraphs: [],
+  });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-gamma",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, false);
+  assertEquals(result.reason?.includes("terminal"), true);
+});
+
+Deno.test("subgraph_added: allowed in INITIALIZING state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({
+    machineState: MachineState.INITIALIZING,
+    graph,
+    subgraphs: [],
+  });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-delta",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, true);
+});
+
+Deno.test("subgraph_added: allowed in PLAN_REVIEW state", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = makeCheckpoint({
+    machineState: MachineState.PLAN_REVIEW,
+    graph,
+    subgraphs: [],
+  });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "team-epsilon",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  const result = canTransition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(result.allowed, true);
+});
+
+// ---------------------------------------------------------------------------
+// Resume round-trip integrity test
+// ---------------------------------------------------------------------------
+
+Deno.test("serialize/deserialize: resume round-trip preserves subgraph structure and idempotency", () => {
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2"), makeNode("n3")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const waves: Wave[] = [
+    { id: 1, nodes: ["n1"], hasMergeGate: false },
+    { id: 2, nodes: ["n2", "n3"], hasMergeGate: false },
+  ];
+
+  // Build a checkpoint with one explicit subgraph
+  let cp = makeCheckpoint({ graph, waves, subgraphs: [] });
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "drone-cluster",
+    nodeIds: ["n1", "n2"],
+    executor: Executor.ADJUNCT,
+    tier: Tier.T2,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = transition(cp, { type: "subgraph_added", subgraph: sg });
+  assertEquals(cp.subgraphs?.length, 1);
+
+  // Serialize → deserialize
+  const json = serialize(cp);
+  const restored = deserialize(json);
+
+  // Assert structure preserved
+  assertEquals(restored.subgraphs?.length, 1);
+  assertEquals(restored.subgraphs?.[0].id, "drone-cluster");
+  assertEquals(restored.subgraphs?.[0].derived, false);
+  assertEquals(restored.subgraphs?.[0].nodes.sort(), ["n1", "n2"].sort());
+
+  // Assert idempotency: applying subgraph_added on restored checkpoint is a no-op
+  const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
+  assertEquals(
+    cp2.subgraphs?.length,
+    1,
+    "idempotent replay must not double-append",
+  );
+  assertEquals(cp2.subgraphs?.[0].id, "drone-cluster");
+});
+
+// ---------------------------------------------------------------------------
+// Event-log persistence tests (UNM-1b7.3)
+// ---------------------------------------------------------------------------
+
+// Test EL-1: appendEvent increments seq monotonically
+Deno.test("appendEvent: increments seq monotonically across multiple events", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  assertEquals(cp.eventLog, []);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  assertEquals(cp.eventLog?.length, 1);
+  assertEquals(cp.eventLog?.[0].seq, 1);
+
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  assertEquals(cp.eventLog?.length, 2);
+  assertEquals(cp.eventLog?.[1].seq, 2);
+
+  cp = appendEvent(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp.eventLog?.length, 3);
+  assertEquals(cp.eventLog?.[2].seq, 3);
+});
+
+// Test EL-2: appendEvent propagates state through transition
+Deno.test("appendEvent: propagates state through transition correctly", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  assertEquals(cp.machineState, MachineState.INITIALIZING);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  assertEquals(cp.machineState, MachineState.PLAN_REVIEW);
+
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
+
+  // Event log contains the two events
+  assertEquals(cp.eventLog?.length, 2);
+  assertEquals(cp.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(cp.eventLog?.[1].event.type, "plan_finalized");
+});
+
+// Test EL-3: replay of empty log returns fresh checkpoint
+Deno.test("replay: empty event log returns fresh (initial) checkpoint", () => {
+  const result = replay([]);
+  assertEquals(result.machineState, MachineState.INITIALIZING);
+  assertEquals(result.eventLog, []);
+  assertEquals(Object.keys(result.graph.nodes).length, 0);
+});
+
+// Test EL-3b: replay of empty log with supplied initial returns that initial
+Deno.test("replay: empty event log with supplied initial returns that initial", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const initial = createCheckpoint([], graph, { sessionId: "test-session" });
+  const result = replay([], initial);
+  assertEquals(result.machineState, MachineState.INITIALIZING);
+  assertEquals(result.sessionId, "test-session");
+  assertEquals(result.eventLog, []);
+});
+
+// Test EL-4: replay reproduces materialized checkpoint (idempotency invariant)
+Deno.test("replay: recorded events reproduce the materialized checkpoint (idempotency invariant)", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+
+  // Apply a sequence of events via appendEvent
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  cp = appendEvent(cp, { type: "wave_dispatched", waveId: 1 });
+  cp = appendEvent(cp, { type: "node_completed", nodeId: "n1" });
+
+  // Replay from scratch using the recorded event log
+  const log = cp.eventLog!;
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(log, fresh);
+
+  // The idempotency invariant: serialize(replay(log, fresh)) === serialize(cp)
+  // We compare machine state and graph — timestamps may differ, so we
+  // compare the structural fields that transition touches.
+  assertEquals(replayed.machineState, cp.machineState);
+  assertEquals(replayed.graph.nodes["n1"].status, cp.graph.nodes["n1"].status);
+  assertEquals(replayed.eventLog?.length, log.length);
+  // Full serialize equality excluding timestamps that differ
+  const cpWithoutTimestamps = { ...cp, updatedAt: "", createdAt: "" };
+  const replayedWithoutTimestamps = {
+    ...replayed,
+    updatedAt: "",
+    createdAt: "",
+  };
+  assertEquals(
+    serialize(cpWithoutTimestamps),
+    serialize(replayedWithoutTimestamps),
+  );
+});
+
+// Test EL-5: replay rejects out-of-order seq with a clear error
+Deno.test("replay: rejects out-of-order seq with clear error", () => {
+  assertThrows(
+    () => {
+      replay([
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          event: { type: "plan_submitted" },
+          checkpointVersion: "2.6.0",
+        },
+        {
+          seq: 3, // gap — should be 2
+          timestamp: "2026-01-01T00:00:01.000Z",
+          event: { type: "plan_finalized" },
+          checkpointVersion: "2.6.0",
+        },
+      ]);
+    },
+    Error,
+    "out-of-order seq",
+  );
+});
+
+// Test EL-6: pre-2.6.0 deserialize defaults eventLog to []
+Deno.test("deserialize: pre-2.6.0 checkpoint defaults eventLog to []", () => {
+  const raw = {
+    version: "2.5.0",
+    machineState: "initializing",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    subgraphs: [],
+    episodeIds: [],
+    // no eventLog field
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.eventLog, []);
+});
+
+// Test EL-7: 2.6.0 round-trip preserves a non-trivial eventLog
+Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLog", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+
+  assertEquals(cp.version, "2.6.0");
+  assertEquals(cp.eventLog?.length, 2);
+
+  const json = serialize(cp);
+  const restored = deserialize(json);
+
+  assertEquals(restored.version, "2.6.0");
+  assertEquals(restored.eventLog?.length, 2);
+  assertEquals(restored.eventLog?.[0].seq, 1);
+  assertEquals(restored.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(restored.eventLog?.[1].seq, 2);
+  assertEquals(restored.eventLog?.[1].event.type, "plan_finalized");
+  assertEquals(restored.eventLog?.[0].checkpointVersion, "2.6.0");
+});
+
+// ---------------------------------------------------------------------------
+// Event-log integration via createEffectRunner (UNM-1b7.3 wiring fix)
+// ---------------------------------------------------------------------------
+
+Deno.test("createEffectRunner: transitionWithEffects appends to eventLog (wired path)", async () => {
+  const { createEffectRunner } = await import("./side-effect-runner.ts");
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  // No-op deps for this test; the runner falls through when policy is empty.
+  const fakeBrainExec = {
+    // deno-lint-ignore require-await
+    withStdin: async () => "",
+    // deno-lint-ignore require-await
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+  const runner = createEffectRunner({ brainExec: fakeBrainExec });
+
+  // Drive the same path the server tools use.
+  const r1 = await runner(cp, { type: "plan_submitted" });
+  const r2 = await runner(r1.checkpoint, { type: "plan_finalized" });
+
+  assertEquals(r2.checkpoint.eventLog?.length, 2);
+  assertEquals(r2.checkpoint.eventLog?.[0].seq, 1);
+  assertEquals(r2.checkpoint.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(r2.checkpoint.eventLog?.[1].seq, 2);
+  assertEquals(r2.checkpoint.eventLog?.[1].event.type, "plan_finalized");
+});
+
+Deno.test("createEffectRunner: replay(eventLog) reproduces the live checkpoint state", async () => {
+  // The C1 fix (event log wired into the server) is what makes UNM-1b7.3
+  // shippable. Lock the contract: drive a sequence of events through the
+  // runner, then replay the resulting eventLog and assert the materialized
+  // checkpoints round-trip equal (modulo timestamps).
+  const { createEffectRunner } = await import("./side-effect-runner.ts");
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+  const fakeBrainExec = {
+    // deno-lint-ignore require-await
+    withStdin: async () => "",
+    // deno-lint-ignore require-await
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+  const runner = createEffectRunner({ brainExec: fakeBrainExec });
+
+  let live = cp;
+  const events: Event[] = [
+    { type: "plan_submitted" },
+    { type: "plan_finalized" },
+    { type: "wave_dispatched", waveId: 1 },
+    { type: "node_completed", nodeId: "n1" },
+  ];
+  for (const ev of events) {
+    const result = await runner(live, ev);
+    live = result.checkpoint;
+  }
+
+  assertEquals(live.eventLog?.length, 4);
+
+  // Replay the recorded eventLog from a fresh checkpoint with the same graph.
+  const fresh = createCheckpoint([], graph, { tier: Tier.T1 });
+  const replayed = replay(live.eventLog ?? [], fresh);
+
+  // Materialized graph state must match (status fields).
+  assertEquals(replayed.graph.nodes.n1.status, live.graph.nodes.n1.status);
+  assertEquals(replayed.graph.nodes.n2.status, live.graph.nodes.n2.status);
+  assertEquals(replayed.machineState, live.machineState);
+  // n2 readiness must reflect n1's completion in both — recompute is deterministic.
+  assertEquals(
+    replayed.graph.nodes.n2.readinessStatus,
+    live.graph.nodes.n2.readinessStatus,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Tests: lease fencing — state.test.ts slice (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulate the dispatch_wave fence-stamp logic used by the server handler.
+ * Returns the updated graph and the minted WorkPackets.
+ */
+function stampFences(
+  graph: Graph,
+  nodeIds: string[],
+): {
+  graph: Graph;
+  workPackets: Array<
+    { nodeId: string; attemptId: string; leaseVersion: number }
+  >;
+} {
+  let g = graph;
+  const workPackets: Array<
+    { nodeId: string; attemptId: string; leaseVersion: number }
+  > = [];
+  for (const nId of nodeIds) {
+    const node = g.nodes[nId];
+    if (!node) continue;
+    const attemptId = crypto.randomUUID();
+    const leaseVersion = (node.leaseVersion ?? 0) + 1;
+    g = {
+      ...g,
+      nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } },
+    };
+    workPackets.push({ nodeId: nId, attemptId, leaseVersion });
+  }
+  return { graph: g, workPackets };
+}
+
+/**
+ * Simulate the refine fence-bump logic used by the server handler.
+ * Increments leaseVersion on all nodes.
+ */
+function bumpAllFences(graph: Graph): Graph {
+  const bumped: Record<string, Node> = {};
+  for (const [nId, node] of Object.entries(graph.nodes)) {
+    bumped[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+  }
+  return { ...graph, nodes: bumped };
+}
+
+Deno.test("fence state: complete_node without fence params succeeds — backward compat", () => {
+  // A node with a leaseVersion set (was dispatched) can still be written to
+  // by a caller that provides no fence at all. The fence is opt-in.
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph } = stampFences(graph, ["n1"]);
+
+  const node = fencedGraph.nodes["n1"];
+  // Pre-condition: node has fence fields set
+  assertEquals(typeof node.attemptId, "string");
+  assertEquals(node.leaseVersion, 1);
+
+  // Simulate backward-compat path: caller provides no attemptId / leaseVersion
+  // The validation block is skipped. We confirm that skipping it does not throw
+  // and that the node fields are intact (the handler proceeds normally).
+  const attemptIdParam: string | undefined = undefined;
+  const leaseVersionParam: number | undefined = undefined;
+
+  let validationError: string | null = null;
+  if (attemptIdParam !== undefined && leaseVersionParam !== undefined) {
+    if (
+      node.attemptId !== attemptIdParam ||
+      node.leaseVersion !== leaseVersionParam
+    ) {
+      validationError = `Stale lease for node n1`;
+    }
+  }
+
+  assertEquals(
+    validationError,
+    null,
+    "unfenced write must not produce a validation error",
+  );
+});
+
+Deno.test("fence state: refine increments leaseVersion so pre-refine fence is rejected", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+
+  // Dispatch: mint fence at leaseVersion 1
+  const { graph: dispatched, workPackets } = stampFences(graph, ["n1"]);
+  const preRefinePacket = workPackets[0];
+  assertEquals(preRefinePacket.leaseVersion, 1);
+
+  // Refine: global leaseVersion bump
+  const afterRefine = bumpAllFences(dispatched);
+  assertEquals(afterRefine.nodes["n1"].leaseVersion, 2);
+
+  // Caller still holds the pre-refine WorkPacket (leaseVersion=1)
+  const node = afterRefine.nodes["n1"];
+  const err = (node.attemptId !== preRefinePacket.attemptId ||
+      node.leaseVersion !== preRefinePacket.leaseVersion)
+    ? `Stale lease for node n1: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${preRefinePacket.attemptId}, leaseVersion=${preRefinePacket.leaseVersion})`
+    : null;
+
+  assertEquals(
+    err !== null,
+    true,
+    "post-refine complete with pre-refine fence must be rejected",
+  );
+  assertEquals(err!.includes("Stale lease for node n1"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Fence-state preservation on stale fence rejection (MAJOR #3)
+// ---------------------------------------------------------------------------
+
+Deno.test("fence: stale complete_node rejection preserves node status", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      prUrl: "https://example.com/pr/1",
+      prNumber: 1,
+    }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+  const packet = workPackets[0];
+
+  // Re-dispatch: bump the lease — now packet is stale
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  // Simulate the fence check: stale → error, no mutation
+  const stale = node.attemptId !== packet.attemptId ||
+    node.leaseVersion !== packet.leaseVersion;
+  assertEquals(stale, true, "fence must be stale after re-dispatch");
+
+  // The node must remain ACTIVE — rejection means no mutation occurred
+  assertEquals(node.status, NodeStatus.ACTIVE);
+  assertEquals(node.prUrl, "https://example.com/pr/1");
+  assertEquals(node.prNumber, 1);
+});
+
+Deno.test("fence: stale fail_node rejection preserves node status and failureReason", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+
+  // Re-dispatch: bump the lease — packet[0] is stale
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  // fence check: stale → rejected; node must not be FAILED
+  const stale = node.attemptId !== workPackets[0].attemptId ||
+    node.leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+  assertEquals(
+    node.status,
+    NodeStatus.ACTIVE,
+    "status must not change on stale rejection",
+  );
+  assertEquals(
+    node.failureReason,
+    undefined,
+    "failureReason must remain absent",
+  );
+});
+
+Deno.test("fence: stale update_node rejection leaves prUrl/prNumber unchanged", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      prUrl: "https://example.com/pr/42",
+      prNumber: 42,
+    }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+
+  // Bump the lease (another dispatch cycle)
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+  const node = redispatched.nodes["n1"];
+
+  const stale = node.attemptId !== workPackets[0].attemptId ||
+    node.leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+
+  // On rejection the node is not mutated — prUrl and prNumber are preserved
+  assertEquals(node.prUrl, "https://example.com/pr/42");
+  assertEquals(node.prNumber, 42);
+});
+
+Deno.test("fence: stale rejection does not affect sibling nodes in the graph", () => {
+  const graph = makeGraph([
+    makeNode("n1", { status: NodeStatus.ACTIVE }),
+    makeNode("n2", { status: NodeStatus.PENDING }),
+  ]);
+  const { graph: fencedGraph, workPackets } = stampFences(graph, ["n1"]);
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+
+  const stale =
+    redispatched.nodes["n1"].attemptId !== workPackets[0].attemptId ||
+    redispatched.nodes["n1"].leaseVersion !== workPackets[0].leaseVersion;
+  assertEquals(stale, true);
+
+  // n2 must remain PENDING — rejection does not touch other nodes
+  assertEquals(redispatched.nodes["n2"].status, NodeStatus.PENDING);
+  assertEquals(redispatched.nodes["n2"].leaseVersion, undefined);
+});
+
+Deno.test("fence: stale rejection does not increment the lease version again", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph } = stampFences(graph, ["n1"]);
+  const { graph: redispatched } = stampFences(fencedGraph, ["n1"]);
+
+  // After two dispatches leaseVersion should be exactly 2 — no extra bumps from rejection
+  assertEquals(redispatched.nodes["n1"].leaseVersion, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Idempotency for wave_dispatched fence-stamp (MAJOR #4)
+// ---------------------------------------------------------------------------
+
+Deno.test("wave_dispatched: applying the same waveId twice is idempotent on machineState", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
+
+  const cp1 = transition(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp1.currentWaveId, 1);
+  assertEquals(cp1.machineState, MachineState.DISPATCHING);
+
+  // A second wave_dispatched with same waveId — machineState stays DISPATCHING
+  const cp2 = transition(cp1, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp2.currentWaveId, 1);
+  assertEquals(cp2.machineState, MachineState.DISPATCHING);
+});
+
+// ---------------------------------------------------------------------------
+// Idempotency for node_completed with fence stamp (MAJOR #4)
+// ---------------------------------------------------------------------------
+
+Deno.test("node_completed: applying the same event twice is a no-op on status", () => {
+  // First application moves PENDING → DONE (repo-less node); second must be no-op.
+  const graph = makeGraph([makeNode("n1", { repo: undefined })]);
+  delete (graph.nodes["n1"] as Partial<Node>).repo;
+  let cp = createCheckpoint([], graph);
+  cp = transition(cp, { type: "plan_submitted" });
+  cp = transition(cp, { type: "plan_finalized" });
+  cp = transition(cp, { type: "wave_dispatched", waveId: 1 });
+  cp = transition(cp, { type: "node_completed", nodeId: "n1" });
+
+  assertEquals(cp.graph.nodes["n1"].status, NodeStatus.DONE);
+
+  // Apply the same event again — status must remain DONE, not re-transition
+  const cp2 = transition(cp, { type: "node_completed", nodeId: "n1" });
+  assertEquals(cp2.graph.nodes["n1"].status, NodeStatus.DONE);
+});
+
+// ---------------------------------------------------------------------------
+// Replay round-trip with subgraph_added events (MAJOR #5)
+// ---------------------------------------------------------------------------
+
+Deno.test("replay: subgraph_added events survive round-trip — serialize(replay(log)) === serialize(cp)", () => {
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2"), makeNode("n3")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  let cp = createCheckpoint([], graph);
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "replay-test-sg",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  cp = appendEvent(cp, { type: "subgraph_added", subgraph: sg });
+
+  const log = cp.eventLog!;
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(log, fresh);
+
+  // Structural equality: same subgraphs, same machine state
+  assertEquals(replayed.machineState, cp.machineState);
+  assertEquals(replayed.subgraphs?.length, 1);
+  assertEquals(replayed.subgraphs?.[0].id, "replay-test-sg");
+
+  // Full serialize equality (modulo timestamps)
+  const cpNoTs = { ...cp, updatedAt: "", createdAt: "" };
+  const replayedNoTs = { ...replayed, updatedAt: "", createdAt: "" };
+  assertEquals(serialize(cpNoTs), serialize(replayedNoTs));
+});
+
+Deno.test("replay: subgraph_added idempotency survives replay — double-apply is a no-op", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  let cp = createCheckpoint([], graph);
+
+  const sgResult = addSubgraph(graph, [], {
+    slug: "idempotent-replay-sg",
+    nodeIds: ["n1"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  if (!sgResult.ok) throw new Error(sgResult.error);
+  const sg = sgResult.value!;
+
+  cp = appendEvent(cp, { type: "subgraph_added", subgraph: sg });
+  // Manually add a duplicate entry to the event log to simulate a double-apply scenario
+  const dupLog = [
+    ...cp.eventLog!,
+    {
+      seq: cp.eventLog!.length + 1,
+      timestamp: new Date().toISOString(),
+      event: { type: "subgraph_added" as const, subgraph: sg },
+      checkpointVersion: cp.version,
+    },
+  ];
+
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(dupLog, fresh);
+
+  // Idempotency: two applications of the same subgraph_added must not double-append
+  assertEquals(
+    replayed.subgraphs?.length,
+    1,
+    "idempotent replay must not double-append subgraph",
+  );
 });

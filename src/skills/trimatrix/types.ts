@@ -30,9 +30,40 @@ export enum NodeStatus {
   ACTIVE = "ACTIVE",
   PR_CREATED = "PR_CREATED",
   MERGED = "MERGED",
+  /**
+   * @deprecated as of 2.5.0 — execution-vs-topology concerns are split into
+   * `NodeStatus` (execution lifecycle) and `ReadinessStatus` (topology
+   * eligibility). Existing usage of `BLOCKED` is preserved for ELICIT_GATE
+   * pending elicitation; new code should set `readinessStatus` instead and
+   * use `executionStatus` for actual execution lifecycle. Will be removed
+   * once all call sites migrate.
+   */
   BLOCKED = "BLOCKED",
   FAILED = "FAILED",
   DONE = "DONE",
+}
+
+/**
+ * Readiness state — the topology-eligibility axis of a node, orthogonal to
+ * `NodeStatus` (execution lifecycle).
+ *
+ * - `READY` — every incoming dependency edge is satisfied. Eligible for
+ *   dispatch when `NodeStatus` is `PENDING`.
+ * - `BLOCKED` — at least one incoming dependency is unsatisfied (source node
+ *   is not in a terminal-OK state, or carries an unresolved external blocker).
+ *   Recomputed automatically on every state transition.
+ * - `INVALIDATED` — the node's contract was changed via `refine` after it had
+ *   been computed; explicit re-dispatch is required to clear back to `READY`.
+ *   Set explicitly by refinement code; never auto-cleared.
+ *
+ * A node can be `ACTIVE` (executing) and `INVALIDATED` (topology says it's
+ * stale) simultaneously. The single `NodeStatus` enum cannot express that;
+ * the orthogonal axis can.
+ */
+export enum ReadinessStatus {
+  READY = "READY",
+  BLOCKED = "BLOCKED",
+  INVALIDATED = "INVALIDATED",
 }
 
 export enum EdgeType {
@@ -77,6 +108,31 @@ export enum Executor {
   LEAD = "LEAD",
   ADJUNCT = "ADJUNCT",
 }
+
+// ---------------------------------------------------------------------------
+// Capability matching types
+// ---------------------------------------------------------------------------
+
+/**
+ * Capabilities a dispatcher (lead session or adjunct) advertises. Used at
+ * dispatch time to decide whether a node's requirements are satisfied.
+ */
+export interface Capabilities {
+  /** Repository names the dispatcher can write to (`"*"` means all). */
+  repos?: string[];
+  /** Tool names the dispatcher can invoke (e.g. `"bash"`, `"edit"`, `"web"`). */
+  tools?: string[];
+  /** Whether the dispatcher can write code (vs. read-only analysis). */
+  canWrite?: boolean;
+  /** Whether a human is present to handle elicitation prompts. */
+  humanPresent?: boolean;
+  /** Free-form labels for custom matching. */
+  labels?: string[];
+}
+
+/** Requirements a node declares. Subset semantics: every requirement must be
+ *  satisfied by the dispatcher's `Capabilities` for `canDispatch` to return true. */
+export type Requirements = Capabilities;
 
 // ---------------------------------------------------------------------------
 // Routing types
@@ -124,6 +180,20 @@ export interface Node {
   stackedOn?: string;
   /** Current execution status of this node. */
   status: NodeStatus;
+  /**
+   * Topology-eligibility axis, orthogonal to `status`.
+   * - `READY` (default) — incoming dependencies satisfied; eligible for dispatch.
+   * - `BLOCKED` — at least one incoming dependency unsatisfied; recomputed automatically.
+   * - `INVALIDATED` — node's contract changed via refinement; explicit re-dispatch required.
+   *
+   * Introduced in checkpoint version 2.5.0. Pre-2.5.0 checkpoints default to
+   * `READY` on deserialize; subsequent transitions recompute the field.
+   *
+   * Optional at the type level so callers constructing fresh `Node` literals
+   * (MCP `add_node` tool, test fixtures) do not have to thread the default.
+   * `addNode`, `createCheckpoint`, and `recomputeReadiness` backfill on entry.
+   */
+  readinessStatus?: ReadinessStatus;
   /** URL of the pull request created for this node, if any. */
   prUrl?: string;
   /** Number of the pull request created for this node, if any. */
@@ -134,12 +204,54 @@ export interface Node {
   subgraph?: string;
   /** Who executes this node: the lead session or a dispatched adjunct. */
   executor: Executor;
+  /** Capability requirements that must be satisfied by the dispatcher before this node can be dispatched. */
+  requirements?: Requirements;
   /** Markdown prompt/context to present to the user during elicitation. Only for ELICIT_GATE nodes. */
   elicitPrompt?: string;
   /** JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted. */
   elicitSchema?: ElicitationRequestedSchema;
   /** User's structured response after elicitation completes. Populated by clear_gate. */
   elicitResponse?: Record<string, unknown>;
+  /**
+   * Opaque UUID minted by `dispatch_wave` to identify the current dispatch
+   * attempt. Callers must echo this back in `complete_node` / `fail_node` /
+   * `update_node` for fence validation. Absent until the node is first dispatched.
+   */
+  attemptId?: string;
+  /**
+   * Monotonically incrementing counter stamped on the node each time it is
+   * dispatched or invalidated by `refine` / `cancel`. Callers must echo the
+   * version they received; a mismatch means the node has been re-fenced since
+   * dispatch and the write is rejected. Absent until the node is first dispatched.
+   */
+  leaseVersion?: number;
+  /**
+   * Cached external-blocker snapshots from the last brain consultation at dispatch time.
+   * Populated by dispatch_wave when `taskId` is set; cleared on each new consultation.
+   * Type mirrors ExternalBlockerSnapshot in brain-sync.ts (duplicated to avoid a
+   * circular import — types.ts must not import from brain-sync.ts).
+   */
+  externalBlockers?: Array<{
+    source: string;
+    externalId: string;
+    url?: string;
+    taskId?: string;
+    resolvedAt?: number;
+  }>;
+  /**
+   * Whether `dispatch_wave`'s most recent brain consultation found unresolved
+   * external blockers. **Orthogonal axis** to `readinessStatus`:
+   * - `readinessStatus` reflects topology (edge satisfaction), recomputed
+   *   automatically by `recomputeReadiness` on every status-changing event.
+   * - `externallyBlocked` reflects brain state (cross-system gates), set
+   *   explicitly by `dispatch_wave` and only cleared by the next dispatch.
+   *
+   * Both axes must be `READY` and `false` respectively for a node to be
+   * frontier-eligible. The split avoids the "single field, two writers" race
+   * where `recomputeReadiness` would silently overwrite an external-blocker
+   * BLOCKED marker on the next `node_completed` event.
+   */
+  externallyBlocked?: boolean;
 }
 
 /**
@@ -157,6 +269,17 @@ export interface Edge {
    * - `DEPENDS_ON`: target cannot proceed until source is done or merged (single-repo friendly).
    */
   type: EdgeType;
+}
+
+/**
+ * A single entry in the continuous frontier — a PENDING+READY node with its
+ * wave membership attached for consumer batching and UI purposes.
+ */
+export interface FrontierEntry {
+  /** Node identifier. */
+  nodeId: string;
+  /** Wave number the node belongs to. */
+  wave: number;
 }
 
 /**
@@ -190,12 +313,87 @@ export interface CoordinationContract {
 }
 
 /**
+ * How a subgraph determines its overall completion status.
+ */
+export enum SubgraphCompletionPolicy {
+  /** Subgraph completes when every member node reaches DONE/MERGED. (Default) */
+  ALL = "ALL",
+  /** Subgraph completes as soon as any member node reaches DONE/MERGED. */
+  ANY = "ANY",
+  /** Subgraph completes when every node listed in `gates` reaches DONE/MERGED. */
+  GATED = "GATED",
+}
+
+/**
+ * How node failures within a subgraph propagate to subgraph status.
+ */
+export enum SubgraphFailurePolicy {
+  /** Any node failure marks the subgraph as failed. (Default) */
+  FAIL_FAST = "FAIL_FAST",
+  /** Other nodes proceed; subgraph fails only if every node fails. */
+  CONTINUE = "CONTINUE",
+  /** Subgraph completes despite failures, provided every gate node succeeds. */
+  BEST_EFFORT = "BEST_EFFORT",
+}
+
+/**
+ * A reference to a gating condition for a subgraph.
+ *
+ * Two flavors:
+ * - **Node gate** (string): a node ID within the subgraph. The gate clears when
+ *   the node reaches a terminal-OK status (DONE/MERGED/PR_CREATED).
+ * - **External gate** (object): an external blocker tracked outside trimatrix
+ *   (typically a brain task with first-class external blockers — see UNM-1b7.7).
+ *   The gate clears when the external system reports the blocker resolved.
+ *
+ * The polymorphism exists so `GATED` completion and `BEST_EFFORT` failure
+ * policies can express "this subgraph is gated on an upstream PR / Jira
+ * ticket" without forcing a node into the graph just to represent the
+ * blocker.
+ */
+export type SubgraphGate =
+  | string
+  | {
+    /** Discriminator — always `"external"` for object-form gates. */
+    kind: "external";
+    /** Source system (e.g., `"jira"`, `"github-pr"`, `"linear"`). */
+    source: string;
+    /** Identifier within the source system. */
+    externalId: string;
+    /** Optional URL for human navigation. */
+    url?: string;
+    /** Optional brain task ID this external blocker is associated with. */
+    taskId?: string;
+  };
+
+/**
  * A partition of the supergraph assigned to a specific executor.
  * Contains an ordered list of nodes forming the executor's strict traversal contract.
+ *
+ * Subgraphs may be **derived** (auto-computed from connectivity by `computeSubgraphs`)
+ * or **explicit** (declared by the caller via the `add_subgraph` tool).
+ * Derived subgraphs use stable hash-based IDs so node addition/removal does not
+ * renumber siblings; explicit subgraphs use the user-supplied slug as their ID.
+ *
+ * Explicit subgraphs are **immutable post-creation**. To revise structure, cancel
+ * the session or refine the graph and re-declare. There is no `update_subgraph`
+ * or `remove_subgraph` tool by design — mutation invariants are easier to reason
+ * about when the structural primitive is append-only within a session.
  */
 export interface Subgraph {
-  /** Unique subgraph identifier (e.g., "sg-lead", "sg-1"). */
+  /**
+   * Stable subgraph identifier.
+   * - `sg-lead` for the lead subgraph (always reserved).
+   * - `auto-<8-char hash>` for derived adjunct subgraphs — hash of sorted node IDs.
+   * - User-supplied slug for explicit subgraphs.
+   */
   id: string;
+  /** Optional human-readable label. Auto-derived subgraphs may omit this. */
+  label?: string;
+  /** Parent subgraph ID for hierarchical nesting. Top-level subgraphs leave this unset. */
+  parentId?: string;
+  /** True if produced by `computeSubgraphs`; false if declared via `add_subgraph`. */
+  derived: boolean;
   /** Node IDs in topological traversal order within this subgraph. */
   nodes: string[];
   /** Edges that exist entirely within this subgraph. */
@@ -208,6 +406,61 @@ export interface Subgraph {
   tier: Tier;
   /** Coordination rules for multi-subgraph execution. */
   coordination: CoordinationContract;
+  /** How the subgraph evaluates overall completion. */
+  completionPolicy: SubgraphCompletionPolicy;
+  /** How node failures propagate to subgraph status. */
+  failurePolicy: SubgraphFailurePolicy;
+  /** Gate references required by `GATED` completion or `BEST_EFFORT` failure policies.
+   * Each entry is either a node ID (string) or an external gate descriptor object. */
+  gates?: SubgraphGate[];
+}
+
+/**
+ * Projection of a `Subgraph` returned by MCP tool responses.
+ *
+ * This is the contract callers depend on; adding a field here is a public-API
+ * change. Internal-only fields (raw `edges`, raw nodes for hashing) are
+ * deliberately omitted to keep response payloads compact and the surface stable.
+ */
+export interface SubgraphSummary {
+  id: string;
+  derived: boolean;
+  executor: Executor;
+  tier: Tier;
+  assignee: string;
+  nodeCount: number;
+  nodes: string[];
+  coordination: CoordinationContract;
+  completionPolicy: SubgraphCompletionPolicy;
+  failurePolicy: SubgraphFailurePolicy;
+  /** Computed by `subgraphOutcome` against current node statuses. */
+  outcome: "pending" | "active" | "completed" | "failed";
+  label?: string;
+  parentId?: string;
+  gates?: SubgraphGate[];
+}
+
+// ---------------------------------------------------------------------------
+// Lease fencing types (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Issued to whichever actor (lead session or adjunct) is currently authorized
+ * to write completion/failure for a node. Every write to a node must echo
+ * both `attemptId` and `leaseVersion`; stale fences are rejected.
+ *
+ * Lifecycle:
+ * - `dispatch_wave` mints a fresh WorkPacket per activated node and returns
+ *   them in the response.
+ * - `complete_node` / `fail_node` / `update_node` accept a WorkPacket and
+ *   reject if it does not match the node's current `attemptId` + `leaseVersion`.
+ * - `refine` and `cancel` increment `leaseVersion` on every affected node,
+ *   invalidating any in-flight WorkPacket for those nodes.
+ */
+export interface WorkPacket {
+  nodeId: string;
+  attemptId: string;
+  leaseVersion: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +499,21 @@ export enum MachineState {
   FAILED = "failed",
   COMPLETED = "completed",
   CANCELLED = "cancelled",
+}
+
+/**
+ * A single entry in the checkpoint event log.
+ * Appended by `appendEvent` and used by `replay` for crash-recovery.
+ */
+export interface EventLogEntry {
+  /** Monotonic sequence number per session (1-based, gapless). */
+  seq: number;
+  /** ISO 8601 timestamp when this entry was written. */
+  timestamp: string;
+  /** The event that was applied. */
+  event: Event;
+  /** Runtime VERSION string at write time (for forward-compat). */
+  checkpointVersion: string;
 }
 
 /**
@@ -304,6 +572,12 @@ export interface Checkpoint {
   episodeIds?: string[];
   /** Routing decision captured at classification time. */
   routingTrace?: RoutingTrace;
+  /**
+   * Append-only event log for crash-recovery replay.
+   * Populated by `appendEvent`; absent (or empty) on pre-2.6.0 checkpoints.
+   * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
+   */
+  eventLog?: EventLogEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -570,4 +844,5 @@ export type Event =
   | { type: "review_passed"; nodeId?: string }
   | { type: "refine" }
   | { type: "refinement_approved" }
+  | { type: "subgraph_added"; subgraph: Subgraph }
   | { type: "cancel"; reason?: string };
