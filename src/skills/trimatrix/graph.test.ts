@@ -23,6 +23,7 @@ import {
   nextFrontierBatch,
   nextWave,
   parallelNodesInWave,
+  recomputeReadiness,
   serializeSubgraphBrief,
   subgraphOutcome,
   unsatisfiedDependencies,
@@ -2662,4 +2663,88 @@ Deno.test("nextFrontierBatch: all externallyBlocked nodes in a wave → wave omi
   assertEquals(result.length, 1);
   assertEquals(result[0].wave, 2);
   assertEquals(result[0].nodeIds, ["free"]);
+});
+
+// ---------------------------------------------------------------------------
+// recomputeReadiness: failure-isolation invariant tests (UNM-735.9)
+// ---------------------------------------------------------------------------
+
+Deno.test("recomputeReadiness: FAILED predecessor sets blockedBy on dependent", () => {
+  // B depends on A. A is FAILED → B.blockedBy should include A.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.FAILED }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = recomputeReadiness(g);
+  assertEquals(result.nodes["B"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(result.nodes["B"].blockedBy, ["A"]);
+  // A itself is not modified — no incoming edges
+  assertEquals(result.nodes["A"].blockedBy, undefined);
+});
+
+Deno.test("recomputeReadiness: PENDING predecessor does not appear in blockedBy", () => {
+  // B depends on A. A is PENDING (not FAILED) → B is BLOCKED but blockedBy is empty.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.PENDING }),
+      makeNode({ id: "B", status: NodeStatus.PENDING }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = recomputeReadiness(g);
+  assertEquals(result.nodes["B"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(result.nodes["B"].blockedBy, undefined);
+});
+
+Deno.test("recomputeReadiness: DONE predecessor clears blockedBy", () => {
+  // B previously had blockedBy=["A"], A now DONE → blockedBy cleared, B becomes READY.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.DONE }),
+      makeNode({ id: "B", status: NodeStatus.PENDING, blockedBy: ["A"] }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = recomputeReadiness(g);
+  assertEquals(result.nodes["B"].readinessStatus, ReadinessStatus.READY);
+  assertEquals(result.nodes["B"].blockedBy, undefined);
+});
+
+Deno.test("recomputeReadiness: multiple FAILED predecessors all appear in blockedBy", () => {
+  // C depends on both A and B; both are FAILED → C.blockedBy = [A, B] (order: edge order).
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.FAILED }),
+      makeNode({ id: "B", status: NodeStatus.FAILED }),
+      makeNode({ id: "C", status: NodeStatus.PENDING }),
+    ],
+    [
+      { from: "A", to: "C", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+  const result = recomputeReadiness(g);
+  assertEquals(result.nodes["C"].readinessStatus, ReadinessStatus.BLOCKED);
+  const blockedBy = result.nodes["C"].blockedBy ?? [];
+  assertEquals(blockedBy.includes("A"), true);
+  assertEquals(blockedBy.includes("B"), true);
+  assertEquals(blockedBy.length, 2);
+});
+
+Deno.test("recomputeReadiness: INVALIDATED node not modified even if predecessor FAILED", () => {
+  // B is INVALIDATED — recomputeReadiness skips it entirely.
+  const g = makeGraph(
+    [
+      makeNode({ id: "A", status: NodeStatus.FAILED }),
+      makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.INVALIDATED }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const result = recomputeReadiness(g);
+  // INVALIDATED nodes are passed through untouched
+  assertEquals(result.nodes["B"].readinessStatus, ReadinessStatus.INVALIDATED);
+  assertEquals(result.nodes["B"].blockedBy, undefined);
 });

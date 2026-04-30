@@ -463,8 +463,28 @@ export function recomputeReadiness(graph: Graph): Graph {
     const next = unsatisfied.length === 0
       ? ReadinessStatus.READY
       : ReadinessStatus.BLOCKED;
-    if (node.readinessStatus !== next) {
-      updatedNodes[id] = { ...node, readinessStatus: next };
+
+    // Compute the set of FAILED predecessor IDs for failure-isolation tracking.
+    // A node is in `blockedBy` only when the source node is currently FAILED.
+    const failedPredecessors: string[] = [];
+    for (const edge of graph.edges) {
+      if (edge.to !== id) continue;
+      const source = graph.nodes[edge.from];
+      if (source && source.status === NodeStatus.FAILED) {
+        failedPredecessors.push(edge.from);
+      }
+    }
+    const prevBlockedBy = node.blockedBy ?? [];
+    const blockedByChanged =
+      failedPredecessors.length !== prevBlockedBy.length ||
+      failedPredecessors.some((fid) => !prevBlockedBy.includes(fid));
+
+    if (node.readinessStatus !== next || blockedByChanged) {
+      updatedNodes[id] = {
+        ...node,
+        readinessStatus: next,
+        blockedBy: failedPredecessors.length > 0 ? failedPredecessors : undefined,
+      };
       changed = true;
     } else {
       updatedNodes[id] = node;

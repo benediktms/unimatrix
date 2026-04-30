@@ -2304,3 +2304,107 @@ Deno.test("replay: node_reset event log reproduces PENDING state (replay parity)
   assertEquals(replayed.graph.nodes["n1"].iterationCount, 0);
   assertEquals(replayed.graph.nodes["n1"].failureReason, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// Failure isolation invariant tests (UNM-735.9)
+// ---------------------------------------------------------------------------
+
+// FI-1: 3-node chain A→B→C: B fails → C.readinessStatus=BLOCKED, C.blockedBy=[B], A untouched
+Deno.test("failure isolation: B fails in A→B→C chain — C blocked, A untouched", () => {
+  const graph = makeGraph(
+    [
+      makeNode("A", { status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
+      makeNode("B", { status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
+      makeNode("C", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    ],
+    [
+      { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, {
+    type: "node_failed",
+    nodeId: "B",
+    reason: "cap exhausted",
+  });
+
+  // C must be BLOCKED and its blockedBy must list B
+  assertEquals(result.graph.nodes["C"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(result.graph.nodes["C"].blockedBy, ["B"]);
+
+  // A must be completely untouched — status, readinessStatus, and iteration fields intact
+  assertEquals(result.graph.nodes["A"].status, NodeStatus.DONE);
+  assertEquals(result.graph.nodes["A"].readinessStatus, ReadinessStatus.READY);
+  assertEquals(result.graph.nodes["A"].blockedBy, undefined);
+
+  // B itself is FAILED
+  assertEquals(result.graph.nodes["B"].status, NodeStatus.FAILED);
+});
+
+// FI-2: reset_node(B) clears blockedBy on C; C returns to BLOCKED (PENDING on B) or READY
+Deno.test("failure isolation: node_reset clears blockedBy on downstream dependents", () => {
+  const graph = makeGraph(
+    [
+      makeNode("A", { status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
+      makeNode("B", { status: NodeStatus.FAILED, leaseVersion: 1, readinessStatus: ReadinessStatus.READY }),
+      makeNode("C", {
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.BLOCKED,
+        blockedBy: ["B"],
+      }),
+    ],
+    [
+      { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, { type: "node_reset", nodeId: "B" });
+
+  // B is now PENDING — no longer FAILED
+  assertEquals(result.graph.nodes["B"].status, NodeStatus.PENDING);
+
+  // C.blockedBy must be cleared (no FAILED predecessors remain)
+  assertEquals(result.graph.nodes["C"].blockedBy, undefined);
+
+  // C is still BLOCKED (B is now PENDING, not DONE/MERGED) — but not due to failure
+  assertEquals(result.graph.nodes["C"].readinessStatus, ReadinessStatus.BLOCKED);
+});
+
+// FI-3: upstream preservation — A node with PR_CREATED + iterationCount=2 + review PASS
+//        is completely intact when a downstream node fails
+Deno.test("failure isolation: upstream node PR metadata and review verdict preserved when downstream fails", () => {
+  const graph = makeGraph(
+    [
+      makeNode("A", {
+        status: NodeStatus.PR_CREATED,
+        readinessStatus: ReadinessStatus.READY,
+        prUrl: "https://github.com/org/repo/pull/42",
+        prNumber: 42,
+        iterationCount: 2,
+        lastReviewVerdict: "PASS",
+        lastReviewNotes: "Looks good.",
+      }),
+      makeNode("B", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+  const result = transition(cp, {
+    type: "node_failed",
+    nodeId: "B",
+    reason: "cap exhausted",
+  });
+
+  const a = result.graph.nodes["A"];
+  // All upstream fields must be bit-for-bit identical
+  assertEquals(a.status, NodeStatus.PR_CREATED);
+  assertEquals(a.readinessStatus, ReadinessStatus.READY);
+  assertEquals(a.prUrl, "https://github.com/org/repo/pull/42");
+  assertEquals(a.prNumber, 42);
+  assertEquals(a.iterationCount, 2);
+  assertEquals(a.lastReviewVerdict, "PASS");
+  assertEquals(a.lastReviewNotes, "Looks good.");
+  assertEquals(a.blockedBy, undefined);
+});
