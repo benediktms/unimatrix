@@ -2695,6 +2695,7 @@ server.tool(
     if (resolvedTrimatrixId === undefined && params.trimatrix) {
       const sessionId = checkpoint?.sessionId;
       if (sessionId) {
+        // sessionId-only derivation; see deriveTrimatrixId comment for the gitCommit rationale.
         resolvedTrimatrixId = deriveTrimatrixId(sessionId);
       } else {
         console.error(

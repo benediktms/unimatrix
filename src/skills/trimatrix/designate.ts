@@ -6,8 +6,11 @@
  */
 
 /**
- * Derive a stable Trimatrix ID in [1, 999] from a session ID and optional git commit.
- * Uses FNV-1a (32-bit) for speed and simplicity; pure and deterministic.
+ * Derives a stable Trimatrix ID in [1, 999] from a session id (and optionally a git commit).
+ * Pure FNV-1a 32-bit. The gitCommit parameter is reserved for callers that already hold
+ * commit context; the MCP designate handler currently does not pass it because the handler
+ * is synchronous and a `git rev-parse` subprocess would force async. Session id alone
+ * provides cross-session uniqueness across the [1, 999] codomain.
  */
 export function deriveTrimatrixId(sessionId: string, gitCommit?: string): number {
   // FNV-1a 32-bit: offset basis and prime are standard constants.
