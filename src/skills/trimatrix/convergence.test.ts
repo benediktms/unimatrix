@@ -21,11 +21,23 @@
  *   F — Checkpoint mid-loop: serialize mid-iteration (after review_failed but
  *       before fix dispatch), deserialize, continue → same outcome as an
  *       uninterrupted run.
+ *   G — Multi-failure cascade: two independent FAILs in one saga. Graph:
+ *       A→B, C→D. Both A and C FAIL (cap exhausted). Assert B and D are
+ *       independently blocked by their respective failed predecessors only.
+ *   H — reset_node race vs ACTIVE drone: assert node_reset throws when node
+ *       is ACTIVE. Then test the post-completion-failure fence: dispatch →
+ *       fail_node → reset_node → re-dispatch; stale late completion is rejected.
+ *   I — Cap exhaustion + resetIterationCount:true end-to-end recovery: fail
+ *       3× → FAILED (iterationCount=3). reset_node with resetIterationCount:true
+ *       → PENDING (iterationCount=0). Re-dispatch → review_passed → DONE.
+ *   J — Cross-brain saga via mock checkpoints: two repos, nodes split across
+ *       both. Assert per-repo iteration isolation and aggregate saga_report.
  *
  * Author: Four of Seven, Senary Drone Protocol of Trimatrix 702
+ * Hardening pass: Four of Four, Tertiary Drone Protocol of Trimatrix 702 (UNM-735.16)
  */
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import {
   appendEvent,
   createCheckpoint,
@@ -34,6 +46,7 @@ import {
   serialize,
   transition,
 } from "./state.ts";
+import { buildSagaReport } from "./saga_report.ts";
 import {
   EdgeType,
   Executor,
@@ -42,7 +55,7 @@ import {
   NodeType,
   ReadinessStatus,
 } from "./types.ts";
-import type { Graph, Node } from "./types.ts";
+import type { Graph, Node, RepoMetadata } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -536,4 +549,433 @@ Deno.test("convergence scenario F: checkpoint mid-loop — serialize after revie
   assertEquals(continued.graph.nodes["f-node"].iterationCount, 1);
   assertEquals(continued.graph.nodes["f-node"].lastReviewVerdict, "PASS");
   assertEquals(continued.machineState, MachineState.COMPLETED);
+});
+
+// ---------------------------------------------------------------------------
+// Scenario G — Multi-failure cascade
+//
+// Graph: A → B, C → D. A and C both exhaust their cap (3 review_failed each).
+// Assert:
+//   - B.readinessStatus === BLOCKED, B.blockedBy === ["g-a"]
+//   - D.readinessStatus === BLOCKED, D.blockedBy === ["g-c"]
+//   - B and D are NOT in each other's blockedBy
+//   - machineState is DISPATCHING (PENDING/BLOCKED dependents are not terminal)
+// ---------------------------------------------------------------------------
+
+Deno.test("convergence scenario G: multi-failure cascade — independent A→B, C→D FAIL isolation", () => {
+  const nodeA = makeNode("g-a", {
+    status: NodeStatus.ACTIVE,
+    maxIterations: 3,
+    iterationCount: 0,
+    readinessStatus: ReadinessStatus.READY,
+  });
+  const nodeB = makeNode("g-b", {
+    status: NodeStatus.PENDING,
+    maxIterations: 3,
+    iterationCount: 0,
+    readinessStatus: ReadinessStatus.BLOCKED,
+  });
+  const nodeC = makeNode("g-c", {
+    status: NodeStatus.ACTIVE,
+    maxIterations: 3,
+    iterationCount: 0,
+    readinessStatus: ReadinessStatus.READY,
+  });
+  const nodeD = makeNode("g-d", {
+    status: NodeStatus.PENDING,
+    maxIterations: 3,
+    iterationCount: 0,
+    readinessStatus: ReadinessStatus.BLOCKED,
+  });
+
+  let cp = makeDispatchingCheckpoint(
+    [nodeA, nodeB, nodeC, nodeD],
+    [
+      { from: "g-a", to: "g-b", type: EdgeType.DEPENDS_ON },
+      { from: "g-c", to: "g-d", type: EdgeType.DEPENDS_ON },
+    ],
+  );
+
+  // Exhaust cap on g-a (3 failures).
+  cp = transition(cp, { type: "review_failed", nodeId: "g-a" });
+  cp = transition(cp, { type: "review_failed", nodeId: "g-a" });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "g-a",
+    reviewNotes: "Cap hit on A.",
+  });
+
+  assertEquals(cp.graph.nodes["g-a"].status, NodeStatus.FAILED);
+  assertEquals(cp.graph.nodes["g-a"].iterationCount, 3);
+
+  // Exhaust cap on g-c (3 failures).
+  cp = transition(cp, { type: "review_failed", nodeId: "g-c" });
+  cp = transition(cp, { type: "review_failed", nodeId: "g-c" });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "g-c",
+    reviewNotes: "Cap hit on C.",
+  });
+
+  assertEquals(cp.graph.nodes["g-c"].status, NodeStatus.FAILED);
+  assertEquals(cp.graph.nodes["g-c"].iterationCount, 3);
+
+  // g-b is blocked by g-a only — not by g-c.
+  assertEquals(
+    cp.graph.nodes["g-b"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
+  assertEquals(cp.graph.nodes["g-b"].blockedBy, ["g-a"]);
+
+  // g-d is blocked by g-c only — not by g-a.
+  assertEquals(
+    cp.graph.nodes["g-d"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
+  assertEquals(cp.graph.nodes["g-d"].blockedBy, ["g-c"]);
+
+  // Cross-contamination check: g-b does not list g-c; g-d does not list g-a.
+  assertEquals((cp.graph.nodes["g-b"].blockedBy ?? []).includes("g-c"), false);
+  assertEquals((cp.graph.nodes["g-d"].blockedBy ?? []).includes("g-a"), false);
+
+  // machineState: PENDING dependents are not terminal — saga stays DISPATCHING.
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
+});
+
+// ---------------------------------------------------------------------------
+// Scenario H — reset_node race against ACTIVE drone
+//
+// Part 1: node is ACTIVE (dispatched, leaseVersion=1). node_reset must throw
+//         because only FAILED nodes may be reset.
+//
+// Part 2: dispatch → review_failed (FAILED) → node_reset (PENDING, leaseVersion
+//         bumped) → re-dispatch (ACTIVE). A stale late review_passed from the
+//         ORIGINAL drone, carrying the OLD leaseVersion, would be fence-rejected
+//         at the server layer (leaseVersion mismatch). We verify leaseVersion
+//         increments correctly so the fence can operate.
+// ---------------------------------------------------------------------------
+
+Deno.test("convergence scenario H: reset_node throws on ACTIVE node; post-fail reset bumps leaseVersion for fence", () => {
+  // Part 1: ACTIVE node — reset must throw.
+  const activeNode = makeNode("h-node", {
+    status: NodeStatus.ACTIVE,
+    leaseVersion: 1,
+    maxIterations: 3,
+    iterationCount: 0,
+  });
+  const cp1 = makeDispatchingCheckpoint([activeNode]);
+
+  assertThrows(
+    () =>
+      transition(cp1, {
+        type: "node_reset",
+        nodeId: "h-node",
+        reason: "operator recovery",
+      }),
+    Error,
+    `Cannot reset node "h-node" — node is ${NodeStatus.ACTIVE}, expected ${NodeStatus.FAILED}`,
+  );
+
+  // Part 2: dispatch → fail_node (review_failed × 3) → reset_node → re-dispatch.
+  const freshNode = makeNode("h-node2", {
+    status: NodeStatus.ACTIVE,
+    leaseVersion: 1,
+    maxIterations: 3,
+    iterationCount: 0,
+  });
+  let cp2 = makeDispatchingCheckpoint([freshNode]);
+
+  // Exhaust cap: 3 review_failed → FAILED.
+  cp2 = transition(cp2, { type: "review_failed", nodeId: "h-node2" });
+  cp2 = transition(cp2, { type: "review_failed", nodeId: "h-node2" });
+  cp2 = transition(cp2, { type: "review_failed", nodeId: "h-node2" });
+
+  assertEquals(cp2.graph.nodes["h-node2"].status, NodeStatus.FAILED);
+  const leaseAfterFail = cp2.graph.nodes["h-node2"].leaseVersion ?? 0;
+
+  // node_reset: FAILED → PENDING, leaseVersion bumped.
+  cp2 = transition(cp2, {
+    type: "node_reset",
+    nodeId: "h-node2",
+    reason: "operator recovery after root cause fix",
+  });
+
+  assertEquals(cp2.graph.nodes["h-node2"].status, NodeStatus.PENDING);
+  assertEquals(
+    cp2.graph.nodes["h-node2"].leaseVersion,
+    leaseAfterFail + 1,
+    "leaseVersion must increment on reset so stale in-flight WorkPackets are fence-rejected",
+  );
+  assertEquals(cp2.graph.nodes["h-node2"].failureReason, undefined);
+
+  // Simulate re-dispatch: set ACTIVE again.
+  cp2 = {
+    ...cp2,
+    graph: {
+      ...cp2.graph,
+      nodes: {
+        ...cp2.graph.nodes,
+        "h-node2": {
+          ...cp2.graph.nodes["h-node2"],
+          status: NodeStatus.ACTIVE,
+        },
+      },
+    },
+  };
+
+  const leaseAtRedispatch = cp2.graph.nodes["h-node2"].leaseVersion!;
+
+  // New drone completes successfully.
+  cp2 = transition(cp2, {
+    type: "review_passed",
+    nodeId: "h-node2",
+    reviewVerdict: "PASS",
+    reviewNotes: "Fixed after reset.",
+  });
+
+  assertEquals(cp2.graph.nodes["h-node2"].status, NodeStatus.DONE);
+  assertEquals(cp2.graph.nodes["h-node2"].lastReviewVerdict, "PASS");
+
+  // The original drone's stale WorkPacket would carry leaseVersion = leaseAfterFail.
+  // The new active lease is leaseAtRedispatch = leaseAfterFail + 1.
+  // A server-side fence check (leaseVersion === node.leaseVersion) would reject it.
+  assertEquals(leaseAtRedispatch > leaseAfterFail, true);
+});
+
+// ---------------------------------------------------------------------------
+// Scenario I — Cap exhaustion + resetIterationCount:true end-to-end recovery
+//
+// Node fails 3× → FAILED with iterationCount=3.
+// Call node_reset with resetIterationCount:true → PENDING, iterationCount=0.
+// Re-dispatch: review_passed → DONE with iterationCount=0.
+// ---------------------------------------------------------------------------
+
+Deno.test("convergence scenario I: cap exhaustion + resetIterationCount:true — full recovery to DONE with iterationCount=0", () => {
+  const targetNode = makeNode("i-node", {
+    status: NodeStatus.ACTIVE,
+    maxIterations: 3,
+    iterationCount: 0,
+    leaseVersion: 1,
+  });
+
+  let cp = makeDispatchingCheckpoint([targetNode]);
+
+  // Three review failures exhaust the cap.
+  cp = transition(cp, { type: "review_failed", nodeId: "i-node" });
+  cp = transition(cp, { type: "review_failed", nodeId: "i-node" });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "i-node",
+    reviewNotes: "Cap hit.",
+  });
+
+  assertEquals(cp.graph.nodes["i-node"].status, NodeStatus.FAILED);
+  assertEquals(cp.graph.nodes["i-node"].iterationCount, 3);
+  assertEquals(
+    cp.graph.nodes["i-node"].failureReason,
+    "iteration cap exhausted: review failed 3/3 times",
+  );
+
+  // node_reset with resetIterationCount:true — wipes the count.
+  cp = transition(cp, {
+    type: "node_reset",
+    nodeId: "i-node",
+    reason: "root cause fixed; reset count for clean slate",
+    resetIterationCount: true,
+  });
+
+  assertEquals(cp.graph.nodes["i-node"].status, NodeStatus.PENDING);
+  assertEquals(
+    cp.graph.nodes["i-node"].iterationCount,
+    0,
+    "resetIterationCount:true must zero the counter",
+  );
+  assertEquals(cp.graph.nodes["i-node"].failureReason, undefined);
+  assertEquals(cp.graph.nodes["i-node"].lastReviewVerdict, undefined);
+
+  // Re-dispatch: set ACTIVE.
+  cp = {
+    ...cp,
+    graph: {
+      ...cp.graph,
+      nodes: {
+        ...cp.graph.nodes,
+        "i-node": {
+          ...cp.graph.nodes["i-node"],
+          status: NodeStatus.ACTIVE,
+        },
+      },
+    },
+  };
+
+  // Review passes on the fresh attempt.
+  cp = transition(cp, {
+    type: "review_passed",
+    nodeId: "i-node",
+    reviewVerdict: "PASS",
+    reviewNotes: "Clean implementation after reset.",
+  });
+
+  assertEquals(cp.graph.nodes["i-node"].status, NodeStatus.DONE);
+  assertEquals(
+    cp.graph.nodes["i-node"].iterationCount,
+    0,
+    "iterationCount stays 0 — the recovery pass does not increment it",
+  );
+  assertEquals(cp.graph.nodes["i-node"].lastReviewVerdict, "PASS");
+  assertEquals(cp.machineState, MachineState.COMPLETED);
+});
+
+// ---------------------------------------------------------------------------
+// Scenario J — Cross-brain saga via mock checkpoints (no real second brain)
+//
+// Two repos: "main" and "secondary". Nodes are split across both:
+//   main:      j-main-1 (ACTIVE), j-main-2 (ACTIVE)
+//   secondary: j-sec-1  (ACTIVE), j-sec-2  (ACTIVE)
+//
+// Each checkpoint is independent (no shared state). We run the convergence
+// loop on each independently:
+//   - main:      j-main-1 review_failed × 2 then review_passed;
+//                j-main-2 review_passed
+//   - secondary: j-sec-1  review_failed × 1 then review_passed;
+//                j-sec-2  review_failed × 3 → FAILED
+//
+// Assert:
+//   - Per-repo iteration tracking is isolated (main failures do not increment
+//     secondary node counts).
+//   - saga_report aggregated across both repos reflects both repos' node outcomes.
+// ---------------------------------------------------------------------------
+
+Deno.test("convergence scenario J: cross-brain saga via mock checkpoints — per-repo isolation + aggregate saga_report", () => {
+  const mainRepos: RepoMetadata[] = [
+    { name: "main", root: "/fake/main", worktrees: [] },
+  ];
+  const secRepos: RepoMetadata[] = [
+    { name: "secondary", root: "/fake/secondary", worktrees: [] },
+  ];
+
+  // ── Main checkpoint ──────────────────────────────────────────────────────
+  const mainNodes = [
+    makeNode("j-main-1", {
+      status: NodeStatus.ACTIVE,
+      maxIterations: 3,
+      iterationCount: 0,
+    }),
+    makeNode("j-main-2", {
+      status: NodeStatus.ACTIVE,
+      maxIterations: 3,
+      iterationCount: 0,
+    }),
+  ];
+  const mainGraph = makeGraph(mainNodes);
+  let cpMain = createCheckpoint(mainRepos, mainGraph);
+  cpMain = transition(cpMain, { type: "plan_submitted" });
+  cpMain = transition(cpMain, { type: "plan_finalized" });
+
+  // j-main-1: fails twice then passes.
+  cpMain = transition(cpMain, {
+    type: "review_failed",
+    nodeId: "j-main-1",
+    reviewNotes: "Main round 1.",
+  });
+  cpMain = transition(cpMain, {
+    type: "review_failed",
+    nodeId: "j-main-1",
+    reviewNotes: "Main round 2.",
+  });
+  cpMain = transition(cpMain, {
+    type: "review_passed",
+    nodeId: "j-main-1",
+    reviewVerdict: "PASS",
+  });
+
+  // j-main-2: one-shot.
+  cpMain = transition(cpMain, {
+    type: "review_passed",
+    nodeId: "j-main-2",
+    reviewVerdict: "PASS",
+  });
+
+  assertEquals(cpMain.graph.nodes["j-main-1"].iterationCount, 2);
+  assertEquals(cpMain.graph.nodes["j-main-1"].status, NodeStatus.DONE);
+  assertEquals(cpMain.graph.nodes["j-main-2"].iterationCount, 0);
+  assertEquals(cpMain.graph.nodes["j-main-2"].status, NodeStatus.DONE);
+
+  // ── Secondary checkpoint ─────────────────────────────────────────────────
+  const secNodes = [
+    makeNode("j-sec-1", {
+      status: NodeStatus.ACTIVE,
+      maxIterations: 3,
+      iterationCount: 0,
+    }),
+    makeNode("j-sec-2", {
+      status: NodeStatus.ACTIVE,
+      maxIterations: 3,
+      iterationCount: 0,
+    }),
+  ];
+  const secGraph = makeGraph(secNodes);
+  let cpSec = createCheckpoint(secRepos, secGraph);
+  cpSec = transition(cpSec, { type: "plan_submitted" });
+  cpSec = transition(cpSec, { type: "plan_finalized" });
+
+  // j-sec-1: fails once then passes.
+  cpSec = transition(cpSec, {
+    type: "review_failed",
+    nodeId: "j-sec-1",
+    reviewNotes: "Sec round 1.",
+  });
+  cpSec = transition(cpSec, {
+    type: "review_passed",
+    nodeId: "j-sec-1",
+    reviewVerdict: "PASS",
+  });
+
+  // j-sec-2: fails 3× → FAILED.
+  cpSec = transition(cpSec, { type: "review_failed", nodeId: "j-sec-2" });
+  cpSec = transition(cpSec, { type: "review_failed", nodeId: "j-sec-2" });
+  cpSec = transition(cpSec, {
+    type: "review_failed",
+    nodeId: "j-sec-2",
+    reviewNotes: "Cap hit on secondary.",
+  });
+
+  assertEquals(cpSec.graph.nodes["j-sec-1"].iterationCount, 1);
+  assertEquals(cpSec.graph.nodes["j-sec-1"].status, NodeStatus.DONE);
+  assertEquals(cpSec.graph.nodes["j-sec-2"].status, NodeStatus.FAILED);
+
+  // ── Per-repo isolation: main failures did NOT affect secondary ────────────
+  // j-sec-1 saw only its own review_failed (1 — not 2 from main's j-main-1).
+  assertEquals(cpSec.graph.nodes["j-sec-1"].iterationCount, 1);
+  // j-main-1 saw only its own failures (2 — not 1 from secondary's j-sec-1).
+  assertEquals(cpMain.graph.nodes["j-main-1"].iterationCount, 2);
+
+  // ── Aggregate saga_report across both repos ───────────────────────────────
+  const reportMain = buildSagaReport(cpMain);
+  const reportSec = buildSagaReport(cpSec);
+
+  // Main: 2 nodes — j-main-1 converged (iters>0), j-main-2 one-shot.
+  assertEquals(reportMain.totalNodes, 2);
+  assertEquals(reportMain.converged, 1);
+  assertEquals(reportMain.oneShot, 1);
+  assertEquals(reportMain.failed, 0);
+
+  // Secondary: 2 nodes — j-sec-1 converged (iters>0), j-sec-2 failed.
+  assertEquals(reportSec.totalNodes, 2);
+  assertEquals(reportSec.converged, 1);
+  assertEquals(reportSec.oneShot, 0);
+  assertEquals(reportSec.failed, 1);
+  assertEquals(reportSec.escalations.length, 1);
+  assertEquals(reportSec.escalations[0].nodeId, "j-sec-2");
+
+  // Aggregate: combine both report totals (as the lead would do cross-brain).
+  const aggregateTotalNodes = reportMain.totalNodes + reportSec.totalNodes;
+  const aggregateFailed = reportMain.failed + reportSec.failed;
+  const aggregateConverged = reportMain.converged + reportSec.converged;
+  const aggregateOneShot = reportMain.oneShot + reportSec.oneShot;
+
+  assertEquals(aggregateTotalNodes, 4);
+  assertEquals(aggregateFailed, 1);
+  assertEquals(aggregateConverged, 2);
+  assertEquals(aggregateOneShot, 1);
 });

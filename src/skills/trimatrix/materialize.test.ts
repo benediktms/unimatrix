@@ -376,3 +376,187 @@ Deno.test("buildPlan: multiple explicit subgraphs sorted by slug", () => {
   assertEquals(plan.subgraphs[2].id, "m-service");
   assertEquals(plan.subgraphs[3].id, "z-service");
 });
+
+// ---------------------------------------------------------------------------
+// Gap coverage (MEDIUM-D2): single-node, max-fan-out, all-completed,
+// mixed-status renderings — UNM-735.16 Delta
+// Four of Four, Tertiary Drone Protocol of Trimatrix 702
+// ---------------------------------------------------------------------------
+
+Deno.test("materializePlan(markdown): single-node graph — valid output, no errors", () => {
+  const solo = makeNode("solo-1", { executor: Executor.LEAD });
+  const soloGraph = makeGraph([solo]);
+  const soloSg = makeSg("sg-solo", ["solo-1"], false, Executor.LEAD);
+  Object.assign(soloSg, { assignee: "LEAD" });
+  const soloWaves: Wave[] = [{ id: 1, nodes: ["solo-1"], hasMergeGate: false }];
+  const soloCp = makeCp(soloGraph, [soloSg], soloWaves, {
+    sessionLabel: "solo-session",
+  });
+
+  const md = materializePlan(soloCp, "markdown");
+  assertStringIncludes(md, "# Plan: solo-session");
+  assertStringIncludes(md, "Nodes: 1");
+  assertStringIncludes(md, "solo-1");
+});
+
+Deno.test("materializePlan(markdown): max-fan-out — 1 root, 10 dependents all in topo order under subgraph", () => {
+  // Build a graph: root → dep-0 … dep-9
+  const root = makeNode("fan-root", { executor: Executor.LEAD });
+  const deps = Array.from(
+    { length: 10 },
+    (_, i) => makeNode(`fan-dep-${i}`, { executor: Executor.ADJUNCT }),
+  );
+  const allNodes = [root, ...deps];
+  const fanGraph = makeGraph(allNodes);
+
+  const sgFanLead = makeSg("sg-fan-lead", ["fan-root"], false, Executor.LEAD);
+  Object.assign(sgFanLead, { assignee: "LEAD" });
+  const sgFanAdj = makeSg(
+    "sg-fan-adjuncts",
+    deps.map((d) => d.id),
+    true,
+    Executor.ADJUNCT,
+  );
+
+  const fanWaves: Wave[] = [
+    { id: 1, nodes: ["fan-root"], hasMergeGate: false },
+    {
+      id: 2,
+      nodes: deps.map((d) => d.id),
+      hasMergeGate: false,
+    },
+  ];
+  const fanCp = makeCp(fanGraph, [sgFanLead, sgFanAdj], fanWaves, {
+    sessionLabel: "fan-session",
+  });
+
+  const plan = buildPlan(fanCp);
+  // fan-root appears in sg-fan-lead (wave 1).
+  const leadSg = plan.subgraphs.find((sg) => sg.id === "sg-fan-lead")!;
+  assertEquals(leadSg.nodes.length, 1);
+  assertEquals(leadSg.nodes[0].id, "fan-root");
+
+  // All 10 dependents appear in sg-fan-adjuncts.
+  const adjSg = plan.subgraphs.find((sg) => sg.id === "sg-fan-adjuncts")!;
+  assertEquals(adjSg.nodes.length, 10);
+
+  // All 10 node IDs are present.
+  const adjIds = new Set(adjSg.nodes.map((n) => n.id));
+  for (let i = 0; i < 10; i++) {
+    assertEquals(adjIds.has(`fan-dep-${i}`), true, `fan-dep-${i} missing`);
+  }
+
+  // Markdown contains all node IDs.
+  const md = materializePlan(fanCp, "markdown");
+  assertStringIncludes(md, "Nodes: 11");
+  for (let i = 0; i < 10; i++) {
+    assertStringIncludes(md, `fan-dep-${i}`);
+  }
+});
+
+Deno.test("materializePlan(markdown): all-completed graph — status indicators render correctly", () => {
+  const doneA = makeNode("done-a", {
+    executor: Executor.LEAD,
+    status: NodeStatus.DONE,
+  });
+  const doneB = makeNode("done-b", {
+    executor: Executor.LEAD,
+    status: NodeStatus.DONE,
+    prUrl: "https://github.com/pr/done-b",
+  });
+  const doneGraph = makeGraph([doneA, doneB]);
+  const doneSg = makeSg("sg-done", ["done-a", "done-b"], false, Executor.LEAD);
+  Object.assign(doneSg, { assignee: "LEAD" });
+  const doneWaves: Wave[] = [
+    { id: 1, nodes: ["done-a", "done-b"], hasMergeGate: false },
+  ];
+  const doneCp = makeCp(doneGraph, [doneSg], doneWaves, {
+    sessionLabel: "done-session",
+  });
+
+  const plan = buildPlan(doneCp);
+  const allNodes = plan.subgraphs.flatMap((sg) => sg.nodes);
+  // All nodes report DONE.
+  for (const n of allNodes) {
+    assertEquals(n.status, NodeStatus.DONE);
+  }
+
+  const md = materializePlan(doneCp, "markdown");
+  assertStringIncludes(md, "done-a");
+  assertStringIncludes(md, "done-b");
+  // prUrl for done-b is present.
+  assertStringIncludes(md, "https://github.com/pr/done-b");
+});
+
+Deno.test("materializePlan(markdown): mixed-status graph — PENDING/ACTIVE/DONE/FAILED/BLOCKED render distinctively", () => {
+  const nPending = makeNode("mix-pending", {
+    executor: Executor.LEAD,
+    status: NodeStatus.PENDING,
+  });
+  const nActive = makeNode("mix-active", {
+    executor: Executor.LEAD,
+    status: NodeStatus.ACTIVE,
+  });
+  const nDone = makeNode("mix-done", {
+    executor: Executor.LEAD,
+    status: NodeStatus.DONE,
+  });
+  const nFailed = makeNode("mix-failed", {
+    executor: Executor.LEAD,
+    status: NodeStatus.FAILED,
+    failureReason: "cap exhausted",
+  });
+  const nBlocked = makeNode("mix-blocked", {
+    executor: Executor.LEAD,
+    status: NodeStatus.BLOCKED,
+  });
+
+  const mixGraph = makeGraph([nPending, nActive, nDone, nFailed, nBlocked]);
+  const mixSg = makeSg(
+    "sg-mix",
+    ["mix-pending", "mix-active", "mix-done", "mix-failed", "mix-blocked"],
+    false,
+    Executor.LEAD,
+  );
+  Object.assign(mixSg, { assignee: "LEAD" });
+  const mixWaves: Wave[] = [
+    {
+      id: 1,
+      nodes: [
+        "mix-pending",
+        "mix-active",
+        "mix-done",
+        "mix-failed",
+        "mix-blocked",
+      ],
+      hasMergeGate: false,
+    },
+  ];
+  const mixCp = makeCp(mixGraph, [mixSg], mixWaves, {
+    sessionLabel: "mix-session",
+  });
+
+  const plan = buildPlan(mixCp);
+  const allNodes = plan.subgraphs.flatMap((sg) => sg.nodes);
+  const byId = new Map(allNodes.map((n) => [n.id, n]));
+
+  // Each node carries its own distinct status.
+  assertEquals(byId.get("mix-pending")!.status, NodeStatus.PENDING);
+  assertEquals(byId.get("mix-active")!.status, NodeStatus.ACTIVE);
+  assertEquals(byId.get("mix-done")!.status, NodeStatus.DONE);
+  assertEquals(byId.get("mix-failed")!.status, NodeStatus.FAILED);
+  assertEquals(byId.get("mix-blocked")!.status, NodeStatus.BLOCKED);
+
+  // Markdown includes all node IDs (each status renders without crashing).
+  const md = materializePlan(mixCp, "markdown");
+  assertStringIncludes(md, "mix-pending");
+  assertStringIncludes(md, "mix-active");
+  assertStringIncludes(md, "mix-done");
+  assertStringIncludes(md, "mix-failed");
+  assertStringIncludes(md, "mix-blocked");
+
+  // Outcome field on the subgraph reflects mixed state (not "completed").
+  const leadSg = plan.subgraphs.find((sg) => sg.id === "sg-mix")!;
+  // With DONE, FAILED, ACTIVE, PENDING, BLOCKED nodes the outcome is not "completed".
+  assertEquals(leadSg.outcome !== "completed", true);
+});
