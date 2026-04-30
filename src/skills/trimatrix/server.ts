@@ -699,21 +699,10 @@ server.tool(
       throw new Error(`Cannot enter refining state: ${check.reason}`);
     }
 
-    // Lease fencing (UNM-1b7.6): increment leaseVersion on all nodes to
-    // invalidate any in-flight WorkPackets. Refinement is rare and global
-    // re-fencing is conservative-safe. This covers all nodes regardless of
-    // status; only dispatched nodes carry a leaseVersion but bumping PENDING
-    // ones is harmless — their first dispatch will mint the initial value.
-    const refinedNodes: Record<string, import("./types.ts").Node> = {};
-    for (const [nId, node] of Object.entries(cp.graph.nodes)) {
-      refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
-    }
-    const cpWithBumpedFences: Checkpoint = {
-      ...cp,
-      graph: { ...cp.graph, nodes: refinedNodes },
-    };
-
-    const result = await transitionWithEffects(cpWithBumpedFences, { type: "refine" });
+    // Lease-fence invalidation moved into the `refine` transition (state.ts)
+    // so event-log replay reproduces the bump. The server tool just emits
+    // the event; transition increments leaseVersion on every node.
+    const result = await transitionWithEffects(cp, { type: "refine" });
     checkpoint = result.checkpoint;
 
     return {
@@ -2067,20 +2056,9 @@ server.tool(
       }
     }
 
-    // Lease fencing (UNM-1b7.6): increment leaseVersion on every PENDING or
-    // ACTIVE node so any in-flight WorkPackets held by adjuncts are invalidated
-    // before the cancellation transition completes.
-    const cancelledNodes: Record<string, import("./types.ts").Node> = {};
-    for (const [nId, node] of Object.entries(cp.graph.nodes)) {
-      if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
-        cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
-      } else {
-        cancelledNodes[nId] = node;
-      }
-    }
-    const cpBeforeCancel: Checkpoint = { ...cp, graph: { ...cp.graph, nodes: cancelledNodes } };
-
-    const cancelResult = await transitionWithEffects(cpBeforeCancel, { type: "cancel", reason: params.reason });
+    // Lease-fence invalidation for cancel moved into the `cancel` transition
+    // (state.ts) so event-log replay reproduces the bump.
+    const cancelResult = await transitionWithEffects(cp, { type: "cancel", reason: params.reason });
     checkpoint = cancelResult.checkpoint;
     if (cancelResult.shouldSaveCheckpoint) {
       await saveCheckpointToBrain(checkpoint);

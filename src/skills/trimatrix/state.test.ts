@@ -1507,6 +1507,80 @@ Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLo
 });
 
 // ---------------------------------------------------------------------------
+// Event-log integration via createEffectRunner (UNM-1b7.3 wiring fix)
+// ---------------------------------------------------------------------------
+
+Deno.test("createEffectRunner: transitionWithEffects appends to eventLog (wired path)", async () => {
+  const { createEffectRunner } = await import("./side-effect-runner.ts");
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+
+  // No-op deps for this test; the runner falls through when policy is empty.
+  const fakeBrainExec = {
+    // deno-lint-ignore require-await
+    withStdin: async () => "",
+    // deno-lint-ignore require-await
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+  const runner = createEffectRunner({ brainExec: fakeBrainExec });
+
+  // Drive the same path the server tools use.
+  const r1 = await runner(cp, { type: "plan_submitted" });
+  const r2 = await runner(r1.checkpoint, { type: "plan_finalized" });
+
+  assertEquals(r2.checkpoint.eventLog?.length, 2);
+  assertEquals(r2.checkpoint.eventLog?.[0].seq, 1);
+  assertEquals(r2.checkpoint.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(r2.checkpoint.eventLog?.[1].seq, 2);
+  assertEquals(r2.checkpoint.eventLog?.[1].event.type, "plan_finalized");
+});
+
+Deno.test("createEffectRunner: replay(eventLog) reproduces the live checkpoint state", async () => {
+  // The C1 fix (event log wired into the server) is what makes UNM-1b7.3
+  // shippable. Lock the contract: drive a sequence of events through the
+  // runner, then replay the resulting eventLog and assert the materialized
+  // checkpoints round-trip equal (modulo timestamps).
+  const { createEffectRunner } = await import("./side-effect-runner.ts");
+  const graph = makeGraph(
+    [makeNode("n1"), makeNode("n2")],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  const cp = createCheckpoint([], graph, { tier: Tier.T1 });
+  const fakeBrainExec = {
+    // deno-lint-ignore require-await
+    withStdin: async () => "",
+    // deno-lint-ignore require-await
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+  const runner = createEffectRunner({ brainExec: fakeBrainExec });
+
+  let live = cp;
+  const events: Event[] = [
+    { type: "plan_submitted" },
+    { type: "plan_finalized" },
+    { type: "wave_dispatched", waveId: 1 },
+    { type: "node_completed", nodeId: "n1" },
+  ];
+  for (const ev of events) {
+    const result = await runner(live, ev);
+    live = result.checkpoint;
+  }
+
+  assertEquals(live.eventLog?.length, 4);
+
+  // Replay the recorded eventLog from a fresh checkpoint with the same graph.
+  const fresh = createCheckpoint([], graph, { tier: Tier.T1 });
+  const replayed = replay(live.eventLog ?? [], fresh);
+
+  // Materialized graph state must match (status fields).
+  assertEquals(replayed.graph.nodes.n1.status, live.graph.nodes.n1.status);
+  assertEquals(replayed.graph.nodes.n2.status, live.graph.nodes.n2.status);
+  assertEquals(replayed.machineState, live.machineState);
+  // n2 readiness must reflect n1's completion in both — recompute is deterministic.
+  assertEquals(replayed.graph.nodes.n2.readinessStatus, live.graph.nodes.n2.readinessStatus);
+});
+
+// ---------------------------------------------------------------------------
 // Tests: lease fencing — state.test.ts slice (UNM-1b7.6)
 // ---------------------------------------------------------------------------
 

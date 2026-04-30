@@ -418,12 +418,22 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "refine":
+    case "refine": {
+      // Lease-fence invalidation lives in the transition (not the server tool)
+      // so event-log replay reproduces the bump. Every node's `leaseVersion`
+      // is incremented by 1, invalidating any in-flight WorkPackets — the
+      // contract is global re-fencing on refinement, conservative-safe.
+      const refinedNodes: Record<string, Node> = {};
+      for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
+        refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+      }
       return {
         ...checkpoint,
+        graph: { ...checkpoint.graph, nodes: refinedNodes },
         machineState: MachineState.REFINING,
         updatedAt: now,
       };
+    }
 
     case "refinement_approved":
       return {
@@ -464,14 +474,27 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       };
     }
 
-    case "cancel":
+    case "cancel": {
+      // Lease-fence invalidation lives in the transition so event-log replay
+      // reproduces the bump. Only PENDING / ACTIVE nodes carry in-flight
+      // WorkPackets worth invalidating; terminal nodes are left untouched.
+      const cancelledNodes: Record<string, Node> = {};
+      for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
+        if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
+          cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        } else {
+          cancelledNodes[nId] = node;
+        }
+      }
       return {
         ...checkpoint,
+        graph: { ...checkpoint.graph, nodes: cancelledNodes },
         machineState: MachineState.CANCELLED,
         cancellationReason: event.reason,
         cancelledAt: now,
         updatedAt: now,
       };
+    }
   }
 }
 
