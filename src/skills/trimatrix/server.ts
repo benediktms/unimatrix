@@ -85,6 +85,7 @@ import {
 } from "./brain-sync.ts";
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
+import { materializePlan } from "./materialize.ts";
 
 // ---------------------------------------------------------------------------
 // In-memory checkpoint store
@@ -1338,6 +1339,32 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify({ ok: true, derived, explicit }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: materialize_plan
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "materialize_plan",
+  "Render the full execution plan as a single human-readable document. Groups all nodes by subgraph: sg-lead first, then explicit subgraphs (sorted by slug), then derived subgraphs (sorted by auto-hash ID). Per-node: wave, type, status, readiness, repo, task, PR, tags. Supports markdown (default) and json output formats.",
+  {
+    format: z.enum(["markdown", "json"]).optional().default("markdown").describe(
+      'Output format: "markdown" (default, human-readable) or "json" (structured, for programmatic consumers).',
+    ),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const rendered = materializePlan(cp, params.format);
+    return {
+      content: [
+        {
+          type: "text",
+          text: rendered,
         },
       ],
     };

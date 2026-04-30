@@ -199,6 +199,54 @@ at the async dispatch boundary for snapshot-aware resolution.
 
 ---
 
+## materialize_plan Output Example
+
+The `materialize_plan` MCP tool renders the full supergraph as a single Markdown
+document (default) or JSON object. The Markdown form groups nodes by subgraph:
+`sg-lead` first, then explicit subgraphs sorted by slug, then derived subgraphs
+sorted by `auto-<hash>` ID. Within each subgraph, nodes appear in topological
+(wave-stable) order.
+
+```markdown
+# Plan: Auth + UI migration
+
+## Overview
+- Intent: IMPLEMENT · Tier: T2 · Strategy: INDEPENDENT
+- Waves: 2 · Nodes: 5
+
+## Lead Subgraph (sg-lead)
+**Executor:** LEAD · **Tier:** T2 · **Assignee:** LEAD · **Coordination:** NONE · **Outcome:** pending
+**Completion:** ALL · **Failure:** FAIL_FAST
+
+| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
+|---|---|---|---|---|---|---|---|---|---|
+| lead-a | Implement auth handler | 1 | IMPLEMENTATION | DONE | — | api-service | unm-100 | — | — |
+| lead-b | Type-check api-service | 2 | VERIFY_COMPILE | PENDING | — | — | — | — | — |
+
+## Subgraph: web-drone — Web UI drone (explicit)
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Two of Three · **Coordination:** NONE · **Outcome:** active
+**Completion:** ALL · **Failure:** FAIL_FAST
+
+| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
+|---|---|---|---|---|---|---|---|---|---|
+| adj-x | Implement UI component | 1 | IMPLEMENTATION | ACTIVE | — | web-app | — | https://github.com/org/repo/pull/42 | frontend |
+
+## Subgraph: auto-abc12345 (derived)
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Three of Three · **Coordination:** NONE · **Outcome:** pending
+**Completion:** ALL · **Failure:** FAIL_FAST
+
+| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
+|---|---|---|---|---|---|---|---|---|---|
+| drv-p | Migrate schema | 1 | IMPLEMENTATION | PENDING | — | db-service | — | — | — |
+| drv-q | Type-check db-service | 2 | VERIFY_COMPILE | PENDING | — | — | — | — | — |
+```
+
+Tool signature: `materialize_plan({ format?: "markdown" | "json" }): string`.
+Implementation: `src/skills/trimatrix/materialize.ts` (`buildPlan`, `materializePlan`).
+Tests: `src/skills/trimatrix/materialize.test.ts`.
+
+---
+
 ## Resume Contract
 
 <resume-contract>
