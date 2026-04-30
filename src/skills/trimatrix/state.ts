@@ -159,6 +159,7 @@ export function canTransition(
     case "wave_completed":
     case "wave_failed":
     case "review_passed":
+    case "review_failed":
       if (machineState !== MachineState.DISPATCHING) {
         return {
           allowed: false,
@@ -449,12 +450,86 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "review_passed":
-      // Identity transition — no state change, recorded for audit trail
+    case "review_passed": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      // Derive target status matching complete_node logic
+      const passedStatus = node.prUrl
+        ? (node.repo ? NodeStatus.MERGED : NodeStatus.PR_CREATED)
+        : NodeStatus.DONE;
+      const updatedNode: Node = {
+        ...node,
+        status: passedStatus,
+        lastReviewVerdict: "PASS",
+        ...(event.reviewNotes !== undefined
+          ? { lastReviewNotes: event.reviewNotes }
+          : {}),
+      };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
+      // Detect saga completion: all nodes in terminal status
+      const terminalStatuses = new Set<NodeStatus>([
+        NodeStatus.DONE,
+        NodeStatus.MERGED,
+        NodeStatus.PR_CREATED,
+        NodeStatus.FAILED,
+      ]);
+      const allTerminal = Object.values(nextGraph.nodes).every((n) =>
+        terminalStatuses.has(n.status)
+      );
       return {
         ...checkpoint,
+        graph: nextGraph,
+        machineState: allTerminal ? MachineState.COMPLETED : checkpoint.machineState,
         updatedAt: now,
       };
+    }
+
+    case "review_failed": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      const newIterationCount = (node.iterationCount ?? 0) + 1;
+      const cap = node.maxIterations ?? 3;
+      const capExhausted = newIterationCount >= cap;
+      const updatedNode: Node = capExhausted
+        ? {
+          ...node,
+          status: NodeStatus.FAILED,
+          iterationCount: newIterationCount,
+          lastReviewVerdict: "FAIL",
+          failureReason:
+            `iteration cap exhausted: review failed ${newIterationCount}/${cap} times`,
+          ...(event.reviewNotes !== undefined
+            ? { lastReviewNotes: event.reviewNotes }
+            : {}),
+        }
+        : {
+          ...node,
+          status: NodeStatus.ACTIVE,
+          iterationCount: newIterationCount,
+          lastReviewVerdict: "FAIL",
+          ...(event.reviewNotes !== undefined
+            ? { lastReviewNotes: event.reviewNotes }
+            : {}),
+        };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
+      return {
+        ...checkpoint,
+        graph: nextGraph,
+        updatedAt: now,
+      };
+    }
 
     case "subgraph_added": {
       /**

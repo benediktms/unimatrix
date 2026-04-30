@@ -884,7 +884,18 @@ export type Event =
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }
   | { type: "retry_wave"; waveId: number }
-  | { type: "review_passed"; nodeId?: string }
+  | {
+    type: "review_passed";
+    nodeId: string;
+    reviewVerdict?: "PASS";
+    reviewNotes?: string;
+  }
+  | {
+    type: "review_failed";
+    nodeId: string;
+    reviewVerdict?: "FAIL";
+    reviewNotes?: string;
+  }
   | { type: "refine" }
   | { type: "refinement_approved" }
   | { type: "subgraph_added"; subgraph: Subgraph }
