@@ -837,8 +837,8 @@ fields regardless of how many repositories the saga spans.
 
 ### Convergence Semantics Across Repos
 
-- A node in repo A and a node in repo B each run their own independent
-  implement → review → fix loop.
+- A node in repo A and a node in repo B each run their own independent implement
+  → review → fix loop.
 - Wave dispatch does not reset `iterationCount`. A node that was mid-loop at
   saga interruption retains its count across the checkpoint boundary.
 - Sentinel review happens per node after that node's drone completes work,
@@ -850,15 +850,15 @@ When a saga is interrupted (session crash, gate halt, user pause) while a node
 is mid-convergence, RESUME must pick up at the correct iteration:
 
 **Rule:** A node with `iterationCount = N` (N > 0) and
-`lastReviewVerdict: "FAIL"` at checkpoint time resumes at iteration `N + 1`.
-The lead dispatches a fix adjunct carrying `lastReviewNotes` from the prior
+`lastReviewVerdict: "FAIL"` at checkpoint time resumes at iteration `N + 1`. The
+lead dispatches a fix adjunct carrying `lastReviewNotes` from the prior
 sentinel. The convergence loop (C1 steps 4–7) continues from that point.
 
 **The node is NOT re-dispatched from scratch** (i.e., from C1 step 1). Prior
 implementation work is preserved in the node's worktree branch.
 
-This satisfies success criterion #3 of unm-735: *"Resuming a saga via
-`--resume` picks up mid-loop on the failing node, not from scratch."*
+This satisfies success criterion #3 of unm-735: _"Resuming a saga via `--resume`
+picks up mid-loop on the failing node, not from scratch."_
 
 ### Cross-Repo Resume Example
 
@@ -885,6 +885,16 @@ svc-impl has iterationCount=2, lastReviewVerdict="FAIL".
 → On PASS at iteration 3: svc-impl → DONE.
 → svc-tests unblocks. Wave continues.
 → Wave 3: client-impl dispatches from scratch (iterationCount=0, no prior review).
+
+Corner case — iteration 3 also FAILs:
+→ iterationCount reaches maxIterations (default 3).
+→ Server auto-fails svc-impl: fail_node(reason: "iteration cap exhausted").
+→ svc-tests readinessStatus set to BLOCKED; blockedBy=[svc-impl].
+→ Downstream nodes dependent on svc-tests are not directly modified —
+  readiness is recomputed by topology traversal.
+→ Saga continues for non-dependent nodes (client-impl proceeds if READY).
+→ Lead escalates svc-impl failure to user with lastReviewNotes.
+→ User may invoke reset_node to retry or abandon the node.
 ```
 
 ### Invariants
@@ -904,17 +914,18 @@ svc-impl has iterationCount=2, lastReviewVerdict="FAIL".
 
 The canonical convergence loop specification is in `SKILL.md` Protocol C:
 
-| Section | Content                                                    |
-| ------- | ---------------------------------------------------------- |
-| C1      | Full implement → verify → review → fix cycle               |
-| C2      | Iteration cap (`maxIterations`, auto-fail on exhaustion)   |
-| C3      | Recovery via `reset_node` (lease bump, optional count reset) |
-| C4      | Failure isolation invariant (downstream `BLOCKED` on fail) |
-| C5      | Node state diagram (PENDING → ACTIVE → REVIEWING → ...)    |
-| C5a     | Review tier selection (TRIVIAL / NON_TRIVIAL)              |
-| C6      | MCP primitives (`review_passed`, `review_failed`, etc.)    |
-| C7      | Post-completion summary (mandatory after each terminal)    |
-| C8      | Saga report (post-saga aggregate)                          |
+| Section | Content                                                                                                                      |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| C1      | Full implement → verify → review → fix cycle; **mid-loop resume rule**: a node with `iterationCount = N > 0` and `lastReviewVerdict: "FAIL"` resumes at iteration N + 1, not from scratch |
+| C2      | Iteration cap (`maxIterations`, default 3; auto-fail on exhaustion)                                                          |
+| C3      | Recovery via `reset_node` (lease bump, optional count reset)                                                                 |
+| C4      | Failure isolation invariant (downstream `readinessStatus: BLOCKED` on fail)                                                  |
+| C5      | Checkpoint cadence (save before each fix-adjunct dispatch for durable mid-loop RESUME)                                       |
+| C6      | Review tier selection (TRIVIAL / NON_TRIVIAL; per-saga team-review budget: max 5)                                            |
+| C7      | Node state diagram (PENDING → ACTIVE → REVIEWING → ...)                                                                      |
+| C8      | MCP primitives (`review_passed`, `review_failed`, etc.)                                                                      |
+| C9      | Post-completion summary (mandatory after each terminal node)                                                                 |
+| C10     | Saga report (post-saga aggregate)                                                                                            |
 
 ---
 

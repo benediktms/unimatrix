@@ -151,8 +151,8 @@ non-blocked drones complete).
 
 ### 7. Review
 
-Per Protocol C § C5a, classify triviality of the full swarm output and select
-the review tier. Dispatch accordingly (single Sentinel for TRIVIAL; compliance
+Per Protocol C § C6, classify triviality of the full swarm output and select the
+review tier. Dispatch accordingly (single Sentinel for TRIVIAL; compliance
 matrix for NON_TRIVIAL). Scope: parent epic task ID covering all partitions.
 
 Verdict aggregation rule: any BLOCK overrides all; any NEEDS_CHANGES overrides
@@ -160,17 +160,19 @@ PASS; PASS only when all partitions pass.
 
 ### 8. Handle Verdict
 
-Per Protocol C § C6 primitives:
+Per Protocol C § C8 primitives:
 
 - **PASS:** Proceed to synthesis (Step 9).
 - **NEEDS_CHANGES:** Identify which partitions require fixes. Spawn targeted fix
-  drones per affected partition. Re-run Verification Gate and Review (cycle
-  capped per Protocol C § C5a per-saga budget).
+  drones per affected partition. Re-run Verification Gate and Review. Per-node
+  fix cycle cap: see Protocol C § C2 (default 3 iterations per node). Per-saga
+  team-review budget: see Protocol C § C6 (max 5 team-reviews; falls back to
+  single Sentinel after).
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.
 
 ### 9. Synthesis (Persistence)
 
-After sentinel PASS (per Protocol C § C7), the lead writes a synthesis episode
+After sentinel PASS (per Protocol C § C9), the lead writes a synthesis episode
 capturing the run.
 
 Call `mcp__brain__memory_write_episode` with the following fields:

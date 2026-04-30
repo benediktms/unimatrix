@@ -184,17 +184,31 @@ After checkpoint restoration and before routing by machineState:
 
 **State routing table** (after graph is loaded and user confirms):
 
-| machineState   | Action                                                                                                                                                                                                                         |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| machineState   | Action                                                                                                                                                                                                                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `dispatching`  | Route to original mode's dispatch step. Determine mode from `intent` field in `status` response. **If any active node has `iterationCount > 0`**, resume mid-loop on that node — re-enter Protocol C § C1 at the fix-adjunct dispatch step (step 5), not from the initial implement step. Do not reset `iterationCount`. |
-| `gate_halted`  | Route to cross-repo gate check (cross-repo.md Step 8).                                                                                                                                                                         |
-| `refining`     | `compute_waves` to complete pending refinement, then route as `dispatching`.                                                                                                                                                    |
-| `failed`       | Present failed nodes to user. Offer retry/diagnose/abandon.                                                                                                                                                                     |
-| `initializing` | Graph was never fully built. Route to original mode's planning step.                                                                                                                                                            |
-| `completed`    | Terminal. Inform user: "Session already completed." Offer to start fresh.                                                                                                                                                       |
-| `cancelled`    | Terminal. Inform user: "Session was cancelled." Offer to start fresh.                                                                                                                                                           |
+| `gate_halted`  | Route to cross-repo gate check (cross-repo.md Step 8).                                                                                                                                                                                                                                                                   |
+| `refining`     | `compute_waves` to complete pending refinement, then route as `dispatching`.                                                                                                                                                                                                                                             |
+| `failed`       | Present failed nodes to user. Offer retry/diagnose/abandon.                                                                                                                                                                                                                                                              |
+| `initializing` | Graph was never fully built. Route to original mode's planning step.                                                                                                                                                                                                                                                     |
+| `completed`    | Terminal. Inform user: "Session already completed." Offer to start fresh.                                                                                                                                                                                                                                                |
+| `cancelled`    | Terminal. Inform user: "Session was cancelled." Offer to start fresh.                                                                                                                                                                                                                                                    |
 
-**Mid-loop resume rule (Protocol C § C1, step 7):** When resuming into `dispatching` and a node is found with `iterationCount > 0` and `lastReviewVerdict: "FAIL"`, treat that node as mid-convergence. Resume at iteration `iterationCount + 1` — dispatch a fix adjunct carrying the `lastReviewNotes` from the prior sentinel. The convergence loop (C1 steps 4–7) continues until the node reaches a terminal state or the cap is hit. This satisfies success criterion #3 of unm-735: "Resuming a saga via `--resume` picks up mid-loop on the failing node, not from scratch."
+**Mid-loop resume rule (Protocol C § C1, step 7):** When resuming into
+`dispatching` and a node is found with `iterationCount > 0` and
+`lastReviewVerdict: "FAIL"`, treat that node as mid-convergence. Resume at
+iteration `iterationCount + 1` — dispatch a fix adjunct carrying the
+`lastReviewNotes` from the prior sentinel. The convergence loop (C1 steps 4–7)
+continues until the node reaches a terminal state or the cap is hit. This
+satisfies success criterion #3 of unm-735: "Resuming a saga via `--resume` picks
+up mid-loop on the failing node, not from scratch."
+
+> **Known issue (unm-735.15):** The trimatrix server's refinement gate may wedge
+> in `refining` state if `compute_waves` returns `Refinement not approved` and
+> the elicitation feedback channel is not consumed. Workaround: bypass the
+> trimatrix `complete_node` fence and use brain task closure directly
+> (`mcp__brain__tasks_apply_event` `status_changed`). The wedge persists for the
+> session; restart Claude Code or `restore_checkpoint` to recover.
 
 #### Path B: Task-Based Resume (resume <task-id>)
 
@@ -405,24 +419,21 @@ directly modified — their readiness is recomputed by topology traversal.
 Upstream DONE/MERGED nodes are never touched on downstream failure. Their PR
 metadata, `iterationCount`, and `lastReviewVerdict` remain intact.
 
-#### C5: State Diagram
+> **Legacy NodeStatus.BLOCKED:** A deprecated status value still exists for
+> ELICIT_GATE pending elicitation. New code should use
+> `readinessStatus: BLOCKED` and `blockedBy: [...]` for topology blocking;
+> `NodeStatus.BLOCKED` is retained for backwards compatibility with existing
+> call sites and will be removed in a future version (see brain task unm-1b7.8).
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> ACTIVE : dispatch (implement)
-    ACTIVE --> VERIFY : VERIFY_COMPILE pass + lead verify pass
-    ACTIVE --> FAILED : VERIFY_COMPILE fail / lead verify fail (cap)
-    VERIFY --> REVIEWING : enter review
-    REVIEWING --> DONE : review_passed (PASS)
-    REVIEWING --> FIX_CYCLE : review_failed (NEEDS_CHANGES) + iterationCount < maxIterations
-    REVIEWING --> FAILED : review_failed + iterationCount == maxIterations (cap exhausted)
-    FIX_CYCLE --> ACTIVE : dispatch fix adjunct
-    FAILED --> PENDING : reset_node (leaseVersion bump)
-    DONE --> [*]
-```
+#### C5: Checkpoint Cadence
 
-#### C5a: Review Tier Selection
+The lead calls `mcp__unimatrix__save_checkpoint` before each fix-adjunct
+dispatch (C1 step 7). This makes session state durable across crashes and
+enables RESUME (`unm-735.11`) to pick up mid-loop on the failing node rather
+than re-executing completed work from scratch. Without a checkpoint before each
+dispatch, an interrupted session loses the current iteration context.
+
+#### C6: Review Tier Selection
 
 Before dispatching review (step 4 in C1), the lead derives triviality inputs
 from the current change set and calls `classifyTriviality()` from
@@ -523,7 +534,24 @@ this version of the skill file is not present.
 classifyTriviality unavailable → single Sentinel (compatibility fallback)
 ```
 
-#### C6: MCP Primitives Reference
+#### C7: State Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> ACTIVE : dispatch (implement)
+    ACTIVE --> VERIFY : VERIFY_COMPILE pass + lead verify pass
+    ACTIVE --> FAILED : VERIFY_COMPILE fail / lead verify fail (cap)
+    VERIFY --> REVIEWING : enter review
+    REVIEWING --> DONE : review_passed (PASS)
+    REVIEWING --> FIX_CYCLE : review_failed (NEEDS_CHANGES) + iterationCount < maxIterations
+    REVIEWING --> FAILED : review_failed + iterationCount == maxIterations (cap exhausted)
+    FIX_CYCLE --> ACTIVE : dispatch fix adjunct
+    FAILED --> PENDING : reset_node (leaseVersion bump)
+    DONE --> [*]
+```
+
+#### C8: MCP Primitives Reference
 
 | Primitive             | Kind     | Effect                                                                                                                |
 | --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -535,7 +563,7 @@ classifyTriviality unavailable → single Sentinel (compatibility fallback)
 | `complete_node`       | MCP tool | Called by adjunct on successful node completion. Derives DONE/MERGED/PR_CREATED from node metadata.                   |
 | `fail_node`           | MCP tool | Called by adjunct on VERIFY_COMPILE failure or by lead on cap exhaustion.                                             |
 
-#### C7: Post-Completion Summary (Mandatory)
+#### C9: Post-Completion Summary (Mandatory)
 
 After every node transitions to a terminal status (DONE, MERGED, FAILED), the
 lead emits a structured summary. The summary lands in three places:
@@ -566,10 +594,10 @@ is mandatory before dispatching the next node or wave.
 
 See Protocol E for the closure precondition that depends on this summary.
 
-#### C8: Post-Saga Aggregate Report (Mandatory)
+#### C10: Post-Saga Aggregate Report (Mandatory)
 
 After **all nodes have reached a terminal status** (DONE, MERGED, or FAILED) and
-all C7 per-node summaries have been emitted, the lead calls `saga_report` before
+all C9 per-node summaries have been emitted, the lead calls `saga_report` before
 closing the epic.
 
 ```
@@ -583,9 +611,9 @@ with the session label. The report surfaces:
 - Iteration statistics: average and maximum iteration counts.
 - Escalation details: nodes that exhausted the review cap or failed after
   review.
-- Summaries: aggregated C7 records (commits, what changed).
+- Summaries: aggregated C9 records (commits, what changed).
 
-**Sequence:** C7 per-node summary → `close_node` → (all nodes done) → C8
+**Sequence:** C9 per-node summary → `close_node` → (all nodes done) → C10
 `saga_report` → `tasks_close` epic.
 
 The lead renders the report to the conversation so the user can assess saga
@@ -665,9 +693,9 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.
 - **Per-node summary precondition:** Before calling `close_node`, the lead MUST
-  have emitted the post-completion summary per Protocol C § C7.
+  have emitted the post-completion summary per Protocol C § C9.
 - **Post-saga report precondition:** Before calling `tasks_close` on the epic,
-  the lead MUST call `saga_report` per Protocol C § C8 and render the result to
+  the lead MUST call `saga_report` per Protocol C § C10 and render the result to
   the conversation.
 
 ### Protocol F: Agent Communication
@@ -813,14 +841,14 @@ For modes that create brain tasks:
 
    The script reads the plan from stdin (Claude Code passes it as JSON), parses
    node count and risk keywords, and exits 0 with `permissionDecision: "allow"`
-   for trivial plans, or exits 0 with `permissionDecision: "defer"` to fall
-   through to the human prompt.
+   (wrapped in `hookSpecificOutput`) for trivial plans, or exits 0 with
+   `permissionDecision: "defer"` to fall through to the human prompt.
 
    ##### Pattern B: Block plans that touch sensitive paths
 
    The hook script checks the plan body for files matching `secrets/` or `auth/`
-   and emits `permissionDecision: "deny"` with a reason. The lead receives the
-   denial, enters `refining` state, and must re-plan.
+   and emits `permissionDecision: "deny"` with a `permissionDecisionReason`. The
+   lead receives the denial, enters `refining` state, and must re-plan.
 
    ##### Pattern C: Archive every plan to brain records
 
@@ -831,26 +859,39 @@ For modes that create brain tasks:
 
    ##### Hook payload contract
 
-   Claude Code passes the following JSON to the hook over stdin:
+   Claude Code passes the following JSON to the hook over stdin (8 fields per
+   the Claude Code hooks documentation):
 
    ```json
    {
+     "session_id": "<claude-session-id>",
+     "transcript_path": "<path to JSONL transcript>",
+     "cwd": "<current working directory>",
+     "permission_mode": "<default|acceptEdits|bypassPermissions|plan>",
+     "hook_event_name": "PreToolUse",
      "tool_name": "ExitPlanMode",
      "tool_input": { "plan": "<the full plan markdown>" },
-     "session_id": "<claude-session-id>",
-     "transcript_path": "<path to JSONL transcript>"
+     "tool_use_id": "<tool use ID>"
    }
    ```
 
-   The hook responds on stdout with:
+   The hook responds on stdout with a **wrapped** response shape:
 
    ```json
    {
-     "permissionDecision": "allow | deny | defer",
-     "reason": "<optional human-readable reason>",
-     "updatedInput": {}
+     "hookSpecificOutput": {
+       "hookEventName": "PreToolUse",
+       "permissionDecision": "allow" | "deny" | "ask" | "defer",
+       "permissionDecisionReason": "<human-readable reason>",
+       "updatedInput": { "plan": "<optionally rewritten plan>" },
+       "additionalContext": "<optional context string for Claude>"
+     }
    }
    ```
+
+   Decision values: `allow` (proceed), `deny` (block), `ask` (surface permission
+   dialog to user), `defer` (pause — non-interactive `-p` mode only). Decision
+   precedence: `deny > defer > ask > allow`.
 
    `updatedInput` is the escape hatch for non-interactive sessions (`-p` flag):
    a hook returning `permissionDecision: "allow"` together with `updatedInput`
