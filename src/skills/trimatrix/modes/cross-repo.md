@@ -121,9 +121,9 @@ approval — present plan, wait for user approval 6c. dispatch_wave 6d. Create
 worktrees per node: <repo-root>/.claude/worktrees/<branch> 6e. Create brain
 tasks per node 6f. Dispatch drones (Borg cube if multi-node wave, create team)
 6g. Record outcomes: complete_node or fail_node 6h. sentinel review per Protocol
-C § C5a (tier selection) and § C6 (verdict handling) 6i. Create PRs via gh pr
-create 6j. Persist checkpoint (Step 5) 6k. Check for merge gate → Step 7, or
-loop to 6a
+C § C6 (tier selection) and § C2 (cap-exhaustion verdict handling) 6i. Create
+PRs via gh pr create 6j. Persist checkpoint (Step 5) 6k. Check for merge gate →
+Step 7, or loop to 6a
 
 ### Step 7: Merge Gate
 

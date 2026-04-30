@@ -863,10 +863,13 @@ Deno.test("handler: reset_node — idempotency: already-PENDING with same leaseV
 });
 
 // ---------------------------------------------------------------------------
-// materialize_plan handler contract
+// saga_report handler contract — empty graph + format flags
+// (NOTE: previously misnamed as "materialize_plan" — these exercise
+// buildSagaReport / renderSagaReport. materialize_plan-specific contracts
+// live in materialize.test.ts.)
 // ---------------------------------------------------------------------------
 
-Deno.test("handler: materialize_plan — empty graph produces valid markdown output", () => {
+Deno.test("handler: saga_report — empty graph produces valid markdown output", () => {
   const cp = makeCp(makeGraph([]));
   // buildSagaReport on empty graph should not throw and must return valid shape
   const report = buildSagaReport(cp);
@@ -881,7 +884,7 @@ Deno.test("handler: materialize_plan — empty graph produces valid markdown out
   assertEquals(md.includes("## Summary"), true);
 });
 
-Deno.test("handler: materialize_plan — format: json returns JSON-parseable; markdown returns ## heading", () => {
+Deno.test("handler: saga_report — format: json returns JSON-parseable; markdown returns ## heading", () => {
   const nodes: Node[] = [
     makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
   ];

@@ -22,7 +22,7 @@ Before dispatching, determine scope (in priority order):
 
 ### Tier Selection
 
-Per Protocol C § C5a: classify triviality of the scope before dispatching.
+Per Protocol C § C6: classify triviality of the scope before dispatching.
 
 - **TRIVIAL** verdict → Single Sentinel (default path).
 - **NON_TRIVIAL** verdict → Compliance Matrix Review (Borg sphere).
@@ -63,7 +63,7 @@ Deploy multiple sentinels reviewing from different angles (Borg sphere).
    only if all PASS
 6. Cleanup: shutdown team, delete team
 
-Increment `teamReviewCount` per Protocol C § C5a per-saga budget. When cap
+Increment `teamReviewCount` per Protocol C § C6 per-saga budget. When cap
 exhausted, fall back to Single Sentinel.
 
 ## Flags

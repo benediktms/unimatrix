@@ -217,7 +217,7 @@ Use Verification Gate Protocol. Run after all adjuncts in a wave complete.
 
 ### Step 8: Review
 
-Per Protocol C § C5a, classify triviality and select review tier before
+Per Protocol C § C6, classify triviality and select review tier before
 dispatching review.
 
 Derive `locDelta`, `fileCount`, `riskKeywords`, `crossPackage`, and `crossBrain`

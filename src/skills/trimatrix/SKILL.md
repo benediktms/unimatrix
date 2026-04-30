@@ -604,7 +604,7 @@ closing the epic.
 mcp__unimatrix__saga_report({ format: "markdown", sessionLabel: "<label>" })
 ```
 
-The tool reads checkpoint state and aggregates C7 node-summary records tagged
+The tool reads checkpoint state and aggregates C9 node-summary records tagged
 with the session label. The report surfaces:
 
 - Convergence quality: one-shot completions, retried convergences, failures.

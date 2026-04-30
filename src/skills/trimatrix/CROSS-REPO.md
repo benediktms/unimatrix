@@ -830,7 +830,7 @@ Options:
 
 ## Per-Node Convergence in Cross-Repo Sagas
 
-Cross-repo sagas apply the same convergence loop (Protocol C §§ C1–C8 in
+Cross-repo sagas apply the same convergence loop (Protocol C §§ C1–C10 in
 `SKILL.md`) per node that single-repo plan-execute sagas do. Each node carries
 `iterationCount`, `maxIterations`, `lastReviewVerdict`, and `lastReviewNotes`
 fields regardless of how many repositories the saga spans.

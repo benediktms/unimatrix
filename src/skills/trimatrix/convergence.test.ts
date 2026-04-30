@@ -740,6 +740,22 @@ Deno.test("convergence scenario H: reset_node throws on ACTIVE node; post-fail r
   // The new active lease is leaseAtRedispatch = leaseAfterFail + 1.
   // A server-side fence check (leaseVersion === node.leaseVersion) would reject it.
   assertEquals(leaseAtRedispatch > leaseAfterFail, true);
+
+  // Simulate the fence-rejection path: the original drone returns AFTER reset
+  // and tries to write with its stale leaseVersion. The server-side fence in
+  // update_node/complete_node/fail_node compares the provided leaseVersion to
+  // the node's current leaseVersion; mismatch is rejected.
+  const currentNode = cp2.graph.nodes["h-node2"];
+  const stalePacket = {
+    attemptId: "drone-original-attempt",
+    leaseVersion: leaseAfterFail, // pre-reset value
+  };
+  const fenceMatches = stalePacket.leaseVersion === currentNode.leaseVersion;
+  assertEquals(
+    fenceMatches,
+    false,
+    "stale leaseVersion from a pre-reset attempt MUST NOT match the current lease",
+  );
 });
 
 // ---------------------------------------------------------------------------

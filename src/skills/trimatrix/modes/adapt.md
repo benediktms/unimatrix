@@ -40,7 +40,7 @@ for cycle in 1..max_cycles:
 
   2b. REVIEW
       Generate designation via Designation Generation Protocol.
-      Per Protocol C § C5a, classify triviality and select review tier (derive
+      Per Protocol C § C6, classify triviality and select review tier (derive
       locDelta/fileCount/riskKeywords/crossPackage/crossBrain from git output and
       routing signal file; apply cost-cap: teamReviewCount >= 5 → force single Sentinel).
       Dispatch sentinel (TRIVIAL / cost-cap / compatibility fallback) or agent team

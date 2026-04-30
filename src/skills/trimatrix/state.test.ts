@@ -2604,6 +2604,32 @@ Deno.test("transition: review_failed idempotent on cap-exhausted FAILED node (ME
   );
 });
 
+// MEDIUM-A1 broadened (Sentinel A pass 2): review_failed must no-op on ANY
+// FAILED node, not only cap-exhausted ones. Covers drone-crash failures via
+// node_failed where iterationCount < cap. Symmetric with HIGH-A1's any-FAILED
+// throw on review_passed — node_reset is the only legal recovery path.
+Deno.test("transition: review_failed idempotent on FAILED node with iterationCount below cap (MEDIUM-A1 broad)", () => {
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      iterationCount: 1,
+      maxIterations: 3,
+      failureReason: "drone crashed mid-execution",
+    }),
+  ]);
+  const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
+
+  // Subsequent review_failed must NOT resurrect or increment.
+  const result = transition(cp, { type: "review_failed", nodeId: "n1" });
+
+  assertEquals(result.graph.nodes["n1"].status, NodeStatus.FAILED);
+  assertEquals(result.graph.nodes["n1"].iterationCount, 1);
+  assertEquals(
+    result.graph.nodes["n1"].failureReason,
+    "drone crashed mid-execution",
+  );
+});
+
 // LOW-A1: node_reset clears lastReviewVerdict and lastReviewNotes
 Deno.test("transition: node_reset clears lastReviewVerdict and lastReviewNotes (LOW-A1)", () => {
   const graph = makeGraph([

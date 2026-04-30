@@ -536,15 +536,14 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
     case "review_failed": {
       const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
       if (!node) return { ...checkpoint, updatedAt: now };
-      // Idempotency guard: if the node is already in cap-exhausted FAILED state,
-      // a duplicate review_failed must not increment iterationCount further
-      // (which would produce corrupt "4/3" arithmetic). Return the checkpoint
-      // unchanged — replay-safe no-op.
-      if (
-        node.status === NodeStatus.FAILED &&
-        (node.iterationCount ?? 0) >= (node.maxIterations ?? 3)
-      ) {
-        return checkpoint; // idempotent no-op — already terminal
+      // Symmetric guard with review_passed (HIGH-A1): a node already in FAILED
+      // status MUST NOT be resurrected or have its iterationCount mutated by
+      // another review event. node_reset is the only legal recovery path.
+      // Covers: cap-exhausted FAILED (avoids "4/3" arithmetic), drone-crash
+      // FAILED via node_failed with iterationCount < cap (avoids
+      // ACTIVE-resurrection), any other FAILED entry. Replay-safe no-op.
+      if (node.status === NodeStatus.FAILED) {
+        return checkpoint; // idempotent no-op — terminal failure, await reset
       }
       const newIterationCount = (node.iterationCount ?? 0) + 1;
       const cap = node.maxIterations ?? 3;
