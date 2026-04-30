@@ -144,9 +144,9 @@ Wait for all drones to notify completion. Check brain tasks for blocked states.
 Blocked drone → assess whether the partition can be re-dispatched or must be
 skipped. Report to user if skipping.
 
-### 6. Verification Gate
+### 6. Convergence Loop Verification
 
-Use Protocol C (Verification Gate). Run after all drones complete (or all
+Use Protocol C (Convergence Loop). Run after all drones complete (or all
 non-blocked drones complete).
 
 ### 7. Review
@@ -164,10 +164,10 @@ Per Protocol C § C8 primitives:
 
 - **PASS:** Proceed to synthesis (Step 9).
 - **NEEDS_CHANGES:** Identify which partitions require fixes. Spawn targeted fix
-  drones per affected partition. Re-run Verification Gate and Review. Per-node
-  fix cycle cap: see Protocol C § C2 (default 3 iterations per node). Per-saga
-  team-review budget: see Protocol C § C6 (max 5 team-reviews; falls back to
-  single Sentinel after).
+  drones per affected partition. Re-run the convergence loop and review.
+  Per-node fix cycle cap: see Protocol C § C2 (default 3 iterations per node).
+  Per-saga team-review budget: see Protocol C § C6 (max 5 team-reviews; falls
+  back to single Sentinel after).
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.
 
 ### 9. Synthesis (Persistence)

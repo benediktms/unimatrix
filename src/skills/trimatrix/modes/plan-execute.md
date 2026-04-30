@@ -209,11 +209,11 @@ After all adjuncts in a wave complete:
   failure reason
 - `mcp__unimatrix__save_checkpoint` to persist state
 - Loop back to `next_wave` for the next wave. If null → all waves complete,
-  proceed to Verification Gate.
+  proceed to the Convergence Loop verification gate.
 
-### Step 7: Verification Gate
+### Step 7: Convergence Loop Verification
 
-Use Verification Gate Protocol. Run after all adjuncts in a wave complete.
+Use Protocol C (Convergence Loop). Run after all adjuncts in a wave complete.
 
 ### Step 8: Review
 
