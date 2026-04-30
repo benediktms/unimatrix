@@ -5,6 +5,29 @@
  *   "{Number} of {Total}, {Ordinal} {Title} of {Unit}"
  */
 
+/**
+ * Derives a stable Trimatrix ID in [1, 999] from a session id (and optionally a git commit).
+ * Pure FNV-1a 32-bit. The gitCommit parameter is reserved for callers that already hold
+ * commit context; the MCP designate handler currently does not pass it because the handler
+ * is synchronous and a `git rev-parse` subprocess would force async. Session id alone
+ * provides cross-session uniqueness across the [1, 999] codomain.
+ */
+export function deriveTrimatrixId(sessionId: string, gitCommit?: string): number {
+  // FNV-1a 32-bit: offset basis and prime are standard constants.
+  const FNV_PRIME = 0x01000193;
+  const FNV_OFFSET = 0x811c9dc5;
+
+  const input = gitCommit ? `${sessionId}\0${gitCommit}` : sessionId;
+  let hash = FNV_OFFSET;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    // Multiply mod 2^32 using unsigned 32-bit arithmetic.
+    hash = (Math.imul(hash, FNV_PRIME) >>> 0);
+  }
+  // Map to [1, 999].
+  return (hash % 999) + 1;
+}
+
 export const NUMBERS = [
   "",
   "One",

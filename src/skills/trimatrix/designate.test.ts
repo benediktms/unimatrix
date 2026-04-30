@@ -17,6 +17,7 @@
 import { assertEquals, assertMatch, assertNotEquals } from "@std/assert";
 import {
   designate,
+  deriveTrimatrixId,
   NUMBERS,
   ORDINALS,
   Role,
@@ -316,4 +317,77 @@ Deno.test("Locutus: returns trimatrix_id when trimatrix=true", () => {
   assertEquals(designations.length, 1);
   assertEquals(designations[0], "Locutus of Borg");
   assertEquals(trimatrix_id, 77);
+});
+
+// ---------------------------------------------------------------------------
+// deriveTrimatrixId
+// ---------------------------------------------------------------------------
+
+Deno.test("deriveTrimatrixId: output is in [1, 999]", () => {
+  const id = deriveTrimatrixId("trimatrix-2026-01-01-abc1");
+  if (id < 1 || id > 999) {
+    throw new Error(`deriveTrimatrixId out of range: ${id}`);
+  }
+});
+
+Deno.test("deriveTrimatrixId: same input produces same output (deterministic)", () => {
+  const sessionId = "trimatrix-2026-01-01-abc1";
+  const a = deriveTrimatrixId(sessionId);
+  const b = deriveTrimatrixId(sessionId);
+  assertEquals(a, b, "Expected identical outputs for the same session id");
+});
+
+Deno.test("deriveTrimatrixId: git commit mix-in is deterministic", () => {
+  const sessionId = "trimatrix-2026-01-01-xyz9";
+  const a = deriveTrimatrixId(sessionId, "a1b2c3d");
+  const b = deriveTrimatrixId(sessionId, "a1b2c3d");
+  assertEquals(a, b);
+});
+
+Deno.test("deriveTrimatrixId: session + commit differs from session alone", () => {
+  const sessionId = "trimatrix-2026-01-01-xyz9";
+  const withCommit = deriveTrimatrixId(sessionId, "a1b2c3d");
+  const without = deriveTrimatrixId(sessionId);
+  assertNotEquals(withCommit, without);
+});
+
+Deno.test("deriveTrimatrixId: output range [1,999] for 1000 random session ids", () => {
+  for (let i = 0; i < 1000; i++) {
+    const sessionId = `trimatrix-session-${Math.random().toString(36).slice(2)}-${i}`;
+    const id = deriveTrimatrixId(sessionId);
+    if (id < 1 || id > 999) {
+      throw new Error(`deriveTrimatrixId out of range: ${id} for session ${sessionId}`);
+    }
+  }
+});
+
+Deno.test("deriveTrimatrixId: two concurrent sessions produce different ids with >99% probability (birthday)", () => {
+  // With 999 buckets and 2 independent sessions, P(match) = 1/999 ≈ 0.1%.
+  // We draw 200 non-overlapping pairs and verify fewer than 1% collide.
+  let collisions = 0;
+  const trials = 200;
+  for (let i = 0; i < trials; i++) {
+    const s1 = `trimatrix-session-A-${Math.random().toString(36).slice(2)}-${i}`;
+    const s2 = `trimatrix-session-B-${Math.random().toString(36).slice(2)}-${i}`;
+    if (deriveTrimatrixId(s1) === deriveTrimatrixId(s2)) {
+      collisions++;
+    }
+  }
+  const rate = collisions / trials;
+  if (rate >= 0.01) {
+    throw new Error(`Pairwise collision rate too high: ${collisions}/${trials} = ${(rate * 100).toFixed(2)}%`);
+  }
+});
+
+Deno.test("deriveTrimatrixId: distinct ids across 200 unique session ids (distribution check)", () => {
+  // Verify the hash is not degenerate: 200 unique sessions should produce
+  // at least 150 distinct ids (expecting ~150 due to birthday paradox in [1,999]).
+  const ids = new Set<number>();
+  for (let i = 0; i < 200; i++) {
+    const sessionId = `trimatrix-session-${i}-${Math.random().toString(36).slice(2)}`;
+    ids.add(deriveTrimatrixId(sessionId));
+  }
+  if (ids.size < 150) {
+    throw new Error(`Too few distinct ids: ${ids.size} from 200 inputs — hash may be degenerate`);
+  }
 });
