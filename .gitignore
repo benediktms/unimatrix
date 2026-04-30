@@ -2,6 +2,7 @@
 *.bak
 __pycache__/
 *.pyc
+*.egg-info/
 dist/
 .venv/
 .opencode/
