@@ -802,9 +802,16 @@ server.tool(
 
 server.tool(
   "compute_waves",
-  "Validate graph and compute execution waves. In initializing state, transitions to plan_review (call finalize_plan to approve). In refining state, uses partial recomputation and transitions to dispatching (refinement_approved).",
-  {},
-  async () => {
+  "Validate graph and compute execution waves. In initializing state, transitions to plan_review (call finalize_plan to approve). In refining state, uses partial recomputation and transitions to dispatching (refinement_approved). Pass `approve: true` to bypass interactive elicitation in refining state — required for headless/subagent contexts where elicitForm cannot be presented.",
+  {
+    approve: z.boolean().optional().describe(
+      "If true and machineState is refining, bypass the interactive elicitForm approval prompt and transition directly to refinement_approved. Use for headless callers (CI, subagents) or to recover from a wedged refining state where prior elicitations cannot be resolved (see unm-735.15).",
+    ),
+    notes: z.string().optional().describe(
+      "Optional notes recorded with the refinement. Only used when `approve: true`.",
+    ),
+  },
+  async (params: { approve?: boolean; notes?: string }) => {
     const cp = requireCheckpoint();
 
     const validationResult = validate(cp.graph);
@@ -882,6 +889,48 @@ server.tool(
         `New edges: ${addedEdges.length}`,
         `New repos: ${addedRepos.length}`,
       ].join(" | ");
+
+      // Headless / wedge-recovery short-circuit: if caller explicitly approves
+      // via the `approve: true` parameter, skip the interactive elicitForm and
+      // transition directly. Required for subagents, CI, and recovery from a
+      // wedged refining state where elicitForm cannot be presented or has
+      // already been declined (see unm-735.15).
+      if (params.approve === true) {
+        const refinementRecord = {
+          timestamp: new Date().toISOString(),
+          addedNodes,
+          addedEdges,
+          addedRepos,
+          ...(params.notes !== undefined ? { notes: params.notes } : {}),
+        };
+
+        const refinementResult = await transitionWithEffects(
+          {
+            ...cp,
+            waves: mergedWaves,
+            refinementHistory: [...cp.refinementHistory, refinementRecord],
+          },
+          { type: "refinement_approved" },
+        );
+        checkpoint = applySubgraphs(refinementResult.checkpoint);
+
+        await syncGraphDepsToBrainCore(cp.graph, undefined, brainExec);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                machineState: checkpoint.machineState,
+                waves: checkpoint.waves,
+                refinementHistory: checkpoint.refinementHistory,
+                approvedHeadless: true,
+              }),
+            },
+          ],
+        };
+      }
 
       const elicitMessage = `Refinement ready to apply.\n\n` +
         `Changes: ${changesSummary}\n\n` +

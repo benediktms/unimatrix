@@ -205,10 +205,22 @@ up mid-loop on the failing node, not from scratch."
 
 > **Known issue (unm-735.15):** The trimatrix server's refinement gate may wedge
 > in `refining` state if `compute_waves` returns `Refinement not approved` and
-> the elicitation feedback channel is not consumed. Workaround: bypass the
+> the elicitation feedback channel is not consumed (subagent context, stale
+> session-id, declined elicitation, etc.).
+>
+> **Fix shipped:** `compute_waves({ approve: true })` bypasses the interactive
+> elicitForm and transitions directly to dispatching. Use this in headless
+> contexts or to recover from a wedged session:
+>
+> ```
+> mcp__unimatrix__compute_waves({ approve: true, notes: "<optional rationale>" })
+> ```
+>
+> The `notes` field is recorded in `refinementHistory`. For sessions still
+> running pre-fix server code, the legacy workaround applies: bypass the
 > trimatrix `complete_node` fence and use brain task closure directly
-> (`mcp__brain__tasks_apply_event` `status_changed`). The wedge persists for the
-> session; restart Claude Code or `restore_checkpoint` to recover.
+> (`mcp__brain__tasks_apply_event` `status_changed`); restart Claude Code or
+> `restore_checkpoint` to recover.
 
 #### Path B: Task-Based Resume (resume <task-id>)
 
