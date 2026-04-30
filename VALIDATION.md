@@ -43,7 +43,7 @@ python3 build.py --target all
 | C1 | Agents load | `/agents` or check agent list | All 6 agents visible (Queen, Drone, Sentinel, Probe, Designate, Locutus) |
 | C2 | Skills load | Check available skills | `/trimatrix` skill available (single entry point for all collective operations) |
 | C3 | Agent dispatch | Ask lead to dispatch a Drone | `Agent` tool invokes `drone-protocol`, receives response |
-| C4 | Skill invocation | Run `/comply` on a recent change | Validation Adjunct dispatched via `Agent` tool, returns review |
+| C4 | Skill invocation | Run `/trimatrix REVIEW intent` on a recent change | Validation Adjunct dispatched via `Agent` tool, returns review |
 | C5 | Background agents | Ask lead to investigate codebase | Probe fires in background, results collected |
 | C6 | Rules applied | Check if routing/coordination rules active | Lead follows intent classification table |
 | C7 | Hooks execute | Make a commit, check logs | `post-commit` hook fires |
@@ -57,7 +57,7 @@ python3 build.py --target all
 | O1 | Agents load | Check agent list in OpenCode | All 6 agents visible as subagents |
 | O2 | Skills load | Check available skills | All 10 skills available (read from .claude/skills/) |
 | O3 | Agent dispatch | Ask lead to dispatch a Drone | `task(subagent_type="drone-protocol", ...)` invokes agent, receives response |
-| O4 | Skill invocation | Run `/comply` on a change | Validation Adjunct dispatched via `task()`, returns review |
+| O4 | Skill invocation | Run `/trimatrix REVIEW intent` on a change | Validation Adjunct dispatched via `task()`, returns review |
 | O5 | Background agents | Ask lead to investigate | Probe fires with `run_in_background=true`, results collected |
 | O6 | Rules applied | Check routing/coordination rules | Lead follows intent classification |
 | O7 | Plugin hooks | Use tools, check cost tracking | `tool.execute.after` fires, cost tracked in state |

@@ -390,7 +390,7 @@ COLLABORATIVE WAVE ACTIVE. You are part of a coordinated formation for epic <epi
 
 ## Recon Dispatch
 
-When needing reconnaissance before planning (or when prompted by `/recon`), create recon tasks and **present a Recon Summary to the user before dispatching**:
+When needing reconnaissance before planning (or when prompted by `/trimatrix INVESTIGATE intent`), create recon tasks and **present a Recon Summary to the user before dispatching**:
 
 ```markdown
 ## Recon Summary
@@ -418,7 +418,7 @@ When needing reconnaissance before planning (or when prompted by `/recon`), crea
 - **Scope:** <what to analyze>
 ```
 
-Generate designations before dispatching: `/designate <agent-count> --trimatrix` — use `--role Probe` for probes, `--role Designate` for designates.
+Generate designations before dispatching: call `mcp__unimatrix__designate` with `count: <N>`, `trimatrix: true`, and `role: PROBE` for probes or `role: DESIGNATE` for designates.
 
 Spawn recon agents with designations in the prompt:
 
@@ -455,7 +455,7 @@ Minimize token consumption across the collective:
 
 ## Task Closure Protocol
 
-Task closure is not optional. Orphaned open tasks pollute the brain and cause `/reengage` to re-dispatch completed work. Every task must reach a terminal state (`done` or `cancelled`).
+Task closure is not optional. Orphaned open tasks pollute the brain and cause `/trimatrix RESUME intent` to re-dispatch completed work. Every task must reach a terminal state (`done` or `cancelled`).
 
 ### Drone Responsibility
 

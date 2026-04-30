@@ -61,7 +61,7 @@ stateDiagram-v2
 - **`plan_review`** — Wave plan computed and ready for user review. Call `finalize_plan` to begin dispatch, or `revise_plan` to iterate on the plan.
 - **`dispatching`** — Waves are executing. drones are active or completed. Machine loops through `next_wave()`, dispatches, monitors nodes.
 - **`gate_halted`** — A wave with `hasMergeGate: true` completed. External PRs must be merged before proceeding. Machine waits for `clear_gate()` events.
-- **`failed`** — One or more nodes failed. User chooses: retry failed nodes, invoke `/diagnose`, or abandon.
+- **`failed`** — One or more nodes failed. User chooses: retry failed nodes, invoke `/trimatrix DIAGNOSE intent`, or abandon.
 - **`completed`** — All waves executed, all nodes in terminal state. Clean up worktrees and report results.
 - **`cancelled`** — Execution cancelled from a non-terminal state. Terminal state — no further transitions allowed. User can optionally archive the checkpoint.
 
@@ -105,7 +105,7 @@ flowchart TD
     GateHalt --> LoopGate["Persist. Halt.\nWait user resume."]
     FailHand --> FailChoice{User<br/>action?}
     FailChoice -->|retry| MonitorAdjuncts
-    FailChoice -->|diagnose| Diagnose["Invoke /diagnose"]
+    FailChoice -->|diagnose| Diagnose["Invoke /trimatrix DIAGNOSE"]
     FailChoice -->|abandon| Done
 
     Done --> [*]
@@ -164,7 +164,7 @@ sequenceDiagram
         alt retry
             Lead->>Server: dispatch_wave(waveId)<br/>Spawn new drones
         else diagnose
-            Lead->>Lead: Invoke /diagnose
+            Lead->>Lead: Invoke /trimatrix DIAGNOSE
         else abandon
             Lead->>Server: Mark tasks done\nRemove worktrees
         end
@@ -734,7 +734,7 @@ External PRs must be merged. Use `/trimatrix cross-repo --resume` to check PR st
 
 One or more drones reported failure. The machine entered `failed` state. Options:
 - **retry** — Re-dispatch failed nodes.
-- **diagnose** — Invoke `/diagnose` with failure logs.
+- **diagnose** — Invoke `/trimatrix DIAGNOSE` with failure logs.
 - **abandon** — Close tasks, tear down worktrees, preserve results.
 
 ---
