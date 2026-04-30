@@ -220,6 +220,27 @@ function generateSessionLabel(repos: RepoMetadata[]): string {
  * from the policies plus current node statuses, so callers can tell at a
  * glance whether a subgraph is pending, active, completed, or failed.
  */
+/**
+ * Build a `Map<taskId, unresolvedCount>` from the cached `externalBlockers`
+ * fields stamped on graph nodes by the most recent `dispatch_wave` brain
+ * consultation. The map is consumed by `subgraphOutcomeWithBlockers` so the
+ * status response reflects whether external gates have cleared without a
+ * fresh brain round-trip on every status read.
+ *
+ * Each `Node.externalBlockers[]` entry is treated as unresolved unless its
+ * `resolvedAt` field is set (matches the brain `external_blocker_resolved`
+ * event semantics).
+ */
+function externalBlockerSnapshot(graph: Graph): Map<string, number> {
+  const snapshot = new Map<string, number>();
+  for (const node of Object.values(graph.nodes)) {
+    if (!node.taskId || !node.externalBlockers) continue;
+    const unresolved = node.externalBlockers.filter((b) => b.resolvedAt === undefined).length;
+    if (unresolved > 0) snapshot.set(node.taskId, unresolved);
+  }
+  return snapshot;
+}
+
 function summarizeSubgraph(sg: Subgraph, graph: Graph): SubgraphSummary {
   return {
     id: sg.id,
@@ -232,7 +253,11 @@ function summarizeSubgraph(sg: Subgraph, graph: Graph): SubgraphSummary {
     derived: sg.derived,
     completionPolicy: sg.completionPolicy,
     failurePolicy: sg.failurePolicy,
-    outcome: subgraphOutcome(graph, sg),
+    // Use the blocker-aware variant so GATED outcomes correctly reflect
+    // external-blocker state cached on the graph from prior dispatch_wave
+    // consultations. Falls through to the blocker-blind path when no
+    // external blockers are present (snapshot is empty).
+    outcome: subgraphOutcomeWithBlockers(graph, sg, externalBlockerSnapshot(graph)),
     ...(sg.label !== undefined ? { label: sg.label } : {}),
     ...(sg.parentId !== undefined ? { parentId: sg.parentId } : {}),
     ...(sg.gates ? { gates: sg.gates } : {}),
@@ -1321,7 +1346,10 @@ server.tool(
         brainExec,
       );
       if (unresolvedCount > 0) {
-        // Stamp cached snapshot onto the node and mark readinessStatus BLOCKED
+        // Stamp cached snapshot onto the node and mark `externallyBlocked`.
+        // Do NOT touch `readinessStatus` — that's the topology axis, owned by
+        // `recomputeReadiness`. `externallyBlocked` is the orthogonal axis
+        // owned by this consultation; `currentFrontier` filters on both.
         workingCp = {
           ...workingCp,
           graph: {
@@ -1330,7 +1358,7 @@ server.tool(
               ...workingCp.graph.nodes,
               [nId]: {
                 ...node,
-                readinessStatus: ReadinessStatus.BLOCKED,
+                externallyBlocked: true,
                 externalBlockers: blockers,
               },
             },
@@ -1338,7 +1366,8 @@ server.tool(
         };
         externalBlocked.push({ nodeId: nId, blockers });
       } else {
-        // Clear any stale snapshot; node is eligible for activation
+        // Clear the external-blocker axis explicitly. Stale resolved snapshots
+        // are kept on the node for audit but `externallyBlocked` flips to false.
         workingCp = {
           ...workingCp,
           graph: {
@@ -1347,6 +1376,7 @@ server.tool(
               ...workingCp.graph.nodes,
               [nId]: {
                 ...node,
+                externallyBlocked: false,
                 externalBlockers: blockers.length > 0 ? blockers : undefined,
               },
             },
@@ -1377,10 +1407,12 @@ server.tool(
     }
 
     // Lease fencing (UNM-1b7.6): mint a fresh attemptId and increment leaseVersion
-    // for every activated regular node. WorkPackets are returned so callers can
-    // echo them back in complete_node / fail_node / update_node.
+    // ONLY for nodes that were actually activated. Externally-blocked nodes are
+    // kept PENDING and must NOT receive a fresh fence — otherwise they leak into
+    // workPackets[] alongside externalBlocked[] and a caller could attempt to
+    // mark progress on a node that was never dispatched.
     const workPackets: WorkPacket[] = [];
-    for (const nId of regularNodeIds) {
+    for (const nId of clearToActivate) {
       const node = updatedGraph.nodes[nId];
       if (!node) continue;
       const attemptId = crypto.randomUUID();

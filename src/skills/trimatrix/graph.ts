@@ -1825,6 +1825,11 @@ export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
     const ready = node.readinessStatus === undefined ||
       node.readinessStatus === ReadinessStatus.READY;
     if (!ready) continue;
+    // Filter on the orthogonal external-blocker axis. A node with unresolved
+    // external blockers is topologically READY (edges satisfied) but not
+    // frontier-eligible — `dispatch_wave` would refuse activation. Treating
+    // both axes as required avoids the frontier lying about dispatchability.
+    if (node.externallyBlocked === true) continue;
     const wave = waveOf.get(nodeId) ?? 0;
     entries.push({ nodeId, wave });
   }

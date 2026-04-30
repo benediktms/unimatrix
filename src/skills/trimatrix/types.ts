@@ -238,6 +238,20 @@ export interface Node {
     taskId?: string;
     resolvedAt?: number;
   }>;
+  /**
+   * Whether `dispatch_wave`'s most recent brain consultation found unresolved
+   * external blockers. **Orthogonal axis** to `readinessStatus`:
+   * - `readinessStatus` reflects topology (edge satisfaction), recomputed
+   *   automatically by `recomputeReadiness` on every status-changing event.
+   * - `externallyBlocked` reflects brain state (cross-system gates), set
+   *   explicitly by `dispatch_wave` and only cleared by the next dispatch.
+   *
+   * Both axes must be `READY` and `false` respectively for a node to be
+   * frontier-eligible. The split avoids the "single field, two writers" race
+   * where `recomputeReadiness` would silently overwrite an external-blocker
+   * BLOCKED marker on the next `node_completed` event.
+   */
+  externallyBlocked?: boolean;
 }
 
 /**
