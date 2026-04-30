@@ -468,6 +468,24 @@ The lead derives `Files modified` from `git show --name-only <commitSha>` if com
 
 See Protocol E for the closure precondition that depends on this summary.
 
+#### C8: Post-Saga Aggregate Report (Mandatory)
+
+After **all nodes have reached a terminal status** (DONE, MERGED, or FAILED) and all C7 per-node summaries have been emitted, the lead calls `saga_report` before closing the epic.
+
+```
+mcp__unimatrix__saga_report({ format: "markdown", sessionLabel: "<label>" })
+```
+
+The tool reads checkpoint state and aggregates C7 node-summary records tagged with the session label. The report surfaces:
+- Convergence quality: one-shot completions, retried convergences, failures.
+- Iteration statistics: average and maximum iteration counts.
+- Escalation details: nodes that exhausted the review cap or failed after review.
+- Summaries: aggregated C7 records (commits, what changed).
+
+**Sequence:** C7 per-node summary → `close_node` → (all nodes done) → C8 `saga_report` → `tasks_close` epic.
+
+The lead renders the report to the conversation so the user can assess saga quality before the epic is archived.
+
 ### Protocol D: Wave Dispatch Patterns
 
 Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution` (per-node executor) and `parallelBatches` (parallelism groups).
@@ -519,6 +537,7 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.
 - **Per-node summary precondition:** Before calling `close_node`, the lead MUST have emitted the post-completion summary per Protocol C § C7.
+- **Post-saga report precondition:** Before calling `tasks_close` on the epic, the lead MUST call `saga_report` per Protocol C § C8 and render the result to the conversation.
 
 ### Protocol F: Agent Communication
 

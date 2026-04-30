@@ -644,3 +644,130 @@ Deno.test("callBrainTool: transport failure (throw) propagates out of callBrainT
     "connection refused",
   );
 });
+
+// ---------------------------------------------------------------------------
+// saga_report: buildSagaReport aggregation
+// ---------------------------------------------------------------------------
+
+import {
+  buildSagaReport,
+  renderSagaReport,
+} from "./saga_report.ts";
+
+Deno.test("buildSagaReport: synthetic 5-node graph — correct aggregates", () => {
+  // Graph: 5 nodes
+  //   n1 — DONE, iterationCount 0  → oneShot
+  //   n2 — DONE, iterationCount 0  → oneShot
+  //   n3 — MERGED, iterationCount 2 → converged
+  //   n4 — DONE, iterationCount 1  → converged
+  //   n5 — FAILED, iterationCount 3, maxIterations 3 → failed + escalation
+  const nodes: Node[] = [
+    makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
+    makeNode("n2", { status: NodeStatus.DONE, iterationCount: 0 }),
+    makeNode("n3", { status: NodeStatus.MERGED, iterationCount: 2 }),
+    makeNode("n4", { status: NodeStatus.DONE, iterationCount: 1 }),
+    makeNode("n5", {
+      status: NodeStatus.FAILED,
+      iterationCount: 3,
+      maxIterations: 3,
+      lastReviewVerdict: "FAIL",
+      lastReviewNotes: "Types still broken after 3 attempts",
+      failureReason: "Cap exhausted (3/3 iterations)",
+    }),
+  ];
+  const graph = makeGraph(nodes);
+  const cp = makeCp(graph);
+
+  const report = buildSagaReport(cp);
+
+  assertEquals(report.totalNodes, 5);
+  assertEquals(report.oneShot, 2);
+  assertEquals(report.converged, 2);
+  assertEquals(report.failed, 1);
+  assertEquals(report.maxIterationsObserved, 3);
+  // avgIterations = (0+0+2+1+3) / 5 = 1.2
+  assertEquals(report.avgIterations, 1.2);
+  assertEquals(report.escalations.length, 1);
+  assertEquals(report.escalations[0].nodeId, "n5");
+  assertEquals(report.escalations[0].lastReviewNotes, "Types still broken after 3 attempts");
+  assertEquals(report.nodeSummaries.length, 0);
+});
+
+Deno.test("buildSagaReport: all one-shot — zero avg iterations", () => {
+  const nodes: Node[] = [
+    makeNode("a", { status: NodeStatus.DONE, iterationCount: 0 }),
+    makeNode("b", { status: NodeStatus.MERGED, iterationCount: 0 }),
+  ];
+  const cp = makeCp(makeGraph(nodes));
+  const report = buildSagaReport(cp);
+
+  assertEquals(report.totalNodes, 2);
+  assertEquals(report.oneShot, 2);
+  assertEquals(report.converged, 0);
+  assertEquals(report.failed, 0);
+  assertEquals(report.avgIterations, 0);
+  assertEquals(report.escalations.length, 0);
+});
+
+Deno.test("buildSagaReport: non-terminal nodes excluded from aggregates", () => {
+  const nodes: Node[] = [
+    makeNode("n1", { status: NodeStatus.DONE, iterationCount: 1 }),
+    makeNode("n2", { status: NodeStatus.ACTIVE, iterationCount: 0 }),
+    makeNode("n3", { status: NodeStatus.PENDING }),
+  ];
+  const cp = makeCp(makeGraph(nodes));
+  const report = buildSagaReport(cp);
+
+  // Total nodes counts all nodes in graph (3).
+  assertEquals(report.totalNodes, 3);
+  // Only n1 is terminal.
+  assertEquals(report.converged, 1);
+  assertEquals(report.oneShot, 0);
+  assertEquals(report.failed, 0);
+  assertEquals(report.avgIterations, 1);
+  assertEquals(report.maxIterationsObserved, 1);
+});
+
+Deno.test("buildSagaReport: nodeSummaries passed through correctly", () => {
+  const nodes: Node[] = [makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 })];
+  const cp = makeCp(makeGraph(nodes));
+  const summaries = [
+    { nodeId: "n1", status: "DONE", commits: ["abc1234"], whatChanged: "Added validation" },
+  ];
+  const report = buildSagaReport(cp, summaries);
+  assertEquals(report.nodeSummaries.length, 1);
+  assertEquals(report.nodeSummaries[0].nodeId, "n1");
+  assertEquals(report.nodeSummaries[0].commits[0], "abc1234");
+});
+
+Deno.test("renderSagaReport: markdown output contains key headings", () => {
+  const nodes: Node[] = [
+    makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
+    makeNode("n2", { status: NodeStatus.FAILED, iterationCount: 2, lastReviewVerdict: "FAIL" }),
+  ];
+  const cp = makeCp(makeGraph(nodes));
+  const report = buildSagaReport(cp);
+  const md = renderSagaReport(report, "markdown");
+
+  assertEquals(md.includes("# Saga Convergence Report"), true);
+  assertEquals(md.includes("## Summary"), true);
+  assertEquals(md.includes("## Escalations"), true);
+  assertEquals(md.includes("n2"), true);
+});
+
+Deno.test("renderSagaReport: json output is valid JSON with correct shape", () => {
+  const nodes: Node[] = [makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 })];
+  const cp = makeCp(makeGraph(nodes));
+  const report = buildSagaReport(cp);
+  const json = renderSagaReport(report, "json");
+  const parsed = JSON.parse(json);
+
+  assertEquals(typeof parsed.totalNodes, "number");
+  assertEquals(typeof parsed.oneShot, "number");
+  assertEquals(typeof parsed.converged, "number");
+  assertEquals(typeof parsed.failed, "number");
+  assertEquals(typeof parsed.avgIterations, "number");
+  assertEquals(typeof parsed.maxIterationsObserved, "number");
+  assertEquals(Array.isArray(parsed.escalations), true);
+  assertEquals(Array.isArray(parsed.nodeSummaries), true);
+});

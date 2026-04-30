@@ -86,6 +86,11 @@ import {
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
 import { materializePlan } from "./materialize.ts";
+import {
+  buildSagaReport,
+  renderSagaReport,
+} from "./saga_report.ts";
+import type { NodeSummaryEntry } from "./saga_report.ts";
 
 // ---------------------------------------------------------------------------
 // In-memory checkpoint store
@@ -1360,6 +1365,84 @@ server.tool(
   (params) => {
     const cp = requireCheckpoint();
     const rendered = materializePlan(cp, params.format);
+    return {
+      content: [
+        {
+          type: "text",
+          text: rendered,
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: saga_report
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "saga_report",
+  "Generate a structured aggregate report after all saga nodes reach terminal status. Summarises convergence quality: total nodes, one-shot completions, retried convergences, failures, iteration statistics, escalations, and C7 node-summary records. Call this after the final `close_node` before `tasks_close`. Supports markdown (default) and json output formats.",
+  {
+    format: z.enum(["markdown", "json"]).optional().default("markdown").describe(
+      'Output format: "markdown" (default, human-readable) or "json" (structured, for programmatic consumers).',
+    ),
+    sessionLabel: z.string().optional().describe(
+      "Session label used to filter C7 node-summary records from the brain. When omitted, nodeSummaries will be empty.",
+    ),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const label = params.sessionLabel ?? cp.sessionLabel;
+
+    // Fetch C7 node-summary records from the brain when a session label is available.
+    const nodeSummaries: NodeSummaryEntry[] = [];
+    if (label) {
+      try {
+        // records_list filtered by tags ["node-summary", label]
+        const listResp = await callBrainTool(brainExec, "records_list", {
+          tag: "node-summary",
+        });
+        const listData = JSON.parse(listResp as string);
+        const records: Array<{ id: string; title?: string; tags?: string[] }> =
+          listData.records ?? listData.items ?? [];
+
+        // Filter to records that carry the session label tag.
+        const sessionRecords = records.filter(
+          (r) => Array.isArray(r.tags) && r.tags.includes(label),
+        );
+
+        for (const rec of sessionRecords) {
+          try {
+            const content = await callBrainTool(brainExec, "records_fetch_content", {
+              record_id: rec.id,
+            });
+            const parsed = JSON.parse(content as string);
+            const text: string = parsed.text ?? parsed.data ?? "";
+            // Parse the C7 markdown template for key fields.
+            const statusMatch = text.match(/\*\*Status:\*\*\s*(\S+)/);
+            const commitsMatch = text.match(/\*\*Commits:\*\*\s*([^\n]+)/);
+            const whatMatch = text.match(/\*\*What changed:\*\*\s*([^\n]+)/);
+            const nodeIdMatch = text.match(/## Node Summary:\s*(\S+)/);
+            nodeSummaries.push({
+              nodeId: nodeIdMatch?.[1] ?? rec.id,
+              status: statusMatch?.[1] ?? "unknown",
+              commits: commitsMatch?.[1]
+                ? commitsMatch[1].split(/[,\s]+/).filter(Boolean)
+                : [],
+              whatChanged: whatMatch?.[1] ?? "(no summary)",
+            });
+          } catch {
+            // Skip unreadable records — best-effort aggregation.
+          }
+        }
+      } catch {
+        // Brain unavailable — proceed with empty summaries.
+      }
+    }
+
+    const report = buildSagaReport(cp, nodeSummaries);
+    const rendered = renderSagaReport(report, params.format);
     return {
       content: [
         {
