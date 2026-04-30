@@ -168,7 +168,7 @@ After synthesis is saved:
 1. Send shutdown notification to all team members:
 
 ```text
-SendMessage({type: "shutdown_request", body: "Swarm complete. Stand down."})
+SendMessage({team_name: "swarm-<scope>", message: "Swarm complete. Stand down."})
 ```
 
 1. Delete the team:

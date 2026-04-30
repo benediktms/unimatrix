@@ -193,6 +193,13 @@ These protocols are defined once here. Mode files reference them by name.
 
 **Every adjunct dispatched by the collective MUST receive a designation. No exceptions.** An adjunct without a designation cannot identify itself in neural link rooms, task comments, or coordination logs. Undesignated adjuncts are non-compliant.
 
+**Deterministic ID precondition:** The Trimatrix ID embedded in each
+designation is derived from `checkpoint.sessionId`. If the session has not
+been initialized via `mcp__unimatrix__init` or restored via
+`mcp__unimatrix__restore_checkpoint` before dispatch, designations fall back
+to random IDs (with a stderr warning) — call init or restore_checkpoint
+first.
+
 Call `mcp__unimatrix__designate` with:
 - `count` — number of agents to designate
 - `role` — one of: `DRONE`, `SENTINEL`, `PROBE`, `DESIGNATE`, `LOCUTUS`
@@ -243,7 +250,7 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 1. Call `mcp__unimatrix__dispatch_wave` — get activated nodes with executors.
 2. For each adjunct subgraph in this wave: call `mcp__unimatrix__get_subgraph` to retrieve the brief.
 3. **Generate designations via Protocol A. This step is MANDATORY — do not dispatch adjuncts without designations.** Assign to subgraph `assignee`. Include the designation string in each adjunct's prompt.
-4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`.
+4. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`. **Exception:** modes that declare a coordination override (e.g., swarm — see Protocol F1 precedence rule) skip this step.
 5. Dispatch Agents with the brief injected in the prompt.
 6. For LEAD nodes in this wave: execute directly as parallel Bash calls.
 7. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
@@ -278,6 +285,13 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 ### Protocol F: Agent Communication
 
 #### F1: Neural Link (`neural_link` MCP) — all multi-adjunct dispatches
+
+**Precedence rule:** If a mode file declares a coordination override that
+explicitly supersedes Protocol F1, the mode file wins. Protocol F1 applies
+to all other multi-adjunct dispatches. Example: `modes/swarm.md`
+§ Coordination Protocol Override declares that swarm coordinates via native
+Claude Code team primitives instead of neural link — that override takes
+precedence here.
 
 When dispatching **more than one adjunct** (any tier), the lead establishes a neural link room:
 
