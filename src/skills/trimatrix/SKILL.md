@@ -576,11 +576,83 @@ For modes that create brain tasks:
    - `mcp__unimatrix__add_edge` with `type: DEPENDS_ON` for sequential dependencies
    - `mcp__unimatrix__compute_waves` — validates graph, computes waves, and auto-derives subgraphs for nodes not claimed by an explicit subgraph. Derived adjunct subgraphs use stable `auto-<8-char-hash>` IDs; the lead subgraph is always `sg-lead`. Explicit subgraphs declared before this call are preserved unchanged.
    - The graph enables cycle detection, optimal parallelism, subgraph partitioning, checkpoint persistence, and resume via `next_wave`/`dispatch_wave`
-9. **Session naming gate** — present the plan and a proposed session name (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"). Elicit via `AskUserQuestion` with three options:
-   - **Accept** — user approves the plan and session name as-is. Proceed.
-   - **Revise** — user provides revised instructions or a different session name. Incorporate feedback, re-plan if needed, re-elicit.
-   - **Decline** — user is not ready. Halt and wait for further instructions. Do not proceed.
-   On accept: call `mcp__unimatrix__rename_session` with the confirmed label, then `/rename` to sync the Claude Code conversation title.
+9. **Plan Approval Gate (native plan-mode)** — present the materialized graph for user approval via Claude Code's native plan-mode tools:
+
+   1. Call `mcp__unimatrix__materialize_plan` (markdown format) to render the full execution graph (lead subgraph + every adjunct subgraph, per-node fields, wave assignment).
+   2. Concatenate the materialized plan with: a one-paragraph saga summary, the proposed session label (concise, lowercase, hyphenated, derived from the directive — e.g., "auth-middleware-refactor"), and the per-wave dispatch outline.
+   3. Call `ExitPlanMode` with the concatenated plan as input. Claude Code presents it natively and prompts the user for approval.
+   4. On user approval (default: `permissionDecision: "allow"`):
+      - Apply the session label via `mcp__unimatrix__rename_session`.
+      - Call `mcp__unimatrix__save_checkpoint` with the `runtime_state_key`.
+      - Proceed to Step 10 (initial checkpoint persistence) and Step 11 (subgraph briefs).
+   5. On user rejection (`permissionDecision: "deny"`): enter `refining` state via `mcp__unimatrix__refine`. Solicit revision, re-plan, re-present via `ExitPlanMode`.
+   6. Note: `EnterPlanMode` is invoked at session start by the user / harness. The lead does NOT call `EnterPlanMode` itself; it only calls `ExitPlanMode` to exit and present.
+
+   The three outcome semantics map as follows:
+
+   | Outcome | `permissionDecision` | Lead action |
+   |---|---|---|
+   | Accept | `allow` | rename session, save checkpoint, proceed to Step 10 |
+   | Revise | `defer` (hook defers to user; user provides feedback) | incorporate feedback, re-plan, re-present |
+   | Decline | `deny` | enter `refining` state, await further instructions |
+
+   **Custom approval automation** — the `PreToolUse(ExitPlanMode)` hook fires before the plan is presented. Users can automate approval decisions based on their own criteria. See [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) for the full hook lifecycle.
+
+   ##### Pattern A: Auto-approve trivial plans (≤3 nodes, no risk keywords)
+
+   ```jsonc
+   // ~/.claude/settings.json
+   {
+     "hooks": {
+       "PreToolUse": [
+         {
+           "matcher": "ExitPlanMode",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "$HOME/.claude/scripts/auto-approve-trivial.sh"
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+   The script reads the plan from stdin (Claude Code passes it as JSON), parses node count and risk keywords, and exits 0 with `permissionDecision: "allow"` for trivial plans, or exits 0 with `permissionDecision: "defer"` to fall through to the human prompt.
+
+   ##### Pattern B: Block plans that touch sensitive paths
+
+   The hook script checks the plan body for files matching `secrets/` or `auth/` and emits `permissionDecision: "deny"` with a reason. The lead receives the denial, enters `refining` state, and must re-plan.
+
+   ##### Pattern C: Archive every plan to brain records
+
+   Hook on `PreToolUse(ExitPlanMode)` with `permissionDecision: "defer"` (let the user decide), but as a side-effect: write the plan to `mcp__brain__records_create_plan` tagged `auto-archive`. Provides an audit trail of every plan ever presented.
+
+   ##### Hook payload contract
+
+   Claude Code passes the following JSON to the hook over stdin:
+
+   ```json
+   {
+     "tool_name": "ExitPlanMode",
+     "tool_input": { "plan": "<the full plan markdown>" },
+     "session_id": "<claude-session-id>",
+     "transcript_path": "<path to JSONL transcript>"
+   }
+   ```
+
+   The hook responds on stdout with:
+
+   ```json
+   {
+     "permissionDecision": "allow | deny | defer",
+     "reason": "<optional human-readable reason>",
+     "updatedInput": {}
+   }
+   ```
+
+   `updatedInput` is the escape hatch for non-interactive sessions (`-p` flag): a hook returning `permissionDecision: "allow"` together with `updatedInput` satisfies the interactive-required precondition. Omit when not rewriting the plan.
 10. **Persist initial checkpoint** — call `mcp__unimatrix__save_checkpoint`. Required for session resumption. Without it, a session that ends before wave dispatch loses the graph. Optionally pass `runtime_state_key` to capture `/tmp` agent/cost/compaction state as enrichment.
 11. **Retrieve subgraph briefs** — for each adjunct subgraph, call `mcp__unimatrix__get_subgraph` to retrieve the serialized dispatch brief for injection into adjunct prompts
 
