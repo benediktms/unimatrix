@@ -79,6 +79,25 @@ export enum Executor {
 }
 
 // ---------------------------------------------------------------------------
+// Routing types
+// ---------------------------------------------------------------------------
+
+/**
+ * Routing decision trace captured at classification time.
+ * Persisted on the checkpoint for audit and tuning.
+ */
+export interface RoutingTrace {
+  /** Signal name → numeric value computed by the classifier. */
+  signals: Record<string, number>;
+  /** Composite score in [0, 1] computed from weighted signals. */
+  score: number;
+  /** One-sentence rationale describing the routing decision. */
+  trace: string;
+  /** Override gate that fired (e.g., "scope:quick", "flag:--include"), if any. */
+  override?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Graph types
 // ---------------------------------------------------------------------------
 
@@ -283,6 +302,8 @@ export interface Checkpoint {
   subgraphs?: Subgraph[];
   /** Episode summary_ids written during this session (episodic memory). */
   episodeIds?: string[];
+  /** Routing decision captured at classification time. */
+  routingTrace?: RoutingTrace;
 }
 
 // ---------------------------------------------------------------------------

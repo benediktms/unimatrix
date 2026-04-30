@@ -104,6 +104,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__UNIMATRIX_DIR__/src/hooks/claude/route-classify.py"
+          }
+        ]
+      }
     ]
   }
 }

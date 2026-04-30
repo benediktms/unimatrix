@@ -4,7 +4,7 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, SubgraphStrategy, Tier } from "./types.ts";
+import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, RoutingTrace, SubgraphStrategy, Tier } from "./types.ts";
 import { Executor, MachineState, NodeStatus } from "./types.ts";
 import { computeWaves } from "./graph.ts";
 
@@ -34,6 +34,7 @@ export function createCheckpoint(
     intent?: Intent;
     tier?: Tier;
     subgraphStrategy?: SubgraphStrategy;
+    routingTrace?: RoutingTrace;
   },
 ): Checkpoint {
   const now = new Date().toISOString();
@@ -58,6 +59,9 @@ export function createCheckpoint(
     ...(opts?.tier !== undefined ? { tier: opts.tier } : {}),
     ...(opts?.subgraphStrategy !== undefined
       ? { subgraphStrategy: opts.subgraphStrategy }
+      : {}),
+    ...(opts?.routingTrace !== undefined
+      ? { routingTrace: opts.routingTrace }
       : {}),
   };
 }

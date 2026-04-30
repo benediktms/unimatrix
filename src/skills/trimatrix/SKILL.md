@@ -18,67 +18,69 @@ Trimatrix is the single entry point for all collective operations. Every prompt 
 
 ## Intent Classifier
 
-The classifier runs on every prompt. It determines **Intent** and **Tier** before any action is taken. Every classified prompt enters the graph — no exceptions.
+The classifier runs on every prompt. It determines **Intent** and **Tier**
+before any action is taken. Weights, signal definitions, override gates,
+and tier thresholds live in `src/rules/routing.md` — this section defines
+only the procedure.
 
-### Intents
+Intents: `IMPLEMENT`, `INVESTIGATE`, `DIAGNOSE`, `ARCHITECT`, `REVIEW`,
+`REFACTOR`, `RESUME`. Tiers: `T1` → SELF, `T2` → INDEPENDENT, `T3` →
+COORDINATED. The full Intent × Tier dispatch matrix is in `AGENTS.md`.
 
-| Intent | Triggers |
-|---|---|
-| IMPLEMENT | Code changes, new features, refactoring, bulk migrations |
-| INVESTIGATE | "How does X work", "find Y", "audit Z", architectural questions |
-| DIAGNOSE | Bug reports, "why does X happen", unclear root cause |
-| ARCHITECT | "Evaluate architecture options", "compare approaches for X" |
-| REVIEW | "Review this", code review requests, validation |
-| REFACTOR | Structural cleanup, rename operations, pattern migrations |
-| RESUME | `--resume`, references a task ID, "resume", "continue" |
+### Procedure
 
-### Tiers
-
-| Tier | Complexity | Signals | SubgraphStrategy |
-|---|---|---|---|
-| T1 | 0.0–0.3 | 1-2 files, known location, clear spec, simple question | SELF |
-| T2 | 0.3–0.6 | 3-8 files, independent partitions, moderate ambiguity | INDEPENDENT |
-| T3 | 0.6–1.0 | 9+ files, cross-cutting deps, high ambiguity, `--include` | COORDINATED |
-
-**Tier scoring signals:**
-- File count affected (1-2 → T1, 3-8 → T2, 9+ → T3)
-- Cross-module boundaries (single module → lower, cross-cutting → higher)
-- Ambiguity (clear spec → lower, exploratory → higher)
-- Risk profile (test file → lower, core infrastructure → higher)
-- User-specified scope markers ("quick" → T1, "thorough"/"deep dive" → T3)
-- Cross-repo (`--include`) → always T3
-
-### Intent × Tier Matrix
-
-| Intent | T1 (SELF) | T2 (INDEPENDENT) | T3 (COORDINATED) |
-|---|---|---|---|
-| IMPLEMENT | Lead edits directly | Drone + Designate | Borg cube (partitioned) + compliance matrix |
-| INVESTIGATE | Lead reads/greps | Probe (single) | Borg sphere (Probe + Designate) with team |
-| DIAGNOSE | Lead inspects | Designate (single hypothesis) | Vinculum (adversarial, multi-hypothesis) |
-| ARCHITECT | Lead reasons | Designate (single) | Vinculum (adversarial, multi-approach) with team |
-| REVIEW | Lead reads diff | Sentinel (single) | Compliance matrix (multi-Sentinel) with team |
-| REFACTOR | Lead edits | Drone + Designate | Swarm (partitioned Drone) + Designate |
+1. **Override gates first.** Walk the override-gate table in
+   `src/rules/routing.md`. If any gate matches the prompt, record the
+   gate name and skip to step 5 with the gate's tier (or to the RESUME
+   flow if `flag:--resume` fires). For `ambiguity`, ask one clarifying
+   question, then restart this procedure.
+2. **Extract signals.** Read pre-computed lexical and structural signals
+   from `/tmp/unimatrix-routing-<session_id>.json` (written by the
+   `route-classify.py` UserPromptSubmit hook). Compute the context
+   signals (`prior_session_failures`, `conversation_depth`,
+   `brain_task_references`) from session state. Normalize each per the
+   bin rules in `src/rules/routing.md`.
+3. **Compute score.** Apply the weighted-sum formula in
+   `src/rules/routing.md` § Scoring. Clamp to `[0.0, 1.0]`.
+4. **Map score → tier.** Use the thresholds in `src/rules/routing.md`
+   § Tier Mapping (T1 < 0.3, T2 < 0.6, T3 ≤ 1.0).
+5. **Conflict resolution.** If an override fired AND the scored tier
+   exceeds the override by 2+ tiers, take the higher tier per
+   `src/rules/routing.md` § Conflict Resolution.
+6. **Initialize and trace.** Call `mcp__unimatrix__init` with `intent`,
+   `tier`, `subgraphStrategy` (derived from tier: SELF/INDEPENDENT/
+   COORDINATED), and the routing fields: `signals` (record), `score`
+   (number), `routingTrace` (one-sentence rationale prefixed with the
+   override gate that fired, or `"scored"`). Then emit a
+   `routing-decision` artifact via
+   `mcp__brain__records_create_artifact` with `kind: "routing-decision"`,
+   tagged `routing-decision`, body containing: prompt excerpt (first
+   ~200 chars), all signals + normalized values, computed score, chosen
+   tier, override-gate name (or null), one-sentence rationale.
 
 ### Auto-Graph Entry
 
-Every classified prompt initializes the trimatrix graph:
+After init, every classified prompt enters the graph:
 
-1. Classify intent and tier.
-2. Call `mcp__unimatrix__init` with `intent`, `tier`, `subgraphStrategy` (derived from tier).
-3. Add nodes via `mcp__unimatrix__add_node` with appropriate `executor` (LEAD or ADJUNCT).
-4. Add edges via `mcp__unimatrix__add_edge`.
-5. Call `mcp__unimatrix__compute_waves` — auto-computes subgraphs.
-6. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs dispatched as agents.
+1. Add nodes via `mcp__unimatrix__add_node` with appropriate `executor`
+   (LEAD or ADJUNCT).
+2. Add edges via `mcp__unimatrix__add_edge`.
+3. Call `mcp__unimatrix__compute_waves` — auto-computes subgraphs.
+4. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs
+   dispatched as agents.
 
-For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead traverses directly.
+For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead
+traverses directly.
 
 ### Classifier Rules
 
 - Run on EVERY prompt without exception.
-- When ambiguous, ask ONE clarifying question then classify.
-- Legacy aliases are recognized and routed to the correct intent.
 - The classifier does NOT read mode files — it routes to them.
-- All intents enter the graph. T1 enters with a minimal graph (1-2 nodes, SELF strategy).
+- Legacy aliases are recognized per `src/rules/routing.md` § Override
+  Gates and routed to the canonical intent.
+- All intents enter the graph. T1 enters with a minimal graph (1-2 nodes,
+  SELF strategy).
+- The full Intent × Tier dispatch matrix lives in `AGENTS.md`.
 
 ### RESUME Flow
 

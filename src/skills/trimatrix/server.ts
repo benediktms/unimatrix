@@ -196,18 +196,41 @@ server.tool(
     subgraphStrategy: z.nativeEnum(SubgraphStrategy).optional().describe(
       "Subgraph partitioning strategy: SELF (lead), INDEPENDENT (adjuncts), COORDINATED (team).",
     ),
+    signals: z.record(z.number()).optional().describe(
+      "Routing signals (signal name → numeric value) computed by the classifier.",
+    ),
+    score: z.number().min(0).max(1).optional().describe(
+      "Composite routing score in [0, 1] from weighted signals.",
+    ),
+    routingTrace: z.string().optional().describe(
+      "One-sentence rationale plus override-gate fired (if any) for the routing decision.",
+    ),
   },
   async (params) => {
     const repos = (params.repos ?? []) as RepoMetadata[];
     const emptyGraph = { nodes: {}, edges: [] };
     const sessionId = generateSessionId();
     const sessionLabel = params.sessionLabel ?? generateSessionLabel(repos);
+
+    // Build routing trace if any routing fields supplied.
+    const hasRouting = params.signals !== undefined ||
+      params.score !== undefined ||
+      params.routingTrace !== undefined;
+    const routingTrace = hasRouting
+      ? {
+        signals: params.signals ?? {},
+        score: params.score ?? 0,
+        trace: params.routingTrace ?? "",
+      }
+      : undefined;
+
     checkpoint = createCheckpoint(repos, emptyGraph, {
       sessionId,
       sessionLabel,
       intent: params.intent,
       tier: params.tier,
       subgraphStrategy: params.subgraphStrategy,
+      routingTrace,
     });
 
     // Search for prior episodes to inform planning (best-effort)
@@ -231,6 +254,7 @@ server.tool(
             ...(params.subgraphStrategy !== undefined
               ? { subgraphStrategy: params.subgraphStrategy }
               : {}),
+            ...(routingTrace !== undefined ? { routingTrace } : {}),
             ...(priorEpisodes.length > 0 ? { priorEpisodes } : {}),
           }),
         },
