@@ -1,5 +1,24 @@
 # Swarm Mode
 
+## Coordination Protocol Override
+
+Swarm mode does NOT use the `neural_link` MCP server. SKILL.md Protocol F
+(which mandates `mcp__neural_link__room_open`/`room_close` for multi-adjunct
+dispatches) does not apply here. Swarm coordinates via native Claude Code
+primitives only:
+
+- `TeamCreate` to bootstrap the team
+- `Agent(team_name=...)` to spawn drones into the team
+- `SendMessage` for cross-partition messages
+- `TaskList` for shared task visibility
+- `mcp__brain__memory_write_episode` (or `records_save_snapshot`) at swarm
+  close to capture decisions / blockers / partition outcomes
+
+The synthesis episode is the durable replacement for the room transcript a
+neural_link close would otherwise produce.
+
+---
+
 ## When Triggered
 
 - Bulk refactoring, migrations, convention enforcement
@@ -84,8 +103,10 @@ TEAM COORDINATION ACTIVE (team: swarm-<scope>):
   proceeding past the point they concern.
 ```
 
-Also include `NEURAL LINK ACTIVE`, `room_id: <room_id>`,
-and the drone's designation (per Protocol F).
+Also include the drone's designation.
+Do NOT include `NEURAL LINK ACTIVE` or `room_id` — swarm uses native team
+`SendMessage` for coordination, not neural_link rooms (see Coordination
+Protocol Override above).
 
 ### 5. Monitor
 
@@ -156,7 +177,8 @@ SendMessage({type: "shutdown_request", body: "Swarm complete. Stand down."})
 TeamDelete(team_name: "swarm-<scope>")
 ```
 
-1. Close the neural link room per Protocol F (resolution: `completed`).
+1. Confirm all team members have received the shutdown notification before
+   proceeding to Task Closure.
 
 ### 11. Task Closure
 
