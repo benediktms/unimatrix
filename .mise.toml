@@ -1,7 +1,7 @@
 [tools]
-python = "3.12"
-deno = "latest"
-just = "latest"
+just = "1.47.1"
+python = "3.14.3"
+deno = "2.7.5"
 
 [env]
 VIRTUAL_ENV = "{{config_root}}/.venv"
