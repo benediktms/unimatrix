@@ -255,18 +255,109 @@ Assign returned designations to the Agent `name` and `description` fields. Inclu
 
 After sentinel PASS and task closure, present three options to user: **merge** / **keep** / **discard**.
 
-### Protocol C: Verification Gate
+### Protocol C: Convergence Loop
 
-Verification is split between adjuncts and the lead via node types:
+Protocol C governs the per-node implement → verify → review → fix cycle. It wraps every per-tier dispatch described in Protocol D. Protocol E task closure remains unchanged — adjuncts never close; the lead calls `close_node` only after sentinel PASS. Protocol F1 single-vs-multi-adjunct neural link rules are also unchanged.
 
-**Adjunct subgraphs** contain only `VERIFY_COMPILE` nodes. Adjuncts confirm the code compiles — nothing more. They do NOT run tests, lint, or format. On `VERIFY_COMPILE` failure, the adjunct reports `fail_node` with the error and stops.
+#### C1: Per-Node Loop
 
-**Lead (post-wave)** executes `VERIFY_TEST`, `VERIFY_LINT`, and `VERIFY_FORMAT` nodes. These land in the same wave with no interdependencies — the lead runs them as parallel Bash calls in a single message.
+Each node executes the following sequence. The loop drives state transitions via server-side MCP events.
 
-After all verification nodes pass:
-1. Pass → proceed to review.
-2. Fail → create brain task with error output, save as artifact, dispatch single fix adjunct with a new subgraph.
-3. Maximum 2 fix cycles. Escalate to user after 2 failures.
+```
+PENDING
+  │
+  ▼ dispatch (implement)
+ACTIVE
+  │
+  ├─ adjunct: VERIFY_COMPILE (deno check or equivalent)
+  │     FAIL → fail_node → FAILED (surfaced to lead; fix required)
+  │
+  ├─ lead: VERIFY_TEST, VERIFY_LINT, VERIFY_FORMAT (parallel Bash calls, post-wave)
+  │     any FAIL → dispatch fix adjunct; bump iterationCount
+  │
+  └─ review: sentinel adjunct or agent team (tier-selected by triviality classifier)
+        PASS → review_passed event → DONE / MERGED
+        NEEDS_CHANGES → review_failed event → iterationCount++
+                           ├─ iterationCount < maxIterations → dispatch fix adjunct → re-review
+                           └─ iterationCount == maxIterations → fail_node (cap exhaustion) → FAILED
+```
+
+**Step-by-step:**
+
+1. **Implement** — drone or agent team executes the directive. This is the dispatch governed by Protocol D.
+2. **VERIFY_COMPILE (adjunct-side)** — the adjunct subgraph contains a `VERIFY_COMPILE` node. The adjunct runs `deno check` (or the equivalent compile validator). On failure: `fail_node` with error output. Stop traversal. Do NOT run tests, lint, or format.
+3. **Lead-side verification (post-wave)** — after all implementation in the saga, the lead executes `VERIFY_TEST`, `VERIFY_LINT`, and `VERIFY_FORMAT` nodes as parallel Bash calls in a single message. These land in the same wave with no interdependencies (see Protocol G graph construction).
+4. **Review** — tier-selected by the triviality classifier (`src/skills/trimatrix/triviality.ts`, `unm-735.6`). Full tier-selection wiring ships in `unm-735.7`. Two paths:
+   - `TRIVIAL` → single sentinel adjunct.
+   - `NON_TRIVIAL` → agent team review.
+5. **On NEEDS_CHANGES** — emit `review_failed` event (server sets `lastReviewVerdict: "FAIL"`, increments `iterationCount`). Dispatch a fix adjunct with the sentinel's `lastReviewNotes` as input context. Proceed to re-review.
+6. **On PASS** — emit `review_passed` event (server sets `lastReviewVerdict: "PASS"`, transitions node to DONE or MERGED). Lead calls `close_node` per Protocol E.
+7. **Checkpoint every iteration** — before each fix-adjunct dispatch, the lead calls `mcp__unimatrix__save_checkpoint`. RESUME (`unm-735.11`) picks up on the failing node, not from scratch.
+
+#### C2: Iteration Cap
+
+Each node carries a `maxIterations` field (default: **3**, configurable per-node at `add_node` time).
+
+When `iterationCount` reaches `maxIterations`, the server automatically fails the node:
+
+```
+fail_node(nodeId, reason: "iteration cap exhausted: review failed N/N times")
+```
+
+The lead does not re-dispatch. It escalates to the user with the sentinel's `lastReviewNotes` and the node ID. The user may intervene manually or invoke `reset_node` (§ C3).
+
+`iterationCount` is orthogonal to `NodeStatus` and `ReadinessStatus`. A node can be `ACTIVE` with `iterationCount: 2` while `lastReviewVerdict: "FAIL"` — the axes do not conflict (see `types.ts` field doc, `unm-735.1`).
+
+#### C3: Recovery — reset_node
+
+`reset_node` transitions a FAILED node back to PENDING with a `leaseVersion` bump.
+
+```typescript
+mcp__unimatrix__reset_node({
+  nodeId: "<id>",
+  resetIterationCount?: boolean   // default: false — preserves count; pass true for a clean attempt
+})
+```
+
+- Default: preserves `iterationCount`. Use when the fix is incremental.
+- `resetIterationCount: true`: clears count to 0. Use when the prior attempts are no longer relevant.
+
+After reset, dependents that were `BLOCKED` (via `blockedBy`) return to `READY` once the node re-enters DONE/MERGED. Upstream DONE/MERGED nodes are untouched — PR metadata, `iterationCount`, and `lastReviewVerdict` are preserved.
+
+#### C4: Failure Isolation Invariant
+
+When a node transitions to FAILED, the server sets `readinessStatus: BLOCKED` and appends the failed node's ID to `blockedBy` on all direct dependents (failure-isolation invariant, `unm-735.9`). Nodes further downstream are not directly modified — their readiness is recomputed by topology traversal.
+
+Upstream DONE/MERGED nodes are never touched on downstream failure. Their PR metadata, `iterationCount`, and `lastReviewVerdict` remain intact.
+
+#### C5: State Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> ACTIVE : dispatch (implement)
+    ACTIVE --> VERIFY : VERIFY_COMPILE pass + lead verify pass
+    ACTIVE --> FAILED : VERIFY_COMPILE fail / lead verify fail (cap)
+    VERIFY --> REVIEWING : enter review
+    REVIEWING --> DONE : review_passed (PASS)
+    REVIEWING --> FIX_CYCLE : review_failed (NEEDS_CHANGES) + iterationCount < maxIterations
+    REVIEWING --> FAILED : review_failed + iterationCount == maxIterations (cap exhausted)
+    FIX_CYCLE --> ACTIVE : dispatch fix adjunct
+    FAILED --> PENDING : reset_node (leaseVersion bump)
+    DONE --> [*]
+```
+
+#### C6: MCP Primitives Reference
+
+| Primitive | Kind | Effect |
+|---|---|---|
+| `review_passed` event | event | Sets `lastReviewVerdict: "PASS"`. Transitions node to DONE or MERGED. |
+| `review_failed` event | event | Sets `lastReviewVerdict: "FAIL"`. Increments `iterationCount`. If `iterationCount == maxIterations`, auto-fails node. |
+| `node_reset` event | event | Internal: transitions FAILED → PENDING. Bumps `leaseVersion`. Optionally resets `iterationCount`. |
+| `reset_node` | MCP tool | Externally invoked recovery. Wraps `node_reset` event. Accepts `resetIterationCount` flag. |
+| `save_checkpoint` | MCP tool | Call before each fix-adjunct dispatch. Enables mid-loop RESUME. |
+| `complete_node` | MCP tool | Called by adjunct on successful node completion. Derives DONE/MERGED/PR_CREATED from node metadata. |
+| `fail_node` | MCP tool | Called by adjunct on VERIFY_COMPILE failure or by lead on cap exhaustion. |
 
 ### Protocol D: Wave Dispatch Patterns
 
