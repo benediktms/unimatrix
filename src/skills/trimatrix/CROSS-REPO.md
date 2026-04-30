@@ -914,18 +914,18 @@ Corner case — iteration 3 also FAILs:
 
 The canonical convergence loop specification is in `SKILL.md` Protocol C:
 
-| Section | Content                                                                                                                      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Section | Content                                                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | C1      | Full implement → verify → review → fix cycle; **mid-loop resume rule**: a node with `iterationCount = N > 0` and `lastReviewVerdict: "FAIL"` resumes at iteration N + 1, not from scratch |
-| C2      | Iteration cap (`maxIterations`, default 3; auto-fail on exhaustion)                                                          |
-| C3      | Recovery via `reset_node` (lease bump, optional count reset)                                                                 |
-| C4      | Failure isolation invariant (downstream `readinessStatus: BLOCKED` on fail)                                                  |
-| C5      | Checkpoint cadence (save before each fix-adjunct dispatch for durable mid-loop RESUME)                                       |
-| C6      | Review tier selection (TRIVIAL / NON_TRIVIAL; per-saga team-review budget: max 5)                                            |
-| C7      | Node state diagram (PENDING → ACTIVE → REVIEWING → ...)                                                                      |
-| C8      | MCP primitives (`review_passed`, `review_failed`, etc.)                                                                      |
-| C9      | Post-completion summary (mandatory after each terminal node)                                                                 |
-| C10     | Saga report (post-saga aggregate)                                                                                            |
+| C2      | Iteration cap (`maxIterations`, default 3; auto-fail on exhaustion)                                                                                                                       |
+| C3      | Recovery via `reset_node` (lease bump, optional count reset)                                                                                                                              |
+| C4      | Failure isolation invariant (downstream `readinessStatus: BLOCKED` on fail)                                                                                                               |
+| C5      | Checkpoint cadence (save before each fix-adjunct dispatch for durable mid-loop RESUME)                                                                                                    |
+| C6      | Review tier selection (TRIVIAL / NON_TRIVIAL; per-saga team-review budget: max 5)                                                                                                         |
+| C7      | Node state diagram (PENDING → ACTIVE → REVIEWING → ...)                                                                                                                                   |
+| C8      | MCP primitives (`review_passed`, `review_failed`, etc.)                                                                                                                                   |
+| C9      | Post-completion summary (mandatory after each terminal node)                                                                                                                              |
+| C10     | Saga report (post-saga aggregate)                                                                                                                                                         |
 
 ---
 
