@@ -1180,6 +1180,92 @@ export function addSubgraph(
 }
 
 // ---------------------------------------------------------------------------
+// Subgraph completion / failure evaluation
+// ---------------------------------------------------------------------------
+
+/** Outcome of evaluating a subgraph's nodes against its policies. */
+export type SubgraphOutcome = "pending" | "active" | "completed" | "failed";
+
+const TERMINAL_OK: NodeStatus[] = [
+  NodeStatus.DONE,
+  NodeStatus.MERGED,
+  NodeStatus.PR_CREATED,
+];
+
+/**
+ * Evaluate a subgraph's overall status against its `completionPolicy` and
+ * `failurePolicy`, given the current node states.
+ *
+ * Failure policy is checked first; if it has tripped, the subgraph is failed.
+ * Otherwise, completion policy is evaluated against "settled" nodes — a node
+ * is settled when it is OK (DONE/MERGED/PR_CREATED) **or** failed in a way
+ * the failure policy tolerates (CONTINUE tolerates any FAILED; BEST_EFFORT
+ * tolerates FAILED non-gate nodes).
+ *
+ * Returns:
+ * - `failed` — failure policy threshold tripped
+ * - `completed` — completion policy is satisfied
+ * - `active` — at least one node is ACTIVE
+ * - `pending` — none of the above
+ */
+export function subgraphOutcome(
+  graph: Graph,
+  subgraph: Subgraph,
+): SubgraphOutcome {
+  type Member = { id: string; status: NodeStatus };
+  const members: Member[] = subgraph.nodes
+    .map((id) => ({ id, status: graph.nodes[id]?.status }))
+    .filter((m): m is Member => m.status !== undefined);
+  if (members.length === 0) return "pending";
+
+  const gateSet = new Set(subgraph.gates ?? []);
+  const gates: Member[] = members.filter((m) => gateSet.has(m.id));
+
+  const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
+  const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
+
+  // Failure policy first — a tripped subgraph is terminal regardless of remaining work.
+  switch (subgraph.failurePolicy) {
+    case SubgraphFailurePolicy.FAIL_FAST:
+      if (members.some((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.CONTINUE:
+      if (members.every((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.BEST_EFFORT:
+      if (gates.some((g) => isFailed(g.status))) return "failed";
+      break;
+  }
+
+  // A node is "settled" when it is terminal-OK or its failure is tolerated by policy.
+  const settled = (m: Member): boolean => {
+    if (isOk(m.status)) return true;
+    if (!isFailed(m.status)) return false;
+    if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
+    if (
+      subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
+      !gateSet.has(m.id)
+    ) return true;
+    return false;
+  };
+
+  switch (subgraph.completionPolicy) {
+    case SubgraphCompletionPolicy.ALL:
+      if (members.every(settled)) return "completed";
+      break;
+    case SubgraphCompletionPolicy.ANY:
+      if (members.some((m) => isOk(m.status))) return "completed";
+      break;
+    case SubgraphCompletionPolicy.GATED:
+      if (gates.length > 0 && gates.every((g) => isOk(g.status))) return "completed";
+      break;
+  }
+
+  if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
+  return "pending";
+}
+
+// ---------------------------------------------------------------------------
 // Subgraph brief serialization
 // ---------------------------------------------------------------------------
 

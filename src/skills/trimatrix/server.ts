@@ -52,6 +52,7 @@ import {
   failNode,
   nextWave,
   parallelNodesInWave,
+  subgraphOutcome,
   unsatisfiedDependencies,
   updateNode,
   serializeSubgraphBrief,
@@ -148,6 +149,32 @@ function applySubgraphs(
 
 function generateSessionLabel(repos: RepoMetadata[]): string {
   return repos.map((r) => r.name).join(", ");
+}
+
+/**
+ * Project a Subgraph into the JSON shape returned by tool responses.
+ *
+ * Includes the new explicit-subgraph fields (label, parentId, derived,
+ * completionPolicy, failurePolicy, gates) and a computed `outcome` derived
+ * from the policies plus current node statuses, so callers can tell at a
+ * glance whether a subgraph is pending, active, completed, or failed.
+ */
+function summarizeSubgraph(sg: Subgraph, graph: Graph) {
+  return {
+    id: sg.id,
+    executor: sg.executor,
+    assignee: sg.assignee,
+    nodeCount: sg.nodes.length,
+    nodes: sg.nodes,
+    coordination: sg.coordination,
+    derived: sg.derived,
+    completionPolicy: sg.completionPolicy,
+    failurePolicy: sg.failurePolicy,
+    outcome: subgraphOutcome(graph, sg),
+    ...(sg.label !== undefined ? { label: sg.label } : {}),
+    ...(sg.parentId !== undefined ? { parentId: sg.parentId } : {}),
+    ...(sg.gates ? { gates: sg.gates } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -790,12 +817,9 @@ server.tool(
               refinementHistory: checkpoint.refinementHistory,
               ...(checkpoint.subgraphs?.length
                 ? {
-                  subgraphs: checkpoint.subgraphs.map((sg) => ({
-                    id: sg.id,
-                    executor: sg.executor,
-                    nodeCount: sg.nodes.length,
-                    coordination: sg.coordination.mode,
-                  })),
+                  subgraphs: checkpoint.subgraphs.map((sg) =>
+                    summarizeSubgraph(sg, checkpoint!.graph)
+                  ),
                 }
                 : {}),
             }),
@@ -865,12 +889,9 @@ server.tool(
             waves: checkpoint.waves,
             ...(checkpoint.subgraphs?.length
               ? {
-                subgraphs: checkpoint.subgraphs.map((sg) => ({
-                  id: sg.id,
-                  executor: sg.executor,
-                  nodeCount: sg.nodes.length,
-                  coordination: sg.coordination.mode,
-                })),
+                subgraphs: checkpoint.subgraphs.map((sg) =>
+                  summarizeSubgraph(sg, checkpoint!.graph)
+                ),
               }
               : {}),
           }),
@@ -939,14 +960,9 @@ server.tool(
           type: "text",
           text: JSON.stringify({
             ok: true,
-            subgraphs: (checkpoint!.subgraphs ?? []).map((sg) => ({
-              id: sg.id,
-              executor: sg.executor,
-              assignee: sg.assignee,
-              nodeCount: sg.nodes.length,
-              nodes: sg.nodes,
-              coordination: sg.coordination,
-            })),
+            subgraphs: (checkpoint!.subgraphs ?? []).map((sg) =>
+              summarizeSubgraph(sg, checkpoint!.graph)
+            ),
           }),
         },
       ],
@@ -1033,19 +1049,7 @@ server.tool(
           type: "text",
           text: JSON.stringify({
             ok: true,
-            subgraph: {
-              id: sg.id,
-              label: sg.label,
-              parentId: sg.parentId,
-              executor: sg.executor,
-              tier: sg.tier,
-              nodeCount: sg.nodes.length,
-              nodes: sg.nodes,
-              completionPolicy: sg.completionPolicy,
-              failurePolicy: sg.failurePolicy,
-              gates: sg.gates,
-              coordination: sg.coordination,
-            },
+            subgraph: summarizeSubgraph(sg, nextCp.graph),
           }),
         },
       ],
@@ -2104,13 +2108,9 @@ server.tool(
               : {}),
             ...(cp.subgraphs?.length
               ? {
-                subgraphs: cp.subgraphs.map((sg) => ({
-                  id: sg.id,
-                  executor: sg.executor,
-                  assignee: sg.assignee,
-                  nodeCount: sg.nodes.length,
-                  coordination: sg.coordination.mode,
-                })),
+                subgraphs: cp.subgraphs.map((sg) =>
+                  summarizeSubgraph(sg, cp.graph)
+                ),
               }
               : {}),
             ...(cp.cancellationReason

@@ -22,6 +22,7 @@ import {
   nextWave,
   parallelNodesInWave,
   serializeSubgraphBrief,
+  subgraphOutcome,
   unsatisfiedDependencies,
   validate,
   waveStatus,
@@ -1125,6 +1126,112 @@ Deno.test("addSubgraph: rejects gates outside nodeIds", () => {
   });
   assertEquals(result.ok, false);
   assertEquals(result.error?.includes("not a member"), true);
+});
+
+// ---------------------------------------------------------------------------
+// subgraphOutcome
+// ---------------------------------------------------------------------------
+
+Deno.test("subgraphOutcome: ALL/FAIL_FAST — pending while any node not terminal", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.PENDING }),
+  ]);
+  const sgResult = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(subgraphOutcome(g, sgResult.value!), "pending");
+});
+
+Deno.test("subgraphOutcome: ALL — completed when every node DONE/MERGED/PR_CREATED", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.MERGED }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "completed");
+});
+
+Deno.test("subgraphOutcome: FAIL_FAST flips to failed on first FAILED node", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.FAILED }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+Deno.test("subgraphOutcome: CONTINUE — fails only when all nodes failed", () => {
+  const partial = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.FAILED }),
+  ]);
+  const sgPartial = addSubgraph(partial, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: "CONTINUE" as never,
+  }).value!;
+  assertEquals(subgraphOutcome(partial, sgPartial), "completed");
+
+  const allFail = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.FAILED }),
+    makeNode({ id: "B", status: NodeStatus.FAILED }),
+  ]);
+  const sgAllFail = addSubgraph(allFail, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: "CONTINUE" as never,
+  }).value!;
+  assertEquals(subgraphOutcome(allFail, sgAllFail), "failed");
+});
+
+Deno.test("subgraphOutcome: ANY — completed when any node terminal", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.PENDING }),
+    makeNode({ id: "B", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: "ANY" as never,
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "completed");
+});
+
+Deno.test("subgraphOutcome: GATED — completed only when every gate is terminal", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.PENDING }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A", "B", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: "GATED" as never,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "completed");
 });
 
 Deno.test("addSubgraph: hierarchy via parentId", () => {
