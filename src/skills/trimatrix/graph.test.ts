@@ -27,7 +27,17 @@ import {
   validate,
   waveStatus,
 } from "./graph.ts";
-import { CoordinationMode, EdgeType, Executor, NodeStatus, NodeType, SubgraphStrategy, Tier } from "./types.ts";
+import {
+  CoordinationMode,
+  EdgeType,
+  Executor,
+  NodeStatus,
+  NodeType,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+  SubgraphStrategy,
+  Tier,
+} from "./types.ts";
 import type { Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -1037,8 +1047,9 @@ Deno.test("addSubgraph: rejects reserved slugs", () => {
   }
 });
 
-Deno.test("addSubgraph: rejects duplicate slug", () => {
-  const g = makeGraph([makeNode({ id: "A" })]);
+Deno.test("addSubgraph: rejects duplicate slug with differing spec", () => {
+  // Idempotency: same slug with a DIFFERENT spec must be rejected.
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
   const first = addSubgraph(g, [], {
     slug: "core",
     nodeIds: ["A"],
@@ -1046,9 +1057,10 @@ Deno.test("addSubgraph: rejects duplicate slug", () => {
     tier: Tier.T1,
   });
   assertEquals(first.ok, true);
+  // Re-add with different nodeIds — must fail.
   const second = addSubgraph(g, [first.value!], {
     slug: "core",
-    nodeIds: ["A"],
+    nodeIds: ["A", "B"],
     executor: Executor.LEAD,
     tier: Tier.T1,
   });
@@ -1184,7 +1196,7 @@ Deno.test("subgraphOutcome: CONTINUE — fails only when all nodes failed", () =
     nodeIds: ["A", "B"],
     executor: Executor.LEAD,
     tier: Tier.T1,
-    failurePolicy: "CONTINUE" as never,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
   }).value!;
   assertEquals(subgraphOutcome(partial, sgPartial), "completed");
 
@@ -1197,7 +1209,7 @@ Deno.test("subgraphOutcome: CONTINUE — fails only when all nodes failed", () =
     nodeIds: ["A", "B"],
     executor: Executor.LEAD,
     tier: Tier.T1,
-    failurePolicy: "CONTINUE" as never,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
   }).value!;
   assertEquals(subgraphOutcome(allFail, sgAllFail), "failed");
 });
@@ -1212,7 +1224,7 @@ Deno.test("subgraphOutcome: ANY — completed when any node terminal", () => {
     nodeIds: ["A", "B"],
     executor: Executor.LEAD,
     tier: Tier.T1,
-    completionPolicy: "ANY" as never,
+    completionPolicy: SubgraphCompletionPolicy.ANY,
   }).value!;
   assertEquals(subgraphOutcome(g, sg), "completed");
 });
@@ -1228,7 +1240,7 @@ Deno.test("subgraphOutcome: GATED — completed only when every gate is terminal
     nodeIds: ["A", "B", "G"],
     executor: Executor.LEAD,
     tier: Tier.T1,
-    completionPolicy: "GATED" as never,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
     gates: ["G"],
   }).value!;
   assertEquals(subgraphOutcome(g, sg), "completed");
@@ -1592,4 +1604,500 @@ Deno.test("validate: passes when no FAILED sources exist", () => {
   );
   const result = validate(g);
   assertEquals(result.valid, true);
+});
+
+// ---------------------------------------------------------------------------
+// Idempotent addSubgraph re-add (P0)
+// ---------------------------------------------------------------------------
+
+Deno.test("addSubgraph idempotency: same slug same spec returns existing subgraph", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
+  const first = addSubgraph(g, [], {
+    slug: "idm-test",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ALL,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+  });
+  assertEquals(first.ok, true);
+  // Re-add with identical spec — idempotent no-op.
+  const second = addSubgraph(g, [first.value!], {
+    slug: "idm-test",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ALL,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+  });
+  assertEquals(second.ok, true);
+  // Must return the same object identity (the existing subgraph).
+  assertEquals(second.value!.id, "idm-test");
+  assertEquals(second.value!.nodes.sort(), ["A", "B"].sort());
+});
+
+Deno.test("addSubgraph idempotency: same slug different nodes returns error", () => {
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+    makeNode({ id: "C" }),
+  ]);
+  const first = addSubgraph(g, [], {
+    slug: "conflict",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(first.ok, true);
+  const second = addSubgraph(g, [first.value!], {
+    slug: "conflict",
+    nodeIds: ["A", "C"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("already exists"), true);
+});
+
+Deno.test("addSubgraph idempotency: same slug different failure policy returns error", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "G" })]);
+  // First add: BEST_EFFORT with gate G.
+  const first = addSubgraph(g, [], {
+    slug: "pol-test",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: ["G"],
+  });
+  assertEquals(first.ok, true);
+  // Re-add same slug but CONTINUE policy — must reject.
+  const second = addSubgraph(g, [first.value!], {
+    slug: "pol-test",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
+    gates: ["G"],
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("already exists"), true);
+});
+
+// ---------------------------------------------------------------------------
+// M2: BEST_EFFORT degeneracy rejection (P0)
+// ---------------------------------------------------------------------------
+
+Deno.test("addSubgraph: BEST_EFFORT with no gates is rejected (M2)", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
+  const result = addSubgraph(g, [], {
+    slug: "be-no-gates",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("BEST_EFFORT"), true);
+  assertEquals(result.error?.includes("gate"), true);
+});
+
+Deno.test("addSubgraph: BEST_EFFORT with empty gates array is rejected (M2)", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "be-empty-gates",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: [],
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("BEST_EFFORT"), true);
+});
+
+Deno.test("addSubgraph: BEST_EFFORT with at least one gate is accepted (M2 boundary)", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "G" })]);
+  const result = addSubgraph(g, [], {
+    slug: "be-with-gate",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: ["G"],
+  });
+  assertEquals(result.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// M3: ANY + FAIL_FAST ordering contract lock (P0)
+// ---------------------------------------------------------------------------
+
+Deno.test("subgraphOutcome: ANY + FAIL_FAST — failure short-circuits before completion check (M3)", () => {
+  // Contract: [DONE, FAILED] with ANY+FAIL_FAST must yield "failed".
+  // FAIL_FAST trips first; the ANY completion check never runs.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.FAILED }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "any-ff",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ANY,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+// ---------------------------------------------------------------------------
+// SubgraphGate polymorphism (P0)
+// ---------------------------------------------------------------------------
+
+Deno.test("addSubgraph: external gate with non-empty source and externalId is accepted", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "G" })]);
+  const result = addSubgraph(g, [], {
+    slug: "ext-gate",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: [
+      "G",
+      { kind: "external", source: "jira", externalId: "PROJ-42" },
+    ],
+  });
+  assertEquals(result.ok, true);
+});
+
+Deno.test("addSubgraph: external gate missing source is rejected", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "bad-gate",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: [{ kind: "external", source: "", externalId: "PROJ-42" }],
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("source"), true);
+});
+
+Deno.test("addSubgraph: external gate missing externalId is rejected", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "bad-gate2",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: [{ kind: "external", source: "jira", externalId: "" }],
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("externalId"), true);
+});
+
+Deno.test("subgraphOutcome: GATED with external gate — always unresolved, never completes", () => {
+  // A GATED subgraph with an external gate must never reach "completed"
+  // because external gates are always unresolved until UNM-1b7.7.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  // Manually construct subgraph (gates field includes external gate).
+  const sg = addSubgraph(g, [], {
+    slug: "ext-gated",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
+    gates: [
+      "G",
+      { kind: "external", source: "jira", externalId: "PROJ-1" },
+    ],
+  }).value!;
+  // Both node gate and all local nodes done — but external gate blocks completion.
+  const outcome = subgraphOutcome(g, sg);
+  assertEquals(outcome !== "completed", true);
+});
+
+Deno.test("subgraphOutcome: BEST_EFFORT with external gate — trips failure", () => {
+  // External gates are always unresolved; BEST_EFFORT treats unresolved external
+  // gates as failures and immediately trips.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "be-ext",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ALL,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: [
+      "G",
+      { kind: "external", source: "github-pr", externalId: "99" },
+    ],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+Deno.test("subgraphOutcome: GATED with mixed node+external — blocked by external gate", () => {
+  // Node gate is satisfied; external gate is not — subgraph must not complete.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "mixed-gates",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
+    gates: [
+      "G",
+      { kind: "external", source: "linear", externalId: "LIN-7" },
+    ],
+  }).value!;
+  const outcome = subgraphOutcome(g, sg);
+  // Cannot complete because external gate is unresolved.
+  assertEquals(outcome === "completed", false);
+});
+
+// ---------------------------------------------------------------------------
+// 9-cell matrix: uncovered cells (P1)
+// ---------------------------------------------------------------------------
+
+Deno.test("subgraphOutcome: BEST_EFFORT + ANY — ANY completion with failed non-gate", () => {
+  // BEST_EFFORT + ANY: any terminal-OK node satisfies ANY. Non-gate FAILED
+  // nodes are tolerated. Failure policy is checked first but BEST_EFFORT only
+  // trips on gate failure — no gate is FAILED here — so completion wins.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "B", status: NodeStatus.FAILED }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "be-any",
+    nodeIds: ["A", "B", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ANY,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: ["G"],
+  }).value!;
+  // G is ok (gate not failed), A is ok → ANY satisfied → "completed".
+  assertEquals(subgraphOutcome(g, sg), "completed");
+});
+
+Deno.test("subgraphOutcome: BEST_EFFORT + ALL with gate failure — trips failed", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "G", status: NodeStatus.FAILED }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "be-all-gf",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ALL,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+Deno.test("subgraphOutcome: BEST_EFFORT + ALL with non-gate failure — completes via tolerated failure", () => {
+  // G (gate) is DONE. A (non-gate) is FAILED — tolerated by BEST_EFFORT.
+  // ALL: all members settled (A tolerated, G ok) → "completed".
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.FAILED }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "be-all-ngf",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.ALL,
+    failurePolicy: SubgraphFailurePolicy.BEST_EFFORT,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "completed");
+});
+
+Deno.test("subgraphOutcome: GATED + CONTINUE — gates must clear; non-gate FAILED tolerated", () => {
+  // G (gate) is DONE. A (non-gate) is FAILED — CONTINUE tolerates it.
+  // GATED completion: every gate is terminal-ok → "completed".
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.FAILED }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "gated-cont",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.CONTINUE,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "completed");
+});
+
+Deno.test("subgraphOutcome: GATED + FAIL_FAST with gate failure — fails", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.DONE }),
+    makeNode({ id: "G", status: NodeStatus.FAILED }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "gated-ff-gf",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+Deno.test("subgraphOutcome: GATED + FAIL_FAST with non-gate failure — fails (FAIL_FAST trips before GATED checks)", () => {
+  // FAIL_FAST is checked first — even though the gate G is done,
+  // A (non-gate) is FAILED → FAIL_FAST trips immediately.
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.FAILED }),
+    makeNode({ id: "G", status: NodeStatus.DONE }),
+  ]);
+  const sg = addSubgraph(g, [], {
+    slug: "gated-ff-ngf",
+    nodeIds: ["A", "G"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+    gates: ["G"],
+  }).value!;
+  assertEquals(subgraphOutcome(g, sg), "failed");
+});
+
+// ---------------------------------------------------------------------------
+// Slug regex boundary tests (P1)
+// ---------------------------------------------------------------------------
+
+Deno.test("addSubgraph: slug '\"a\"' (1-char) is accepted", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "a",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, true, result.error);
+});
+
+Deno.test("addSubgraph: 41-char slug is accepted", () => {
+  // 41 chars: 'a' + 39 lower-alphanum + 'z' = 41 total
+  const slug = "a" + "b".repeat(39) + "z";
+  assertEquals(slug.length, 41);
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug,
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, true, result.error);
+});
+
+Deno.test("addSubgraph: 42-char slug is rejected", () => {
+  const slug = "a" + "b".repeat(40) + "z";
+  assertEquals(slug.length, 42);
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug,
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+});
+
+Deno.test("addSubgraph: underscore in slug is rejected", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "foo_bar",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+});
+
+Deno.test("addSubgraph: 'a-b' slug (hyphen between alphanum) is accepted", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "a-b",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, true, result.error);
+});
+
+Deno.test("addSubgraph: 'a--b' slug (double hyphen) is accepted", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "a--b",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, true, result.error);
+});
+
+Deno.test("addSubgraph: trailing hyphen in slug is rejected", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "abc-",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+});
+
+// ---------------------------------------------------------------------------
+// Stability: derived ID changes when own member set changes (P1 — M5 caveat)
+// ---------------------------------------------------------------------------
+
+Deno.test("computeSubgraphs: derived ID changes when own member set changes (M5 caveat)", () => {
+  // Subgraph {A,B} has a stable hash. When B leaves the component
+  // (now {A} only), the hash must change — the member set changed.
+  const g1 = makeGraph(
+    [
+      makeNode({ id: "A", executor: Executor.ADJUNCT }),
+      makeNode({ id: "B", executor: Executor.ADJUNCT }),
+    ],
+    [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  );
+  const sgs1 = computeSubgraphs(g1, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const ab = sgs1.find((s) => s.nodes.includes("A") && s.nodes.includes("B"))!.id;
+
+  // Now only node A remains. Hash input changed — ID must differ.
+  const g2 = makeGraph([
+    makeNode({ id: "A", executor: Executor.ADJUNCT }),
+  ]);
+  const sgs2 = computeSubgraphs(g2, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  const aOnly = sgs2.find((s) => s.nodes.includes("A"))!.id;
+
+  assertEquals(ab !== aOnly, true, "subgraph ID must change when member set changes");
+  assertEquals(ab.startsWith("auto-"), true);
+  assertEquals(aOnly.startsWith("auto-"), true);
 });

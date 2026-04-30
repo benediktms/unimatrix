@@ -5,7 +5,7 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { CoordinationContract, Edge, Graph, Node, Subgraph, Wave } from "./types.ts";
+import type { CoordinationContract, Edge, Graph, Node, Subgraph, SubgraphGate, Wave } from "./types.ts";
 import {
   CoordinationMode,
   EdgeType,
@@ -970,6 +970,16 @@ export function computeSubgraphs(
     compNodes.length === 0 ? "" : `auto-${hashNodeSet(compNodes)}`
   );
 
+  // Post-condition: no two non-empty components may produce the same hash ID.
+  // A collision would silently merge distinct subgraphs — fail loudly instead.
+  const nonEmptyIds = componentIds.filter((id) => id !== "");
+  if (new Set(nonEmptyIds).size !== nonEmptyIds.length) {
+    throw new Error(
+      "Hash collision detected in computeSubgraphs: two adjunct components produced the same auto-<hash> ID. " +
+      "This is probabilistically near-impossible with distinct node sets — inspect inputs for duplicated node IDs.",
+    );
+  }
+
   // Adjunct subgraphs (one per connected component)
   for (let i = 0; i < components.length; i++) {
     const compNodes = components[i];
@@ -1045,7 +1055,8 @@ export function computeSubgraphs(
  * Specification for adding an explicit (non-derived) subgraph.
  */
 export interface AddSubgraphSpec {
-  /** Stable subgraph slug. Must match `^[a-z][a-z0-9-]{0,40}$`, not equal `sg-lead`, not start with `auto-`. */
+  /** Stable subgraph slug. Must match `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` (length 1–41,
+   * trailing character must be alphanumeric), not equal `sg-lead`, not start with `auto-`. */
   slug: string;
   /** Optional human-readable label. */
   label?: string;
@@ -1063,11 +1074,12 @@ export interface AddSubgraphSpec {
   completionPolicy?: SubgraphCompletionPolicy;
   /** Optional failure policy. Defaults to `FAIL_FAST`. */
   failurePolicy?: SubgraphFailurePolicy;
-  /** Optional gate node IDs. Must be a subset of `nodeIds`. */
-  gates?: string[];
+  /** Optional gate references. Node-ID gates must be members of `nodeIds`.
+   * External gates (object form) require non-empty `source` and `externalId`. */
+  gates?: SubgraphGate[];
 }
 
-const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
+export const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
 
 /**
  * Validate a spec and produce a new explicit Subgraph value, leaving the graph
@@ -1075,13 +1087,69 @@ const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
  * checkpoint's subgraphs and stamping `node.subgraph` onto member nodes.
  *
  * Validation:
- * - slug matches `^[a-z][a-z0-9-]{0,40}$`, isn't `sg-lead`, doesn't start with `auto-`
- * - slug is unique among existing subgraph IDs
+ * - slug matches `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` (length 1–41, trailing char alphanumeric),
+ *   isn't `sg-lead`, doesn't start with `auto-`
+ * - slug is unique among existing subgraph IDs (idempotent re-add: same spec returns existing;
+ *   differing spec returns error)
  * - all `nodeIds` exist in the graph and are unique
  * - `parentId` (if set) refers to an existing subgraph
  * - no `nodeId` already belongs to another explicit subgraph
- * - all `gates` are members of `nodeIds`
+ * - node-ID gates are members of `nodeIds`; external gates have non-empty `source` and `externalId`
+ * - `BEST_EFFORT` failure policy requires at least one gate (otherwise degenerates to CONTINUE)
  */
+/**
+ * Compare two SubgraphGate arrays for semantic equality.
+ * Order-insensitive for both node-ID gates and external gates.
+ */
+function gatesEqual(a: SubgraphGate[] | undefined, b: SubgraphGate[] | undefined): boolean {
+  const aArr = a ?? [];
+  const bArr = b ?? [];
+  if (aArr.length !== bArr.length) return false;
+
+  const stringify = (g: SubgraphGate): string => {
+    if (typeof g === "string") return `node:${g}`;
+    return `external:${g.source}:${g.externalId}`;
+  };
+
+  const aSet = new Set(aArr.map(stringify));
+  const bSet = new Set(bArr.map(stringify));
+  if (aSet.size !== bSet.size) return false;
+  for (const s of aSet) {
+    if (!bSet.has(s)) return false;
+  }
+  return true;
+}
+
+/**
+ * Check whether an existing subgraph's spec matches the incoming spec field-by-field.
+ * Used to implement idempotent re-add semantics.
+ */
+function subgraphsEquivalent(existing: Subgraph, spec: AddSubgraphSpec): boolean {
+  // Slug already matched by the caller. Check the remaining fields.
+  const existingNodeSet = new Set(existing.nodes);
+  const specNodeSet = new Set(spec.nodeIds);
+  if (existingNodeSet.size !== specNodeSet.size) return false;
+  for (const id of existingNodeSet) {
+    if (!specNodeSet.has(id)) return false;
+  }
+
+  if (existing.executor !== spec.executor) return false;
+  if (existing.tier !== spec.tier) return false;
+
+  const effectiveCompletion = spec.completionPolicy ?? SubgraphCompletionPolicy.ALL;
+  const effectiveFailure = spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST;
+  if (existing.completionPolicy !== effectiveCompletion) return false;
+  if (existing.failurePolicy !== effectiveFailure) return false;
+
+  // parentId
+  const specParent = spec.parentId ?? undefined;
+  if (existing.parentId !== specParent) return false;
+
+  if (!gatesEqual(existing.gates, spec.gates)) return false;
+
+  return true;
+}
+
 export function addSubgraph(
   graph: Graph,
   currentSubgraphs: Subgraph[],
@@ -1101,9 +1169,19 @@ export function addSubgraph(
         `Slug "${spec.slug}" is reserved (sg-lead and auto-* are auto-derived IDs)`,
     };
   }
-  if (currentSubgraphs.some((sg) => sg.id === spec.slug)) {
-    return { ok: false, error: `Subgraph with id "${spec.slug}" already exists` };
+
+  // Idempotency: if slug already exists, compare specs.
+  const existing = currentSubgraphs.find((sg) => sg.id === spec.slug);
+  if (existing) {
+    if (subgraphsEquivalent(existing, spec)) {
+      return { ok: true, value: existing };
+    }
+    return {
+      ok: false,
+      error: `Subgraph "${spec.slug}" already exists with a different spec — re-add rejected`,
+    };
   }
+
   if (spec.nodeIds.length === 0) {
     return { ok: false, error: "Subgraph must contain at least one node" };
   }
@@ -1142,14 +1220,43 @@ export function addSubgraph(
     }
   }
 
+  // M2: BEST_EFFORT requires at least one gate; without gates it degenerates to CONTINUE.
+  const failurePolicy = spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST;
+  if (failurePolicy === SubgraphFailurePolicy.BEST_EFFORT) {
+    if (!spec.gates || spec.gates.length === 0) {
+      return {
+        ok: false,
+        error:
+          "BEST_EFFORT failure policy requires at least one gate — without gates it degenerates to CONTINUE",
+      };
+    }
+  }
+
   if (spec.gates) {
     const memberSet = new Set(spec.nodeIds);
     for (const gate of spec.gates) {
-      if (!memberSet.has(gate)) {
-        return {
-          ok: false,
-          error: `Gate node "${gate}" is not a member of this subgraph`,
-        };
+      if (typeof gate === "string") {
+        // Node-ID gate: must be a member of nodeIds.
+        if (!memberSet.has(gate)) {
+          return {
+            ok: false,
+            error: `Gate node "${gate}" is not a member of this subgraph`,
+          };
+        }
+      } else {
+        // External gate: source and externalId must be non-empty.
+        if (!gate.source || gate.source.trim() === "") {
+          return {
+            ok: false,
+            error: `External gate is missing a non-empty "source" field`,
+          };
+        }
+        if (!gate.externalId || gate.externalId.trim() === "") {
+          return {
+            ok: false,
+            error: `External gate is missing a non-empty "externalId" field`,
+          };
+        }
       }
     }
   }
@@ -1170,7 +1277,7 @@ export function addSubgraph(
     tier: spec.tier,
     coordination: spec.coordination ?? { mode: CoordinationMode.NONE },
     completionPolicy: spec.completionPolicy ?? SubgraphCompletionPolicy.ALL,
-    failurePolicy: spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST,
+    failurePolicy,
     ...(spec.label !== undefined ? { label: spec.label } : {}),
     ...(spec.parentId !== undefined ? { parentId: spec.parentId } : {}),
     ...(spec.gates ? { gates: spec.gates } : {}),
@@ -1196,6 +1303,23 @@ const TERMINAL_OK: NodeStatus[] = [
  * Evaluate a subgraph's overall status against its `completionPolicy` and
  * `failurePolicy`, given the current node states.
  *
+ * **Evaluation order**: failure policy is checked **before** completion policy.
+ * This means a tripped failure policy always wins, even when the completion
+ * policy could also be satisfied simultaneously.
+ *
+ * **ANY + FAIL_FAST ordering example** (intentional, locked by contract):
+ * Given nodes `[DONE, FAILED]`, `completionPolicy=ANY`, `failurePolicy=FAIL_FAST`:
+ * - FAIL_FAST trips first (a FAILED node exists) → outcome is `"failed"`.
+ * - The ANY completion check never runs.
+ * This is intentional: failure short-circuits. Use `CONTINUE` or `BEST_EFFORT`
+ * if you want failures to be tolerated alongside ANY completion.
+ *
+ * **GATED + external gates**: gates may be node IDs or external gate objects
+ * (see `SubgraphGate`). External gates have no in-process resolver — they are
+ * treated as **always unresolved** until UNM-1b7.7 integrates external_blockers.
+ * A subgraph with any unresolved external gates will never reach `"completed"` via
+ * GATED, and BEST_EFFORT will always trip on an external gate as failed.
+ *
  * Failure policy is checked first; if it has tripped, the subgraph is failed.
  * Otherwise, completion policy is evaluated against "settled" nodes — a node
  * is settled when it is OK (DONE/MERGED/PR_CREATED) **or** failed in a way
@@ -1218,8 +1342,18 @@ export function subgraphOutcome(
     .filter((m): m is Member => m.status !== undefined);
   if (members.length === 0) return "pending";
 
-  const gateSet = new Set(subgraph.gates ?? []);
-  const gates: Member[] = members.filter((m) => gateSet.has(m.id));
+  // Partition gates into node-ID gates (resolvable here) and external gates
+  // (not yet resolvable — always unresolved until UNM-1b7.7).
+  const rawGates = subgraph.gates ?? [];
+  const nodeGateIds = new Set<string>(
+    rawGates.filter((g): g is string => typeof g === "string"),
+  );
+  const externalGates = rawGates.filter((g) => typeof g !== "string");
+  // TODO(UNM-1b7.7): consult brain external_blockers to resolve external gate status.
+  // For now, treat every external gate as always unresolved.
+  const hasUnresolvedExternalGates = externalGates.length > 0;
+
+  const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
 
   const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
   const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
@@ -1233,7 +1367,9 @@ export function subgraphOutcome(
       if (members.every((m) => isFailed(m.status))) return "failed";
       break;
     case SubgraphFailurePolicy.BEST_EFFORT:
-      if (gates.some((g) => isFailed(g.status))) return "failed";
+      // External gates are always unresolved — treat as failed for BEST_EFFORT.
+      if (hasUnresolvedExternalGates) return "failed";
+      if (nodeGates.some((g) => isFailed(g.status))) return "failed";
       break;
   }
 
@@ -1244,7 +1380,7 @@ export function subgraphOutcome(
     if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
     if (
       subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
-      !gateSet.has(m.id)
+      !nodeGateIds.has(m.id)
     ) return true;
     return false;
   };
@@ -1256,9 +1392,12 @@ export function subgraphOutcome(
     case SubgraphCompletionPolicy.ANY:
       if (members.some((m) => isOk(m.status))) return "completed";
       break;
-    case SubgraphCompletionPolicy.GATED:
-      if (gates.length > 0 && gates.every((g) => isOk(g.status))) return "completed";
+    case SubgraphCompletionPolicy.GATED: {
+      // External gates are always unresolved — GATED never completes if any are present.
+      if (hasUnresolvedExternalGates) break;
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
       break;
+    }
   }
 
   if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
@@ -1296,7 +1435,10 @@ export function serializeSubgraphBrief(
     );
   }
   if (subgraph.gates?.length) {
-    lines.push(`Gates: ${subgraph.gates.join(", ")}`);
+    const gateStrs = subgraph.gates.map((g) =>
+      typeof g === "string" ? g : `external:${g.source}:${g.externalId}`
+    );
+    lines.push(`Gates: ${gateStrs.join(", ")}`);
   }
   lines.push("");
 

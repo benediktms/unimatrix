@@ -287,8 +287,9 @@ export interface Subgraph {
   completionPolicy: SubgraphCompletionPolicy;
   /** How node failures propagate to subgraph status. */
   failurePolicy: SubgraphFailurePolicy;
-  /** Gate node IDs required by `GATED` completion or `BEST_EFFORT` failure policies. */
-  gates?: string[];
+  /** Gate references required by `GATED` completion or `BEST_EFFORT` failure policies.
+   * Each entry is either a node ID (string) or an external gate descriptor object. */
+  gates?: SubgraphGate[];
 }
 
 /**
