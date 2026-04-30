@@ -38,7 +38,7 @@ import {
   triageSchema,
 } from "./types.ts";
 import type { Edge, Graph, Node, Subgraph, SubgraphSummary } from "./types.ts";
-import { designate, Role } from "./designate.ts";
+import { designate, deriveTrimatrixId, Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
@@ -2997,11 +2997,26 @@ server.tool(
     ),
   },
   (params) => {
+    // Resolve trimatrix_id: explicit override wins; otherwise derive from session;
+    // fall back to random with a warning when no session is active.
+    let resolvedTrimatrixId = params.trimatrix_id;
+    if (resolvedTrimatrixId === undefined && params.trimatrix) {
+      const sessionId = checkpoint?.sessionId;
+      if (sessionId) {
+        // sessionId-only derivation; see deriveTrimatrixId comment for the gitCommit rationale.
+        resolvedTrimatrixId = deriveTrimatrixId(sessionId);
+      } else {
+        console.error(
+          "[trimatrix/designate] No active session — trimatrix_id will be random. " +
+          "Call init or restore_checkpoint first for deterministic IDs.",
+        );
+      }
+    }
     const result = designate(
       params.count,
       params.role as Role | undefined,
       params.trimatrix,
-      params.trimatrix_id,
+      resolvedTrimatrixId,
     );
     return {
       content: [{ type: "text", text: JSON.stringify(result) }],

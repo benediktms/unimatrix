@@ -198,11 +198,11 @@ Teams (Claude Code TeamCreate) are required for coordination. They are NOT used 
 | Adversarial architecture — competing architectural approaches | YES | Agents must challenge each other's feasibility assessments |
 | Compliance matrix review — multiple sentinels | YES | Cross-cutting findings affect other reviewers |
 | Vinculum analysis — multiple designates | YES | Insights in one area affect analysis of another |
-| Swarm — file-partitioned bulk changes | NO | Non-overlapping files, no coordination needed |
+| Swarm — file-partitioned bulk changes | YES | Cross-cutting findings require SendMessage; team enables real-time coordination |
 | Independent scan — self-contained questions | NO | Each agent answers independently |
 | Single adjunct dispatch | NO | Only one agent |
 
-**Collaborative vs swarm threshold:** If changing a function signature in partition A requires an update in partition B, use collaborative (team). If partitions execute independently, use swarm (no team).
+**Collaborative vs swarm threshold:** If changing a function signature in partition A requires an update in partition B, use collaborative (team). Swarm also uses a team — drones use SendMessage for cross-partition findings while keeping strict file-partition discipline.
 
 **Team lifecycle:** Create before spawning → spawn with `team_name` → monitor → shutdown and delete after wave. Teams are per-wave.
 
@@ -215,6 +215,13 @@ These protocols are defined once here. Mode files reference them by name.
 ### Protocol A: Designation Generation
 
 **Every adjunct dispatched by the collective MUST receive a designation. No exceptions.** An adjunct without a designation cannot identify itself in neural link rooms, task comments, or coordination logs. Undesignated adjuncts are non-compliant.
+
+**Deterministic ID precondition:** The Trimatrix ID embedded in each
+designation is derived from `checkpoint.sessionId`. If the session has not
+been initialized via `mcp__unimatrix__init` or restored via
+`mcp__unimatrix__restore_checkpoint` before dispatch, designations fall back
+to random IDs (with a stderr warning) — call init or restore_checkpoint
+first.
 
 Call `mcp__unimatrix__designate` with:
 - `count` — number of agents to designate
@@ -271,7 +278,7 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
    to retrieve the brief. Subgraph IDs are either user slugs (explicit) or
    `auto-<hash>` (derived) — both are stable within the session.
 4. **Generate designations via Protocol A. This step is MANDATORY — do not dispatch adjuncts without designations.** Assign to subgraph `assignee`. Include the designation string in each adjunct's prompt.
-5. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`.
+5. **Neural link** — if multiple adjuncts in this wave: call `mcp__neural_link__room_open` to create a coordination room. The response returns a `room_id`. Include `NEURAL LINK ACTIVE`, `room_id: <id>`, and the adjunct's designation in every adjunct prompt. Each adjunct joins the room using its designation as `display_name`. **Exception:** modes that declare a coordination override (e.g., swarm — see Protocol F1 precedence rule) skip this step.
 6. Dispatch Agents with the brief injected in the prompt.
 7. For LEAD nodes in this wave: execute directly as parallel Bash calls.
 8. On adjunct completion: call `update_node` to attach PR metadata, then `complete_node` / `fail_node`.
@@ -280,7 +287,7 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 **Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
 - Sequential → T2 with multi-wave graph
 - Sequence relay → T2 with handoff snapshots
-- Swarm → T2 INDEPENDENT with PARTITIONED coordination
+- Swarm → T2 with team (cross-partition SendMessage coordination) + PARTITIONED file discipline
 - Collaborative → T3 COORDINATED with team
 
 ### Protocol D2: PR Lifecycle
@@ -306,6 +313,13 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 ### Protocol F: Agent Communication
 
 #### F1: Neural Link (`neural_link` MCP) — all multi-adjunct dispatches
+
+**Precedence rule:** If a mode file declares a coordination override that
+explicitly supersedes Protocol F1, the mode file wins. Protocol F1 applies
+to all other multi-adjunct dispatches. Example: `modes/swarm.md`
+§ Coordination Protocol Override declares that swarm coordinates via native
+Claude Code team primitives instead of neural link — that override takes
+precedence here.
 
 When dispatching **more than one adjunct** (any tier), the lead establishes a neural link room:
 

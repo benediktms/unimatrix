@@ -5,6 +5,7 @@ __pycache__/
 dist/
 .venv/
 .opencode/
+.claude/
 bin/
 node_modules/
 AGENTS.md
