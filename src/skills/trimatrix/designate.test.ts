@@ -351,6 +351,27 @@ Deno.test("deriveTrimatrixId: session + commit differs from session alone", () =
   assertNotEquals(withCommit, without);
 });
 
+Deno.test("deriveTrimatrixId: cross-commit divergence for fixed session", () => {
+  // For a fixed session, different git commits should produce different IDs.
+  // Codomain is [1, 999] — some collisions are expected. Allow at most 1 in 100 pairs.
+  const sessionId = "trimatrix-2026-01-01-xyz9";
+  let collisions = 0;
+  const trials = 100;
+  for (let i = 0; i < trials; i++) {
+    const commitA = Math.random().toString(36).slice(2, 9);
+    const commitB = Math.random().toString(36).slice(2, 9);
+    if (commitA === commitB) continue; // skip degenerate case
+    const idA = deriveTrimatrixId(sessionId, commitA);
+    const idB = deriveTrimatrixId(sessionId, commitB);
+    if (idA === idB) collisions++;
+  }
+  if (collisions > 1) {
+    throw new Error(
+      `deriveTrimatrixId: too many cross-commit collisions for fixed session: ${collisions}/${trials}`,
+    );
+  }
+});
+
 Deno.test("deriveTrimatrixId: output range [1,999] for 1000 random session ids", () => {
   for (let i = 0; i < 1000; i++) {
     const sessionId = `trimatrix-session-${Math.random().toString(36).slice(2)}-${i}`;
