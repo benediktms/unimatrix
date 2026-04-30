@@ -46,13 +46,16 @@ import {
   addEdge,
   addNode,
   addSubgraph,
+  canDispatch,
   clearGate,
   completeNode,
   computeSubgraphs,
   SUBGRAPH_SLUG_RE,
   computeWaves,
   computeWavesFromRefinement,
+  currentFrontier,
   failNode,
+  nextFrontierBatch,
   nextWave,
   parallelNodesInWave,
   subgraphOutcome,
@@ -61,6 +64,7 @@ import {
   updateNode,
   serializeSubgraphBrief,
   validate,
+  validateDispatch,
   waveStatus,
 } from "./graph.ts";
 import {
@@ -1269,9 +1273,18 @@ server.tool(
 
 server.tool(
   "dispatch_wave",
-  "Activate all nodes in the specified wave and record it as the current wave.",
+  "Activate all nodes in the specified wave and record it as the current wave. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch).",
   {
     waveId: z.coerce.number().int().describe("Wave index to dispatch"),
+    capabilities: z.object({
+      repos: z.array(z.string()).optional(),
+      tools: z.array(z.string()).optional(),
+      canWrite: z.boolean().optional(),
+      humanPresent: z.boolean().optional(),
+      labels: z.array(z.string()).optional(),
+    }).optional().describe(
+      "Dispatcher capabilities for capability-match gating. When provided, every node's `requirements` is checked via `validateDispatch`; mismatches are reported in the response under `capabilityMismatches[]`.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1296,6 +1309,28 @@ server.tool(
     const regularNodeIds = wave.nodes.filter(
       (nId) => cp.graph.nodes[nId]?.type !== NodeType.ELICIT_GATE,
     );
+
+    // Capability matching (UNM-1b7.4): if the caller advertises capabilities,
+    // gate every regular node's requirements against them. Mismatches are
+    // surfaced and the node is held back from activation. Backward-compat:
+    // when `capabilities` is undefined, the check is skipped entirely.
+    const capabilityMismatches: Array<{ nodeId: string; missing: string[] }> = [];
+    const capabilityRejected = new Set<string>();
+    if (params.capabilities) {
+      for (const nId of regularNodeIds) {
+        const result = validateDispatch(cp.graph, nId, params.capabilities);
+        if (!result.ok) {
+          // The validateDispatch error message includes the missing list;
+          // re-derive the structured form via canDispatch for the response.
+          const node = cp.graph.nodes[nId];
+          const detail = canDispatch(params.capabilities, node?.requirements);
+          if (!detail.ok) {
+            capabilityMismatches.push({ nodeId: nId, missing: detail.missing });
+            capabilityRejected.add(nId);
+          }
+        }
+      }
+    }
 
     // Wave isolation: ELICIT_GATE nodes must not share a wave with other node types
     if (elicitGateIds.length > 0 && regularNodeIds.length > 0) {
@@ -1325,6 +1360,10 @@ server.tool(
     let workingCp = cp;
 
     for (const nId of regularNodeIds) {
+      // Skip nodes already rejected by the capability gate (UNM-1b7.4).
+      // They should not be activated; they should not consume a brain
+      // round-trip; they should not receive a fence.
+      if (capabilityRejected.has(nId)) continue;
       const node = workingCp.graph.nodes[nId];
       if (!node?.taskId) {
         clearToActivate.push(nId);
@@ -1431,7 +1470,9 @@ server.tool(
 
     // Compute per-node execution info and parallelism groups
     const activatedNodes = wave.nodes.filter(
-      (nId) => !externalBlocked.some((eb) => eb.nodeId === nId),
+      (nId) =>
+        !externalBlocked.some((eb) => eb.nodeId === nId) &&
+        !capabilityRejected.has(nId),
     );
     const nodeExecution = wave.nodes.map((nId) => {
       const node = checkpoint!.graph.nodes[nId];
@@ -1458,6 +1499,7 @@ server.tool(
             parallelBatches: batches,
             workPackets,
             ...(externalBlocked.length > 0 ? { externalBlocked } : {}),
+            ...(capabilityMismatches.length > 0 ? { capabilityMismatches } : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
@@ -2352,6 +2394,41 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify({ wave, approved: false }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: next_frontier (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "next_frontier",
+  "Return the continuous frontier — every PENDING + READY node across all waves whose dependencies have cleared, regardless of wave order. The frontier crosses wave boundaries: a wave-3 node whose deps are satisfied appears even when wave-1 is incomplete. Filters out nodes flagged `externallyBlocked` (orthogonal axis from `readinessStatus`). Returns batches grouped by wave for downstream batching/UI. Advisory only — `dispatch_wave` remains the authoritative activation point.",
+  {},
+  () => {
+    const cp = requireCheckpoint();
+    const frontier = currentFrontier(cp.graph, cp.waves);
+    const batches = nextFrontierBatch(cp.graph, cp.waves, cp.currentWaveId);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            frontier,
+            batches,
+            // Surface contract: frontier is read-time advisory. dispatch_wave
+            // remains authoritative — fence minting and external-blocker
+            // re-consultation happen there. Two callers reading the same
+            // frontier may both see the same node; only one's dispatch will
+            // succeed (the other's WorkPacket gets invalidated on the next
+            // mint).
+            advisoryNote:
+              "Frontier is advisory. dispatch_wave is the authoritative activation point and may reject nodes the frontier listed (stale fence, fresh external blocker, capability mismatch).",
+          }),
         },
       ],
     };
