@@ -359,6 +359,31 @@ stateDiagram-v2
 | `complete_node` | MCP tool | Called by adjunct on successful node completion. Derives DONE/MERGED/PR_CREATED from node metadata. |
 | `fail_node` | MCP tool | Called by adjunct on VERIFY_COMPILE failure or by lead on cap exhaustion. |
 
+#### C7: Post-Completion Summary (Mandatory)
+
+After every node transitions to a terminal status (DONE, MERGED, FAILED), the lead emits a structured summary. The summary lands in three places:
+1. Printed to the conversation (visible to user).
+2. Appended as a comment on the brain task via `mcp__brain__tasks_apply_event` with `event_type: "comment_added"`.
+3. Persisted as a record snapshot via `mcp__brain__records_save_snapshot` tagged `node-summary`, `<nodeId>`, `<sessionLabel>`.
+
+##### Summary template
+
+```
+## Node Summary: <nodeId>
+**Status:** <DONE | MERGED | FAILED>
+**Brain task:** <taskId>
+**Iterations:** <iterationCount>/<maxIterations>
+**Last review:** <PASS | FAIL — notes if FAIL>
+**Files modified:** <bulleted list>
+**What changed:** <2-3 sentences>
+**Why:** <link directives, recon snapshot, or sentinel notes>
+**Commits:** <SHAs>
+```
+
+The lead derives `Files modified` from `git show --name-only <commitSha>` if commits are attached, otherwise from the drone's reporting comment. The summary is mandatory before dispatching the next node or wave.
+
+See Protocol E for the closure precondition that depends on this summary.
+
 ### Protocol D: Wave Dispatch Patterns
 
 Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution` (per-node executor) and `parallelBatches` (parallelism groups).
@@ -409,6 +434,7 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED (
 - Epic is closed LAST, after ALL subtasks are verified closed via `close_node`.
 - An epic with open subtasks must NEVER be closed.
 - Failed or blocked tasks are marked `blocked` — not left `in_progress`.
+- **Per-node summary precondition:** Before calling `close_node`, the lead MUST have emitted the post-completion summary per Protocol C § C7.
 
 ### Protocol F: Agent Communication
 
