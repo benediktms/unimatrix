@@ -401,6 +401,21 @@ export enum MachineState {
 }
 
 /**
+ * A single entry in the checkpoint event log.
+ * Appended by `appendEvent` and used by `replay` for crash-recovery.
+ */
+export interface EventLogEntry {
+  /** Monotonic sequence number per session (1-based, gapless). */
+  seq: number;
+  /** ISO 8601 timestamp when this entry was written. */
+  timestamp: string;
+  /** The event that was applied. */
+  event: Event;
+  /** Runtime VERSION string at write time (for forward-compat). */
+  checkpointVersion: string;
+}
+
+/**
  * Persisted checkpoint capturing the full state of a trimatrix execution.
  * Saved to brain snapshots to survive process restarts.
  */
@@ -456,6 +471,12 @@ export interface Checkpoint {
   episodeIds?: string[];
   /** Routing decision captured at classification time. */
   routingTrace?: RoutingTrace;
+  /**
+   * Append-only event log for crash-recovery replay.
+   * Populated by `appendEvent`; absent (or empty) on pre-2.6.0 checkpoints.
+   * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
+   */
+  eventLog?: EventLogEntry[];
 }
 
 // ---------------------------------------------------------------------------

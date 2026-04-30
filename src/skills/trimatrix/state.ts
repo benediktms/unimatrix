@@ -4,7 +4,7 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
+import type { Checkpoint, Event, EventLogEntry, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
 import {
   Executor,
   MachineState,
@@ -19,7 +19,7 @@ import { computeWaves, recomputeReadiness } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.5.0";
+const VERSION = "2.6.0";
 
 /** All checkpoint versions this runtime can load. */
 const SUPPORTED_VERSIONS = new Set([
@@ -33,6 +33,7 @@ const SUPPORTED_VERSIONS = new Set([
   "2.3.0",
   "2.4.0",
   "2.5.0",
+  "2.6.0",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,7 @@ export function createCheckpoint(
     updatedAt: now,
     subgraphs: [],
     episodeIds: [],
+    eventLog: [],
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
@@ -563,7 +565,94 @@ export function deserialize(json: string): Checkpoint {
     cp.graph = recomputeReadiness(cp.graph);
   }
 
+  // Backward compat: pre-2.6.0 checkpoints lack eventLog — default to [].
+  // They cannot replay (the log was not written), but they round-trip cleanly.
+  if (!cp.eventLog) cp.eventLog = [];
+
   return cp;
+}
+
+// ---------------------------------------------------------------------------
+// Event-log persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply an event to a checkpoint AND append the event to the checkpoint's
+ * event log. Returns a new immutable checkpoint with the log entry appended.
+ *
+ * The `transition` function itself remains pure and does NOT write to the log;
+ * the log is opt-in via this function.
+ *
+ * Invariant: after a sequence of `appendEvent` calls,
+ *   `serialize(replay(checkpoint.eventLog)) === serialize(checkpoint)`
+ *
+ * @param checkpoint - Current checkpoint (must have `eventLog` initialized).
+ * @param event      - Event to apply and record.
+ * @returns New checkpoint with the transition applied and the entry logged.
+ */
+export function appendEvent(checkpoint: Checkpoint, event: Event): Checkpoint {
+  const next = transition(checkpoint, event);
+  const prevLog = checkpoint.eventLog ?? [];
+  const seq = prevLog.length + 1;
+  const entry: EventLogEntry = {
+    seq,
+    timestamp: new Date().toISOString(),
+    event,
+    checkpointVersion: VERSION,
+  };
+  return {
+    ...next,
+    eventLog: [...prevLog, entry],
+  };
+}
+
+/**
+ * Reconstruct a checkpoint by replaying an ordered event log from left to right.
+ *
+ * Starting from `initial` (or a fresh empty checkpoint when absent), each
+ * event is applied via `transition`. The seq values are validated for
+ * monotonicity and gaplessness — any out-of-order or missing entry throws.
+ *
+ * @param events  - Ordered event log (must be gapless, starting at seq 1).
+ * @param initial - Optional starting checkpoint. Defaults to a fresh empty
+ *                  checkpoint when absent.
+ * @returns The checkpoint produced after applying all events.
+ * @throws If seq values are out-of-order, if a gap exists, or if any
+ *         transition is rejected by the state machine.
+ */
+export function replay(
+  events: EventLogEntry[],
+  initial?: Checkpoint,
+): Checkpoint {
+  const now = new Date().toISOString();
+  let cp: Checkpoint = initial ?? {
+    version: VERSION,
+    machineState: MachineState.INITIALIZING,
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: now,
+    updatedAt: now,
+    subgraphs: [],
+    episodeIds: [],
+    eventLog: [],
+  };
+
+  for (let i = 0; i < events.length; i++) {
+    const entry = events[i];
+    const expectedSeq = i + 1;
+    if (entry.seq !== expectedSeq) {
+      throw new Error(
+        `Event log replay failed — out-of-order seq: expected ${expectedSeq}, got ${entry.seq} at index ${i}`,
+      );
+    }
+    cp = transition(cp, entry.event);
+  }
+
+  return { ...cp, eventLog: events };
 }
 
 // ---------------------------------------------------------------------------

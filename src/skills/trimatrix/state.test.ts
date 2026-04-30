@@ -10,12 +10,14 @@
 
 import { assertEquals, assertThrows } from "@std/assert";
 import {
+  appendEvent,
   canTransition,
   createCheckpoint,
   currentWave,
   deserialize,
   failedNodes,
   pendingGates,
+  replay,
   serialize,
   transition,
 } from "./state.ts";
@@ -993,7 +995,7 @@ Deno.test("serialize/deserialize: round trip preserves intent, tier, subgraphStr
   assertEquals(restored.tier, Tier.T3);
   assertEquals(restored.subgraphStrategy, SubgraphStrategy.COORDINATED);
   assertEquals(restored.subgraphs, []);
-  assertEquals(restored.version, "2.5.0");
+  assertEquals(restored.version, "2.6.0");
 });
 
 // ---------------------------------------------------------------------------
@@ -1347,4 +1349,159 @@ Deno.test("serialize/deserialize: resume round-trip preserves subgraph structure
   const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
   assertEquals(cp2.subgraphs?.length, 1, "idempotent replay must not double-append");
   assertEquals(cp2.subgraphs?.[0].id, "drone-cluster");
+});
+
+// ---------------------------------------------------------------------------
+// Event-log persistence tests (UNM-1b7.3)
+// ---------------------------------------------------------------------------
+
+// Test EL-1: appendEvent increments seq monotonically
+Deno.test("appendEvent: increments seq monotonically across multiple events", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  assertEquals(cp.eventLog, []);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  assertEquals(cp.eventLog?.length, 1);
+  assertEquals(cp.eventLog?.[0].seq, 1);
+
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  assertEquals(cp.eventLog?.length, 2);
+  assertEquals(cp.eventLog?.[1].seq, 2);
+
+  cp = appendEvent(cp, { type: "wave_dispatched", waveId: 1 });
+  assertEquals(cp.eventLog?.length, 3);
+  assertEquals(cp.eventLog?.[2].seq, 3);
+});
+
+// Test EL-2: appendEvent propagates state through transition
+Deno.test("appendEvent: propagates state through transition correctly", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  assertEquals(cp.machineState, MachineState.INITIALIZING);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  assertEquals(cp.machineState, MachineState.PLAN_REVIEW);
+
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  assertEquals(cp.machineState, MachineState.DISPATCHING);
+
+  // Event log contains the two events
+  assertEquals(cp.eventLog?.length, 2);
+  assertEquals(cp.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(cp.eventLog?.[1].event.type, "plan_finalized");
+});
+
+// Test EL-3: replay of empty log returns fresh checkpoint
+Deno.test("replay: empty event log returns fresh (initial) checkpoint", () => {
+  const result = replay([]);
+  assertEquals(result.machineState, MachineState.INITIALIZING);
+  assertEquals(result.eventLog, []);
+  assertEquals(Object.keys(result.graph.nodes).length, 0);
+});
+
+// Test EL-3b: replay of empty log with supplied initial returns that initial
+Deno.test("replay: empty event log with supplied initial returns that initial", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const initial = createCheckpoint([], graph, { sessionId: "test-session" });
+  const result = replay([], initial);
+  assertEquals(result.machineState, MachineState.INITIALIZING);
+  assertEquals(result.sessionId, "test-session");
+  assertEquals(result.eventLog, []);
+});
+
+// Test EL-4: replay reproduces materialized checkpoint (idempotency invariant)
+Deno.test("replay: recorded events reproduce the materialized checkpoint (idempotency invariant)", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+
+  // Apply a sequence of events via appendEvent
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  cp = appendEvent(cp, { type: "wave_dispatched", waveId: 1 });
+  cp = appendEvent(cp, { type: "node_completed", nodeId: "n1" });
+
+  // Replay from scratch using the recorded event log
+  const log = cp.eventLog!;
+  const fresh = createCheckpoint([], graph);
+  const replayed = replay(log, fresh);
+
+  // The idempotency invariant: serialize(replay(log, fresh)) === serialize(cp)
+  // We compare machine state and graph — timestamps may differ, so we
+  // compare the structural fields that transition touches.
+  assertEquals(replayed.machineState, cp.machineState);
+  assertEquals(replayed.graph.nodes["n1"].status, cp.graph.nodes["n1"].status);
+  assertEquals(replayed.eventLog?.length, log.length);
+  // Full serialize equality excluding timestamps that differ
+  const cpWithoutTimestamps = { ...cp, updatedAt: "", createdAt: "" };
+  const replayedWithoutTimestamps = { ...replayed, updatedAt: "", createdAt: "" };
+  assertEquals(serialize(cpWithoutTimestamps), serialize(replayedWithoutTimestamps));
+});
+
+// Test EL-5: replay rejects out-of-order seq with a clear error
+Deno.test("replay: rejects out-of-order seq with clear error", () => {
+  assertThrows(
+    () => {
+      replay([
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          event: { type: "plan_submitted" },
+          checkpointVersion: "2.6.0",
+        },
+        {
+          seq: 3, // gap — should be 2
+          timestamp: "2026-01-01T00:00:01.000Z",
+          event: { type: "plan_finalized" },
+          checkpointVersion: "2.6.0",
+        },
+      ]);
+    },
+    Error,
+    "out-of-order seq",
+  );
+});
+
+// Test EL-6: pre-2.6.0 deserialize defaults eventLog to []
+Deno.test("deserialize: pre-2.6.0 checkpoint defaults eventLog to []", () => {
+  const raw = {
+    version: "2.5.0",
+    machineState: "initializing",
+    graph: { nodes: {}, edges: [] },
+    waves: [],
+    currentWaveId: null,
+    repos: [],
+    waveHistory: [],
+    refinementHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    subgraphs: [],
+    episodeIds: [],
+    // no eventLog field
+  };
+  const cp = deserialize(JSON.stringify(raw));
+  assertEquals(cp.eventLog, []);
+});
+
+// Test EL-7: 2.6.0 round-trip preserves a non-trivial eventLog
+Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLog", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+
+  assertEquals(cp.version, "2.6.0");
+  assertEquals(cp.eventLog?.length, 2);
+
+  const json = serialize(cp);
+  const restored = deserialize(json);
+
+  assertEquals(restored.version, "2.6.0");
+  assertEquals(restored.eventLog?.length, 2);
+  assertEquals(restored.eventLog?.[0].seq, 1);
+  assertEquals(restored.eventLog?.[0].event.type, "plan_submitted");
+  assertEquals(restored.eventLog?.[1].seq, 2);
+  assertEquals(restored.eventLog?.[1].event.type, "plan_finalized");
+  assertEquals(restored.eventLog?.[0].checkpointVersion, "2.6.0");
 });
