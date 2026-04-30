@@ -192,6 +192,69 @@ export async function searchEpisodes(
 }
 
 // ---------------------------------------------------------------------------
+// getExternalBlockers
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot of an external blocker attached to a brain task.
+ * Mirrors the `external_blockers` array returned by `tasks.get`.
+ */
+export interface ExternalBlockerSnapshot {
+  source: string;
+  externalId: string;
+  url?: string;
+  taskId?: string;
+  resolvedAt?: number; // unix seconds
+}
+
+/**
+ * Consult the brain CLI for external blockers on a task (best-effort).
+ *
+ * On brain CLI failure the function returns `{ unresolvedCount: 0, blockers: [] }`
+ * to ensure dispatch is never blocked by brain unavailability. The error is
+ * logged to stderr for observability.
+ */
+export async function getExternalBlockers(
+  taskId: string,
+  brainExec: BrainExec,
+): Promise<{ unresolvedCount: number; blockers: ExternalBlockerSnapshot[] }> {
+  const empty = { unresolvedCount: 0, blockers: [] };
+  try {
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "tasks.get",
+        arguments: { task_id: taskId },
+      },
+      id: 1,
+    });
+    const raw = await brainExec.withStdin(BRAIN_CLI, ["mcp"], rpc, 5000);
+    const parsed = JSON.parse(raw);
+    const text = parsed?.result?.content?.[0]?.text;
+    if (!text) return empty;
+    const task = JSON.parse(text);
+    const blockers: ExternalBlockerSnapshot[] = (task.external_blockers ?? []).map(
+      (b: Record<string, unknown>) => ({
+        source: b.source as string,
+        externalId: b.externalId as string,
+        ...(b.url !== undefined ? { url: b.url as string } : {}),
+        ...(b.taskId !== undefined ? { taskId: b.taskId as string } : {}),
+        ...(b.resolvedAt !== undefined ? { resolvedAt: b.resolvedAt as number } : {}),
+      }),
+    );
+    const unresolvedCount: number =
+      typeof task.dependency_summary?.external_blocker_unresolved_count === "number"
+        ? task.dependency_summary.external_blocker_unresolved_count
+        : blockers.filter((b) => b.resolvedAt === undefined).length;
+    return { unresolvedCount, blockers };
+  } catch (err) {
+    console.error(`[brain-sync] getExternalBlockers failed for task ${taskId}:`, err);
+    return empty;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // syncGraphDepsToBrain
 // ---------------------------------------------------------------------------
 

@@ -6,10 +6,13 @@
  */
 
 import type {
+  Capabilities,
   CoordinationContract,
   Edge,
+  FrontierEntry,
   Graph,
   Node,
+  Requirements,
   Subgraph,
   SubgraphGate,
   Wave,
@@ -20,6 +23,7 @@ import {
   Executor,
   NodeStatus,
   NodeType,
+  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
   SubgraphStrategy,
@@ -43,6 +47,100 @@ export interface MutationResult<T> {
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Capability matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a dispatcher's capabilities satisfy a node's requirements.
+ *
+ * Subset semantics:
+ * - Every required `repos[]` entry must appear in `capabilities.repos`, or
+ *   `capabilities.repos` must include `"*"` (write-anywhere).
+ * - Every required `tools[]` entry must appear in `capabilities.tools`.
+ * - If `requirements.canWrite` is true, `capabilities.canWrite` must be true.
+ * - If `requirements.humanPresent` is true, `capabilities.humanPresent` must be true.
+ * - Every required `labels[]` entry must appear in `capabilities.labels`.
+ *
+ * Returns `{ ok: true }` when all requirements are met, or
+ * `{ ok: false, missing: [...] }` with concrete unmet items
+ * (e.g. `"repo:foo"`, `"tool:bash"`, `"canWrite"`, `"humanPresent"`, `"label:urgent"`).
+ */
+export function canDispatch(
+  capabilities: Capabilities,
+  requirements: Requirements | undefined,
+): { ok: true } | { ok: false; missing: string[] } {
+  if (!requirements) return { ok: true };
+
+  const missing: string[] = [];
+
+  if (requirements.repos && requirements.repos.length > 0) {
+    const capRepos = capabilities.repos ?? [];
+    const wildcard = capRepos.includes("*");
+    for (const repo of requirements.repos) {
+      if (!wildcard && !capRepos.includes(repo)) {
+        missing.push(`repo:${repo}`);
+      }
+    }
+  }
+
+  if (requirements.tools && requirements.tools.length > 0) {
+    const capTools = capabilities.tools ?? [];
+    for (const tool of requirements.tools) {
+      if (!capTools.includes(tool)) {
+        missing.push(`tool:${tool}`);
+      }
+    }
+  }
+
+  if (requirements.canWrite === true && !capabilities.canWrite) {
+    missing.push("canWrite");
+  }
+
+  if (requirements.humanPresent === true && !capabilities.humanPresent) {
+    missing.push("humanPresent");
+  }
+
+  if (requirements.labels && requirements.labels.length > 0) {
+    const capLabels = capabilities.labels ?? [];
+    for (const label of requirements.labels) {
+      if (!capLabels.includes(label)) {
+        missing.push(`label:${label}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) return { ok: false, missing };
+  return { ok: true };
+}
+
+/**
+ * Validate that the given dispatcher can handle a specific node's requirements.
+ *
+ * Looks up `nodeId` in the graph, evaluates `canDispatch`, and returns a
+ * `MutationResult<void>` with a human-readable error message on mismatch.
+ *
+ * Does NOT wire into `dispatch_wave` — caller is responsible for integration.
+ */
+export function validateDispatch(
+  graph: Graph,
+  nodeId: string,
+  capabilities: Capabilities,
+): MutationResult<void> {
+  const node = graph.nodes[nodeId];
+  if (!node) {
+    return { ok: false, error: `Node "${nodeId}" not found in graph` };
+  }
+
+  const result = canDispatch(capabilities, node.requirements);
+  if (result.ok) return { ok: true };
+
+  return {
+    ok: false,
+    error: `Node ${nodeId} requires ${result.missing.join(", ")}; dispatcher lacks these capabilities`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +388,44 @@ const DEPENDS_ON_SATISFIED: NodeStatus[] = [NodeStatus.DONE, NodeStatus.MERGED];
 export interface UnsatisfiedDependency {
   edge: Edge;
   reason: string;
+}
+
+/**
+ * Recompute the topology `readinessStatus` for every node in the graph.
+ *
+ * - A node with no unsatisfied incoming deps becomes `READY`.
+ * - A node with at least one unsatisfied incoming dep becomes `BLOCKED`.
+ * - Nodes already marked `INVALIDATED` are preserved as-is — invalidation is
+ *   set explicitly by refinement code and only cleared by re-dispatch, never
+ *   by automatic recompute.
+ *
+ * This is the topology axis (orthogonal to `NodeStatus`). The execution layer
+ * (`compute_waves`, `dispatch_wave`) reads this to decide whether a `PENDING`
+ * node is actually claimable.
+ *
+ * Returns a new `Graph` value — pure function, no mutation.
+ */
+export function recomputeReadiness(graph: Graph): Graph {
+  const updatedNodes: Record<string, Node> = {};
+  let changed = false;
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (node.readinessStatus === ReadinessStatus.INVALIDATED) {
+      updatedNodes[id] = node;
+      continue;
+    }
+    const unsatisfied = unsatisfiedDependencies(graph, id);
+    const next = unsatisfied.length === 0
+      ? ReadinessStatus.READY
+      : ReadinessStatus.BLOCKED;
+    if (node.readinessStatus !== next) {
+      updatedNodes[id] = { ...node, readinessStatus: next };
+      changed = true;
+    } else {
+      updatedNodes[id] = node;
+    }
+  }
+  if (!changed) return graph;
+  return { ...graph, nodes: updatedNodes };
 }
 
 /**
@@ -541,11 +677,18 @@ export function addNode(
     }
   }
 
+  // Backfill readinessStatus default for callers that haven't migrated to
+  // the 2.5.0 schema yet (`undefined` → `READY`). The next `recomputeReadiness`
+  // pass corrects it based on actual edge satisfaction.
+  const nodeWithReadiness: Node = node.readinessStatus !== undefined
+    ? node
+    : { ...node, readinessStatus: ReadinessStatus.READY };
+
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: { ...graph.nodes, [node.id]: node },
+      nodes: { ...graph.nodes, [node.id]: nodeWithReadiness },
     },
   };
 }
@@ -1411,15 +1554,15 @@ export function subgraphOutcome(
     .filter((m): m is Member => m.status !== undefined);
   if (members.length === 0) return "pending";
 
-  // Partition gates into node-ID gates (resolvable here) and external gates
-  // (not yet resolvable — always unresolved until UNM-1b7.7).
+  // Partition gates into node-ID gates (resolvable here) and external gates.
   const rawGates = subgraph.gates ?? [];
   const nodeGateIds = new Set<string>(
     rawGates.filter((g): g is string => typeof g === "string"),
   );
   const externalGates = rawGates.filter((g) => typeof g !== "string");
-  // TODO(UNM-1b7.7): consult brain external_blockers to resolve external gate status.
-  // For now, treat every external gate as always unresolved.
+  // External gates without a cached blocker snapshot are treated as unresolved.
+  // Resolution requires the async getExternalBlockers call at the dispatch boundary
+  // in server.ts; see subgraphOutcomeWithBlockers for the snapshot-aware variant.
   const hasUnresolvedExternalGates = externalGates.length > 0;
 
   const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
@@ -1467,6 +1610,102 @@ export function subgraphOutcome(
       if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) {
         return "completed";
       }
+      break;
+    }
+  }
+
+  if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
+  return "pending";
+}
+
+/**
+ * Snapshot-aware variant of `subgraphOutcome` that incorporates pre-fetched
+ * external-blocker counts.
+ *
+ * **Design rationale**: `subgraphOutcome` is intentionally synchronous so it
+ * can be called freely during graph traversal without async overhead. Making it
+ * async would be a breaking change to every call site. The async
+ * `getExternalBlockers` call happens once at the dispatch boundary in server.ts;
+ * the resolved counts are placed in `blockerSnapshot` keyed by brain task ID.
+ *
+ * External gates that carry a `taskId` look up their unresolved count from the
+ * snapshot: count === 0 means the gate is resolved. Gates without a `taskId`
+ * fall back to the conservative "always unresolved" behavior.
+ *
+ * @param graph - The full execution graph.
+ * @param subgraph - The subgraph to evaluate.
+ * @param blockerSnapshot - Map of `taskId → unresolved external blocker count`
+ *   collected at the dispatch boundary. Pass an empty Map to reproduce the
+ *   behavior of `subgraphOutcome` (all external gates treated as unresolved).
+ */
+export function subgraphOutcomeWithBlockers(
+  graph: Graph,
+  subgraph: Subgraph,
+  blockerSnapshot: Map<string, number>,
+): SubgraphOutcome {
+  type Member = { id: string; status: NodeStatus };
+  const members: Member[] = subgraph.nodes
+    .map((id) => ({ id, status: graph.nodes[id]?.status }))
+    .filter((m): m is Member => m.status !== undefined);
+  if (members.length === 0) return "pending";
+
+  const rawGates = subgraph.gates ?? [];
+  const nodeGateIds = new Set<string>(
+    rawGates.filter((g): g is string => typeof g === "string"),
+  );
+  const externalGates = rawGates.filter((g) => typeof g !== "string");
+
+  // Resolve each external gate using the snapshot. A gate is unresolved when:
+  // - it has no taskId (no lookup possible), OR
+  // - its taskId is absent from the snapshot (never queried), OR
+  // - the snapshot reports unresolvedCount > 0.
+  const hasUnresolvedExternalGates = externalGates.some((g) => {
+    if (typeof g === "string") return false;
+    const tId = (g as { taskId?: string }).taskId;
+    if (!tId) return true; // no taskId → conservative: treat as unresolved
+    const count = blockerSnapshot.get(tId);
+    return count === undefined || count > 0;
+  });
+
+  const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
+
+  const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
+  const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
+
+  switch (subgraph.failurePolicy) {
+    case SubgraphFailurePolicy.FAIL_FAST:
+      if (members.some((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.CONTINUE:
+      if (members.every((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.BEST_EFFORT:
+      if (hasUnresolvedExternalGates) return "failed";
+      if (nodeGates.some((g) => isFailed(g.status))) return "failed";
+      break;
+  }
+
+  const settled = (m: Member): boolean => {
+    if (isOk(m.status)) return true;
+    if (!isFailed(m.status)) return false;
+    if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
+    if (
+      subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
+      !nodeGateIds.has(m.id)
+    ) return true;
+    return false;
+  };
+
+  switch (subgraph.completionPolicy) {
+    case SubgraphCompletionPolicy.ALL:
+      if (members.every(settled)) return "completed";
+      break;
+    case SubgraphCompletionPolicy.ANY:
+      if (members.some((m) => isOk(m.status))) return "completed";
+      break;
+    case SubgraphCompletionPolicy.GATED: {
+      if (hasUnresolvedExternalGates) break;
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
       break;
     }
   }
@@ -1612,4 +1851,108 @@ export function parallelNodesInWave(
   }
 
   return batches;
+}
+
+// ---------------------------------------------------------------------------
+// Continuous frontier scheduling (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a lookup map from node ID → wave number.
+ *
+ * Nodes absent from every wave are not included in the map.
+ */
+export function nodeToWave(graph: Graph, waves: Wave[]): Map<string, number> {
+  void graph; // graph param is reserved for future node-existence validation
+  const result = new Map<string, number>();
+  for (const wave of waves) {
+    for (const nodeId of wave.nodes) {
+      result.set(nodeId, wave.id);
+    }
+  }
+  return result;
+}
+
+/**
+ * Return the continuous frontier: every node that is simultaneously
+ * `NodeStatus.PENDING` and `ReadinessStatus.READY`, regardless of which wave
+ * it belongs to.
+ *
+ * This unlocks cross-wave parallelism: when a later-wave node's dependencies
+ * clear before earlier-wave nodes finish, it appears on the frontier and can
+ * be dispatched immediately — no wave-serialization barrier.
+ *
+ * Entries are sorted by (wave asc, nodeId asc) for deterministic output.
+ * The wave number is carried purely as a dispatch hint; consumers may group,
+ * filter, or ignore it.
+ *
+ * Nodes whose `readinessStatus` is undefined are treated as `READY` (backwards
+ * compatibility with pre-2.5.0 checkpoints that lack the field).
+ *
+ * **Advisory contract**: `currentFrontier` is read-time advisory. It does
+ * NOT consult lease fences (a parallel caller may have already dispatched
+ * the node), capability requirements (those are checked by `dispatch_wave`
+ * with caller `Capabilities`), or fresh external-blocker state (the cached
+ * `externallyBlocked` axis is honored, but the brain may have updated since).
+ * Authoritative activation lives in `dispatch_wave`, which mints fences,
+ * re-consults brain, and rejects on capability mismatch. Two callers reading
+ * the same frontier may both see the same node; only one's WorkPacket
+ * survives the next mint. Use the frontier for batching and UI; use
+ * `dispatch_wave` for actual activation.
+ */
+export function currentFrontier(graph: Graph, waves: Wave[]): FrontierEntry[] {
+  const waveOf = nodeToWave(graph, waves);
+  const entries: FrontierEntry[] = [];
+
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    if (node.status !== NodeStatus.PENDING) continue;
+    // Treat undefined readinessStatus as READY (pre-2.5.0 compat)
+    const ready = node.readinessStatus === undefined ||
+      node.readinessStatus === ReadinessStatus.READY;
+    if (!ready) continue;
+    // Filter on the orthogonal external-blocker axis. A node with unresolved
+    // external blockers is topologically READY (edges satisfied) but not
+    // frontier-eligible — `dispatch_wave` would refuse activation. Treating
+    // both axes as required avoids the frontier lying about dispatchability.
+    if (node.externallyBlocked === true) continue;
+    const wave = waveOf.get(nodeId) ?? 0;
+    entries.push({ nodeId, wave });
+  }
+
+  // Sort by (wave asc, nodeId asc) for determinism
+  entries.sort((a, b) => a.wave !== b.wave ? a.wave - b.wave : a.nodeId.localeCompare(b.nodeId));
+
+  return entries;
+}
+
+/**
+ * Return one dispatch batch per wave that has at least one frontier-eligible
+ * node, across all waves simultaneously (continuous-frontier alternative to
+ * `nextWave`).
+ *
+ * Each batch contains the wave number and the IDs of PENDING+READY nodes in
+ * that wave. Batches are ordered by wave number (ascending). Empty waves are
+ * omitted.
+ *
+ * The `currentWaveId` parameter is retained for API symmetry with `nextWave`
+ * and caller context; this function does NOT filter by it — the continuous
+ * frontier is wave-order-independent.
+ */
+export function nextFrontierBatch(
+  graph: Graph,
+  waves: Wave[],
+  _currentWaveId: number | null,
+): { wave: number; nodeIds: string[] }[] {
+  const frontier = currentFrontier(graph, waves);
+  if (frontier.length === 0) return [];
+
+  // Group entries by wave, preserving sort order from currentFrontier
+  const byWave = new Map<number, string[]>();
+  for (const entry of frontier) {
+    if (!byWave.has(entry.wave)) byWave.set(entry.wave, []);
+    byWave.get(entry.wave)!.push(entry.nodeId);
+  }
+
+  // Return as array of {wave, nodeIds}, wave-ascending (already ordered by insertion)
+  return [...byWave.entries()].map(([wave, nodeIds]) => ({ wave, nodeIds }));
 }

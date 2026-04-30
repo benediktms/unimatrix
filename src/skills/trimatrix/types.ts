@@ -30,9 +30,40 @@ export enum NodeStatus {
   ACTIVE = "ACTIVE",
   PR_CREATED = "PR_CREATED",
   MERGED = "MERGED",
+  /**
+   * @deprecated as of 2.5.0 — execution-vs-topology concerns are split into
+   * `NodeStatus` (execution lifecycle) and `ReadinessStatus` (topology
+   * eligibility). Existing usage of `BLOCKED` is preserved for ELICIT_GATE
+   * pending elicitation; new code should set `readinessStatus` instead and
+   * use `executionStatus` for actual execution lifecycle. Will be removed
+   * once all call sites migrate.
+   */
   BLOCKED = "BLOCKED",
   FAILED = "FAILED",
   DONE = "DONE",
+}
+
+/**
+ * Readiness state — the topology-eligibility axis of a node, orthogonal to
+ * `NodeStatus` (execution lifecycle).
+ *
+ * - `READY` — every incoming dependency edge is satisfied. Eligible for
+ *   dispatch when `NodeStatus` is `PENDING`.
+ * - `BLOCKED` — at least one incoming dependency is unsatisfied (source node
+ *   is not in a terminal-OK state, or carries an unresolved external blocker).
+ *   Recomputed automatically on every state transition.
+ * - `INVALIDATED` — the node's contract was changed via `refine` after it had
+ *   been computed; explicit re-dispatch is required to clear back to `READY`.
+ *   Set explicitly by refinement code; never auto-cleared.
+ *
+ * A node can be `ACTIVE` (executing) and `INVALIDATED` (topology says it's
+ * stale) simultaneously. The single `NodeStatus` enum cannot express that;
+ * the orthogonal axis can.
+ */
+export enum ReadinessStatus {
+  READY = "READY",
+  BLOCKED = "BLOCKED",
+  INVALIDATED = "INVALIDATED",
 }
 
 export enum EdgeType {
@@ -77,6 +108,31 @@ export enum Executor {
   LEAD = "LEAD",
   ADJUNCT = "ADJUNCT",
 }
+
+// ---------------------------------------------------------------------------
+// Capability matching types
+// ---------------------------------------------------------------------------
+
+/**
+ * Capabilities a dispatcher (lead session or adjunct) advertises. Used at
+ * dispatch time to decide whether a node's requirements are satisfied.
+ */
+export interface Capabilities {
+  /** Repository names the dispatcher can write to (`"*"` means all). */
+  repos?: string[];
+  /** Tool names the dispatcher can invoke (e.g. `"bash"`, `"edit"`, `"web"`). */
+  tools?: string[];
+  /** Whether the dispatcher can write code (vs. read-only analysis). */
+  canWrite?: boolean;
+  /** Whether a human is present to handle elicitation prompts. */
+  humanPresent?: boolean;
+  /** Free-form labels for custom matching. */
+  labels?: string[];
+}
+
+/** Requirements a node declares. Subset semantics: every requirement must be
+ *  satisfied by the dispatcher's `Capabilities` for `canDispatch` to return true. */
+export type Requirements = Capabilities;
 
 // ---------------------------------------------------------------------------
 // Routing types
@@ -124,6 +180,20 @@ export interface Node {
   stackedOn?: string;
   /** Current execution status of this node. */
   status: NodeStatus;
+  /**
+   * Topology-eligibility axis, orthogonal to `status`.
+   * - `READY` (default) — incoming dependencies satisfied; eligible for dispatch.
+   * - `BLOCKED` — at least one incoming dependency unsatisfied; recomputed automatically.
+   * - `INVALIDATED` — node's contract changed via refinement; explicit re-dispatch required.
+   *
+   * Introduced in checkpoint version 2.5.0. Pre-2.5.0 checkpoints default to
+   * `READY` on deserialize; subsequent transitions recompute the field.
+   *
+   * Optional at the type level so callers constructing fresh `Node` literals
+   * (MCP `add_node` tool, test fixtures) do not have to thread the default.
+   * `addNode`, `createCheckpoint`, and `recomputeReadiness` backfill on entry.
+   */
+  readinessStatus?: ReadinessStatus;
   /** URL of the pull request created for this node, if any. */
   prUrl?: string;
   /** Number of the pull request created for this node, if any. */
@@ -134,12 +204,54 @@ export interface Node {
   subgraph?: string;
   /** Who executes this node: the lead session or a dispatched adjunct. */
   executor: Executor;
+  /** Capability requirements that must be satisfied by the dispatcher before this node can be dispatched. */
+  requirements?: Requirements;
   /** Markdown prompt/context to present to the user during elicitation. Only for ELICIT_GATE nodes. */
   elicitPrompt?: string;
   /** JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted. */
   elicitSchema?: ElicitationRequestedSchema;
   /** User's structured response after elicitation completes. Populated by clear_gate. */
   elicitResponse?: Record<string, unknown>;
+  /**
+   * Opaque UUID minted by `dispatch_wave` to identify the current dispatch
+   * attempt. Callers must echo this back in `complete_node` / `fail_node` /
+   * `update_node` for fence validation. Absent until the node is first dispatched.
+   */
+  attemptId?: string;
+  /**
+   * Monotonically incrementing counter stamped on the node each time it is
+   * dispatched or invalidated by `refine` / `cancel`. Callers must echo the
+   * version they received; a mismatch means the node has been re-fenced since
+   * dispatch and the write is rejected. Absent until the node is first dispatched.
+   */
+  leaseVersion?: number;
+  /**
+   * Cached external-blocker snapshots from the last brain consultation at dispatch time.
+   * Populated by dispatch_wave when `taskId` is set; cleared on each new consultation.
+   * Type mirrors ExternalBlockerSnapshot in brain-sync.ts (duplicated to avoid a
+   * circular import — types.ts must not import from brain-sync.ts).
+   */
+  externalBlockers?: Array<{
+    source: string;
+    externalId: string;
+    url?: string;
+    taskId?: string;
+    resolvedAt?: number;
+  }>;
+  /**
+   * Whether `dispatch_wave`'s most recent brain consultation found unresolved
+   * external blockers. **Orthogonal axis** to `readinessStatus`:
+   * - `readinessStatus` reflects topology (edge satisfaction), recomputed
+   *   automatically by `recomputeReadiness` on every status-changing event.
+   * - `externallyBlocked` reflects brain state (cross-system gates), set
+   *   explicitly by `dispatch_wave` and only cleared by the next dispatch.
+   *
+   * Both axes must be `READY` and `false` respectively for a node to be
+   * frontier-eligible. The split avoids the "single field, two writers" race
+   * where `recomputeReadiness` would silently overwrite an external-blocker
+   * BLOCKED marker on the next `node_completed` event.
+   */
+  externallyBlocked?: boolean;
 }
 
 /**
@@ -157,6 +269,17 @@ export interface Edge {
    * - `DEPENDS_ON`: target cannot proceed until source is done or merged (single-repo friendly).
    */
   type: EdgeType;
+}
+
+/**
+ * A single entry in the continuous frontier — a PENDING+READY node with its
+ * wave membership attached for consumer batching and UI purposes.
+ */
+export interface FrontierEntry {
+  /** Node identifier. */
+  nodeId: string;
+  /** Wave number the node belongs to. */
+  wave: number;
 }
 
 /**
@@ -318,6 +441,29 @@ export interface SubgraphSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Lease fencing types (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Issued to whichever actor (lead session or adjunct) is currently authorized
+ * to write completion/failure for a node. Every write to a node must echo
+ * both `attemptId` and `leaseVersion`; stale fences are rejected.
+ *
+ * Lifecycle:
+ * - `dispatch_wave` mints a fresh WorkPacket per activated node and returns
+ *   them in the response.
+ * - `complete_node` / `fail_node` / `update_node` accept a WorkPacket and
+ *   reject if it does not match the node's current `attemptId` + `leaseVersion`.
+ * - `refine` and `cancel` increment `leaseVersion` on every affected node,
+ *   invalidating any in-flight WorkPacket for those nodes.
+ */
+export interface WorkPacket {
+  nodeId: string;
+  attemptId: string;
+  leaseVersion: number;
+}
+
+// ---------------------------------------------------------------------------
 // Wave types
 // ---------------------------------------------------------------------------
 
@@ -353,6 +499,21 @@ export enum MachineState {
   FAILED = "failed",
   COMPLETED = "completed",
   CANCELLED = "cancelled",
+}
+
+/**
+ * A single entry in the checkpoint event log.
+ * Appended by `appendEvent` and used by `replay` for crash-recovery.
+ */
+export interface EventLogEntry {
+  /** Monotonic sequence number per session (1-based, gapless). */
+  seq: number;
+  /** ISO 8601 timestamp when this entry was written. */
+  timestamp: string;
+  /** The event that was applied. */
+  event: Event;
+  /** Runtime VERSION string at write time (for forward-compat). */
+  checkpointVersion: string;
 }
 
 /**
@@ -411,6 +572,12 @@ export interface Checkpoint {
   episodeIds?: string[];
   /** Routing decision captured at classification time. */
   routingTrace?: RoutingTrace;
+  /**
+   * Append-only event log for crash-recovery replay.
+   * Populated by `appendEvent`; absent (or empty) on pre-2.6.0 checkpoints.
+   * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
+   */
+  eventLog?: EventLogEntry[];
 }
 
 // ---------------------------------------------------------------------------

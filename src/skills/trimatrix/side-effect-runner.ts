@@ -18,7 +18,7 @@ import {
   TaskSyncMode,
 } from "./side-effect-policy.ts";
 import type { SideEffectSpec } from "./side-effect-policy.ts";
-import { transition } from "./state.ts";
+import { appendEvent } from "./state.ts";
 import type { Checkpoint, Event } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -183,7 +183,12 @@ export function createEffectRunner(
     checkpoint: Checkpoint,
     event: Event,
   ): Promise<TransitionResult> {
-    const after = transition(checkpoint, event);
+    // Use `appendEvent` instead of bare `transition` so every server-side
+    // mutation lands in the event log. This is the wiring contract for
+    // UNM-1b7.3 — without it, replay-on-crash is theoretical because the
+    // log never gets written. `appendEvent` itself calls `transition`
+    // internally; the seq + log-entry plumbing happens inside.
+    const after = appendEvent(checkpoint, event);
 
     const specs = SIDE_EFFECT_POLICY[event.type];
     if (!specs || specs.length === 0) {
