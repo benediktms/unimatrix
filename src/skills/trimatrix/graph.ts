@@ -1038,6 +1038,148 @@ export function computeSubgraphs(
 }
 
 // ---------------------------------------------------------------------------
+// Explicit subgraph creation
+// ---------------------------------------------------------------------------
+
+/**
+ * Specification for adding an explicit (non-derived) subgraph.
+ */
+export interface AddSubgraphSpec {
+  /** Stable subgraph slug. Must match `^[a-z][a-z0-9-]{0,40}$`, not equal `sg-lead`, not start with `auto-`. */
+  slug: string;
+  /** Optional human-readable label. */
+  label?: string;
+  /** Optional parent subgraph ID for hierarchical nesting. */
+  parentId?: string;
+  /** Who executes nodes in this subgraph. */
+  executor: Executor;
+  /** Member node IDs. Must exist in the graph; must not overlap any other explicit subgraph. */
+  nodeIds: string[];
+  /** Execution tier. */
+  tier: Tier;
+  /** Optional coordination contract. Defaults to `{ mode: NONE }`. */
+  coordination?: CoordinationContract;
+  /** Optional completion policy. Defaults to `ALL`. */
+  completionPolicy?: SubgraphCompletionPolicy;
+  /** Optional failure policy. Defaults to `FAIL_FAST`. */
+  failurePolicy?: SubgraphFailurePolicy;
+  /** Optional gate node IDs. Must be a subset of `nodeIds`. */
+  gates?: string[];
+}
+
+const SUBGRAPH_SLUG_RE = /^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$/;
+
+/**
+ * Validate a spec and produce a new explicit Subgraph value, leaving the graph
+ * itself untouched. Caller is responsible for appending the result to the
+ * checkpoint's subgraphs and stamping `node.subgraph` onto member nodes.
+ *
+ * Validation:
+ * - slug matches `^[a-z][a-z0-9-]{0,40}$`, isn't `sg-lead`, doesn't start with `auto-`
+ * - slug is unique among existing subgraph IDs
+ * - all `nodeIds` exist in the graph and are unique
+ * - `parentId` (if set) refers to an existing subgraph
+ * - no `nodeId` already belongs to another explicit subgraph
+ * - all `gates` are members of `nodeIds`
+ */
+export function addSubgraph(
+  graph: Graph,
+  currentSubgraphs: Subgraph[],
+  spec: AddSubgraphSpec,
+): MutationResult<Subgraph> {
+  if (!SUBGRAPH_SLUG_RE.test(spec.slug)) {
+    return {
+      ok: false,
+      error:
+        `Invalid slug "${spec.slug}" — must match ${SUBGRAPH_SLUG_RE.source}`,
+    };
+  }
+  if (spec.slug === "sg-lead" || spec.slug.startsWith("auto-")) {
+    return {
+      ok: false,
+      error:
+        `Slug "${spec.slug}" is reserved (sg-lead and auto-* are auto-derived IDs)`,
+    };
+  }
+  if (currentSubgraphs.some((sg) => sg.id === spec.slug)) {
+    return { ok: false, error: `Subgraph with id "${spec.slug}" already exists` };
+  }
+  if (spec.nodeIds.length === 0) {
+    return { ok: false, error: "Subgraph must contain at least one node" };
+  }
+  if (new Set(spec.nodeIds).size !== spec.nodeIds.length) {
+    return { ok: false, error: "Duplicate node IDs in spec" };
+  }
+  for (const nodeId of spec.nodeIds) {
+    if (!(nodeId in graph.nodes)) {
+      return { ok: false, error: `Node "${nodeId}" does not exist in graph` };
+    }
+  }
+  if (spec.parentId && !currentSubgraphs.some((sg) => sg.id === spec.parentId)) {
+    return {
+      ok: false,
+      error: `Parent subgraph "${spec.parentId}" does not exist`,
+    };
+  }
+
+  // No overlap with other explicit subgraphs. Derived subgraphs are allowed to
+  // overlap; they are recomputed against the unclaimed-node set on next
+  // compute_subgraphs run.
+  const explicitMembership = new Map<string, string>();
+  for (const sg of currentSubgraphs) {
+    if (sg.derived) continue;
+    for (const id of sg.nodes) explicitMembership.set(id, sg.id);
+  }
+  for (const nodeId of spec.nodeIds) {
+    if (explicitMembership.has(nodeId)) {
+      return {
+        ok: false,
+        error:
+          `Node "${nodeId}" already belongs to explicit subgraph "${
+            explicitMembership.get(nodeId)
+          }"`,
+      };
+    }
+  }
+
+  if (spec.gates) {
+    const memberSet = new Set(spec.nodeIds);
+    for (const gate of spec.gates) {
+      if (!memberSet.has(gate)) {
+        return {
+          ok: false,
+          error: `Gate node "${gate}" is not a member of this subgraph`,
+        };
+      }
+    }
+  }
+
+  const sortedNodes = topoSortSubset(spec.nodeIds, graph.edges);
+  const memberSet = new Set(spec.nodeIds);
+  const internalEdges = graph.edges.filter(
+    (e) => memberSet.has(e.from) && memberSet.has(e.to),
+  );
+
+  const subgraph: Subgraph = {
+    id: spec.slug,
+    derived: false,
+    nodes: sortedNodes,
+    edges: internalEdges,
+    assignee: spec.executor === Executor.LEAD ? "LEAD" : "",
+    executor: spec.executor,
+    tier: spec.tier,
+    coordination: spec.coordination ?? { mode: CoordinationMode.NONE },
+    completionPolicy: spec.completionPolicy ?? SubgraphCompletionPolicy.ALL,
+    failurePolicy: spec.failurePolicy ?? SubgraphFailurePolicy.FAIL_FAST,
+    ...(spec.label !== undefined ? { label: spec.label } : {}),
+    ...(spec.parentId !== undefined ? { parentId: spec.parentId } : {}),
+    ...(spec.gates ? { gates: spec.gates } : {}),
+  };
+
+  return { ok: true, value: subgraph };
+}
+
+// ---------------------------------------------------------------------------
 // Subgraph brief serialization
 // ---------------------------------------------------------------------------
 

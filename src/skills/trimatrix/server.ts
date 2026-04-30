@@ -23,12 +23,27 @@ import type {
   ElicitResult,
   RepoMetadata,
 } from "./types.ts";
-import { approvalSchema, EdgeType, Executor, Intent, MachineState, NodeStatus, NodeType, SubgraphStrategy, Tier, triageSchema } from "./types.ts";
+import {
+  approvalSchema,
+  EdgeType,
+  Executor,
+  Intent,
+  MachineState,
+  NodeStatus,
+  NodeType,
+  SubgraphCompletionPolicy,
+  SubgraphFailurePolicy,
+  SubgraphStrategy,
+  Tier,
+  triageSchema,
+} from "./types.ts";
+import type { Edge, Graph, Node, Subgraph } from "./types.ts";
 import { designate, Role } from "./designate.ts";
 import {
   activateNodes,
   addEdge,
   addNode,
+  addSubgraph,
   clearGate,
   completeNode,
   computeSubgraphs,
@@ -49,6 +64,7 @@ import {
   deserialize,
   pendingGates,
   serialize,
+  transition,
 } from "./state.ts";
 import {
   repoRoot as repoRootLookup,
@@ -76,8 +92,13 @@ function generateSessionId(): string {
 }
 
 /**
- * Compute subgraph partitions and stamp each node with its subgraph ID.
+ * Recompute subgraph partitions and stamp each node with its subgraph ID.
  * Returns a new immutable checkpoint. No-op if tier/strategy are absent.
+ *
+ * Explicit subgraphs (`derived: false`) are preserved as-is; derived subgraphs
+ * are recomputed against the set of nodes not already claimed by an explicit
+ * subgraph. This lets a caller declare structure once via `add_subgraph` and
+ * have subsequent `compute_subgraphs` runs honor it instead of overwriting.
  */
 function applySubgraphs(
   cp: Checkpoint,
@@ -87,7 +108,29 @@ function applySubgraphs(
   const strategy = overrides?.strategy ?? cp.subgraphStrategy ?? SubgraphStrategy.SELF;
   if (!tier) return cp;
 
-  const subgraphs = computeSubgraphs(cp.graph, cp.waves, tier, strategy);
+  const explicit = (cp.subgraphs ?? []).filter((sg) => !sg.derived);
+
+  let derivationGraph: Graph = cp.graph;
+  if (explicit.length > 0) {
+    const claimed = new Set<string>();
+    for (const sg of explicit) {
+      for (const id of sg.nodes) claimed.add(id);
+    }
+    if (claimed.size > 0) {
+      const remainingNodes: Record<string, Node> = {};
+      for (const [id, node] of Object.entries(cp.graph.nodes)) {
+        if (!claimed.has(id)) remainingNodes[id] = node;
+      }
+      const remainingEdges: Edge[] = cp.graph.edges.filter(
+        (e) => !claimed.has(e.from) && !claimed.has(e.to),
+      );
+      derivationGraph = { nodes: remainingNodes, edges: remainingEdges };
+    }
+  }
+
+  const derived = computeSubgraphs(derivationGraph, cp.waves, tier, strategy);
+  const subgraphs: Subgraph[] = [...explicit, ...derived];
+
   const updatedNodes = { ...cp.graph.nodes };
   for (const sg of subgraphs) {
     for (const nodeId of sg.nodes) {
@@ -904,6 +947,105 @@ server.tool(
               nodes: sg.nodes,
               coordination: sg.coordination,
             })),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: add_subgraph
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "add_subgraph",
+  "Declare an explicit subgraph with a stable slug, hierarchy, and completion/failure policies. Explicit subgraphs are preserved across compute_subgraphs runs. Slug becomes the subgraph ID — must match ^[a-z][a-z0-9-]{0,40}$, cannot be 'sg-lead' or start with 'auto-'.",
+  {
+    slug: z.string().describe(
+      "Stable subgraph identifier (also used as the ID). Lowercase letters, digits, hyphens, 1–41 chars, must start with a letter. Cannot be 'sg-lead' or start with 'auto-'.",
+    ),
+    nodeIds: z.array(z.string()).min(1).describe(
+      "Member node IDs. Must exist in the graph; must not overlap any other explicit subgraph.",
+    ),
+    executor: z.nativeEnum(Executor).describe("LEAD or ADJUNCT"),
+    label: z.string().optional().describe("Optional human-readable label"),
+    parentId: z.string().optional().describe(
+      "Optional parent subgraph ID for hierarchical nesting. Must reference an existing subgraph.",
+    ),
+    tier: z.nativeEnum(Tier).optional().describe(
+      "Execution tier. Defaults to the checkpoint tier when omitted.",
+    ),
+    completionPolicy: z.nativeEnum(SubgraphCompletionPolicy).optional().describe(
+      "ALL (default) | ANY | GATED. GATED requires the gates field.",
+    ),
+    failurePolicy: z.nativeEnum(SubgraphFailurePolicy).optional().describe(
+      "FAIL_FAST (default) | CONTINUE | BEST_EFFORT.",
+    ),
+    gates: z.array(z.string()).optional().describe(
+      "Gate node IDs required by GATED completion or BEST_EFFORT failure policies. Must be a subset of nodeIds.",
+    ),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const tier = params.tier ?? cp.tier;
+    if (!tier) {
+      throw new Error(
+        "Tier required — provide via add_subgraph or set on checkpoint via init.",
+      );
+    }
+
+    const result = addSubgraph(cp.graph, cp.subgraphs ?? [], {
+      slug: params.slug,
+      label: params.label,
+      parentId: params.parentId,
+      executor: params.executor,
+      nodeIds: params.nodeIds,
+      tier,
+      completionPolicy: params.completionPolicy,
+      failurePolicy: params.failurePolicy,
+      gates: params.gates,
+    });
+    if (!result.ok) {
+      throw new Error(`add_subgraph failed: ${result.error}`);
+    }
+    const sg = result.value!;
+
+    const updatedNodes = { ...cp.graph.nodes };
+    for (const id of sg.nodes) {
+      if (updatedNodes[id]) {
+        updatedNodes[id] = { ...updatedNodes[id], subgraph: sg.id };
+      }
+    }
+
+    let nextCp: Checkpoint = {
+      ...cp,
+      graph: { ...cp.graph, nodes: updatedNodes },
+      subgraphs: [...(cp.subgraphs ?? []), sg],
+      updatedAt: new Date().toISOString(),
+    };
+    nextCp = transition(nextCp, { type: "subgraph_added", subgraphId: sg.id });
+    checkpoint = nextCp;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            subgraph: {
+              id: sg.id,
+              label: sg.label,
+              parentId: sg.parentId,
+              executor: sg.executor,
+              tier: sg.tier,
+              nodeCount: sg.nodes.length,
+              nodes: sg.nodes,
+              completionPolicy: sg.completionPolicy,
+              failurePolicy: sg.failurePolicy,
+              gates: sg.gates,
+              coordination: sg.coordination,
+            },
           }),
         },
       ],

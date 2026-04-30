@@ -11,6 +11,7 @@ import {
   activateNodes,
   addEdge,
   addNode,
+  addSubgraph,
   clearGate,
   completeNode,
   updateNode,
@@ -981,6 +982,174 @@ Deno.test("computeSubgraphs: derived subgraphs carry default policies and derive
   assertEquals(sgs[0].derived, true);
   assertEquals(sgs[0].completionPolicy, "ALL");
   assertEquals(sgs[0].failurePolicy, "FAIL_FAST");
+});
+
+// ---------------------------------------------------------------------------
+// addSubgraph
+// ---------------------------------------------------------------------------
+
+Deno.test("addSubgraph: creates explicit subgraph with defaults", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", executor: Executor.ADJUNCT }),
+    makeNode({ id: "B", executor: Executor.ADJUNCT }),
+  ]);
+  const result = addSubgraph(g, [], {
+    slug: "auth-rewrite",
+    nodeIds: ["A", "B"],
+    executor: Executor.ADJUNCT,
+    tier: Tier.T2,
+  });
+  assertEquals(result.ok, true);
+  const sg = result.value!;
+  assertEquals(sg.id, "auth-rewrite");
+  assertEquals(sg.derived, false);
+  assertEquals(sg.completionPolicy, "ALL");
+  assertEquals(sg.failurePolicy, "FAIL_FAST");
+  assertEquals(sg.nodes.length, 2);
+});
+
+Deno.test("addSubgraph: rejects invalid slug format", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const cases = ["", "Foo", "1abc", "with space", "trailing-"];
+  for (const slug of cases) {
+    const result = addSubgraph(g, [], {
+      slug,
+      nodeIds: ["A"],
+      executor: Executor.LEAD,
+      tier: Tier.T1,
+    });
+    assertEquals(result.ok, false, `slug "${slug}" should be rejected`);
+  }
+});
+
+Deno.test("addSubgraph: rejects reserved slugs", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  for (const slug of ["sg-lead", "auto-deadbeef"]) {
+    const result = addSubgraph(g, [], {
+      slug,
+      nodeIds: ["A"],
+      executor: Executor.LEAD,
+      tier: Tier.T1,
+    });
+    assertEquals(result.ok, false);
+    assertEquals(result.error?.includes("reserved"), true);
+  }
+});
+
+Deno.test("addSubgraph: rejects duplicate slug", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const first = addSubgraph(g, [], {
+    slug: "core",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(first.ok, true);
+  const second = addSubgraph(g, [first.value!], {
+    slug: "core",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("already exists"), true);
+});
+
+Deno.test("addSubgraph: rejects nodes overlapping another explicit subgraph", () => {
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+  ]);
+  const first = addSubgraph(g, [], {
+    slug: "alpha",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  const second = addSubgraph(g, [first.value!], {
+    slug: "beta",
+    nodeIds: ["A", "B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(second.ok, false);
+  assertEquals(second.error?.includes("alpha"), true);
+});
+
+Deno.test("addSubgraph: allows overlap with derived subgraphs", () => {
+  const g = makeGraph([makeNode({ id: "A", executor: Executor.ADJUNCT })]);
+  const derived = computeSubgraphs(g, [], Tier.T2, SubgraphStrategy.INDEPENDENT);
+  assertEquals(derived[0].derived, true);
+  const result = addSubgraph(g, derived, {
+    slug: "explicit",
+    nodeIds: ["A"],
+    executor: Executor.ADJUNCT,
+    tier: Tier.T2,
+  });
+  assertEquals(result.ok, true, result.error);
+});
+
+Deno.test("addSubgraph: rejects non-existent node", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "ghost",
+    nodeIds: ["A", "missing"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("missing"), true);
+});
+
+Deno.test("addSubgraph: rejects parentId pointing at non-existent subgraph", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = addSubgraph(g, [], {
+    slug: "child",
+    parentId: "ghost-parent",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("ghost-parent"), true);
+});
+
+Deno.test("addSubgraph: rejects gates outside nodeIds", () => {
+  const g = makeGraph([makeNode({ id: "A" }), makeNode({ id: "B" })]);
+  const result = addSubgraph(g, [], {
+    slug: "gated",
+    nodeIds: ["A"],
+    gates: ["B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(result.ok, false);
+  assertEquals(result.error?.includes("not a member"), true);
+});
+
+Deno.test("addSubgraph: hierarchy via parentId", () => {
+  const g = makeGraph([
+    makeNode({ id: "A" }),
+    makeNode({ id: "B" }),
+  ]);
+  const parent = addSubgraph(g, [], {
+    slug: "epic",
+    nodeIds: ["A"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    label: "Epic root",
+  });
+  assertEquals(parent.ok, true);
+  const child = addSubgraph(g, [parent.value!], {
+    slug: "task-b",
+    parentId: "epic",
+    nodeIds: ["B"],
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+  });
+  assertEquals(child.ok, true);
+  assertEquals(child.value!.parentId, "epic");
+  assertEquals(parent.value!.label, "Epic root");
 });
 
 // ---------------------------------------------------------------------------
