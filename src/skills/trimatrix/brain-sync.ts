@@ -38,8 +38,8 @@ export interface BrainExec {
 export class BrainError extends Error {
   code: number | undefined;
 
-  constructor(message: string, code?: number) {
-    super(message);
+  constructor(message: string, code?: number, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "BrainError";
     this.code = code;
   }
@@ -93,7 +93,11 @@ export async function callBrainTool(
       `[brain-sync] callBrainTool parse failure (${toolName}):`,
       err,
     );
-    throw err;
+    throw new BrainError(
+      `Failed to parse brain response (${toolName}): malformed JSON envelope`,
+      undefined,
+      { cause: err },
+    );
   }
 
   if (parsed.error) {
@@ -111,11 +115,41 @@ export async function callBrainTool(
         `[brain-sync] callBrainTool inner-parse failure (${toolName}):`,
         err,
       );
-      throw err;
+      throw new BrainError(
+        `Failed to parse inner brain response (${toolName}): malformed JSON content`,
+        undefined,
+        { cause: err },
+      );
     }
   }
 
   return (parsed as { result?: unknown }).result;
+}
+
+// ---------------------------------------------------------------------------
+// buildExternalBlockerResponse — shared response shaper for add/resolve handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape the MCP tool response for add_external_blocker / resolve_external_blocker.
+ *
+ * Extracted so production handlers and contract tests share the same logic;
+ * tests are not tautological because they exercise this exact function.
+ *
+ * - `idempotent` is `true` only when the brain result explicitly carries
+ *   `idempotent: true`. Anything else (false, missing, wrong type) → false.
+ * - The response intentionally omits the raw brain envelope; only the four
+ *   stable fields are surfaced.
+ */
+export function buildExternalBlockerResponse(
+  taskId: string,
+  externalId: string,
+  brainResult: unknown,
+): { ok: true; idempotent: boolean; externalId: string; taskId: string } {
+  const idempotent =
+    (brainResult as Record<string, unknown> | null | undefined)?.idempotent ===
+      true;
+  return { ok: true, idempotent, externalId, taskId };
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +266,11 @@ export async function writeEpisode(
 /**
  * Search brain's episodic memory for prior episodes (best-effort).
  * Returns matching episode stubs, or empty array on failure.
+ *
+ * `budget` is interpreted as a soft token budget and mapped to a `count` cap
+ * (~100 tokens per episode stub). `memory.retrieve` does not accept
+ * `budget_tokens`; the budget contract is upheld via the count cap and the
+ * server-side `kinds: ["episode"]` filter.
  */
 export async function searchEpisodes(
   query: string,
@@ -242,13 +281,15 @@ export async function searchEpisodes(
   exec?: BrainExec,
 ): Promise<EpisodeStub[]> {
   if (!exec) return [];
+  const count = Math.max(1, Math.floor((budget ?? 800) / 100));
   try {
     const result = await callBrainTool(
       exec,
       "memory.retrieve",
       {
         query,
-        budget_tokens: budget ?? 800,
+        count,
+        kinds: ["episode"],
         ...(tags ? { tags } : {}),
         ...(brains ? { brains } : {}),
       },
@@ -256,15 +297,13 @@ export async function searchEpisodes(
     ) as Record<string, unknown> | null | undefined;
     const results: Array<Record<string, unknown>> =
       (result as { results?: Array<Record<string, unknown>> })?.results ?? [];
-    return results
-      .filter((r) => r.kind === "episode")
-      .map((r) => ({
-        // memory_id uses format "sum:{ulid}" — strip prefix for bare summary_id
-        summary_id: String(r.memory_id ?? "").replace(/^sum:/, ""),
-        title: r.title as string,
-        tags: (r.tags as string[]) ?? [],
-        score: r.score as number | undefined,
-      }));
+    return results.map((r) => ({
+      // memory_id uses format "sum:{ulid}" — strip prefix for bare summary_id
+      summary_id: String(r.memory_id ?? "").replace(/^sum:/, ""),
+      title: r.title as string,
+      tags: (r.tags as string[]) ?? [],
+      score: r.score as number | undefined,
+    }));
   } catch (err) {
     console.error("[brain-sync] searchEpisodes failed:", err);
     return [];

@@ -281,7 +281,9 @@ Deno.test("writeEpisode: omits importance when undefined", async () => {
 // searchEpisodes
 // ---------------------------------------------------------------------------
 
-Deno.test("searchEpisodes: sends correct JSON-RPC and filters episodes", async () => {
+Deno.test("searchEpisodes: sends correct JSON-RPC envelope and maps results", async () => {
+  // memory.retrieve filters by `kinds: ["episode"]` server-side; the function
+  // trusts the server and does not re-filter client-side.
   const searchResult = {
     results: [
       {
@@ -290,13 +292,6 @@ Deno.test("searchEpisodes: sends correct JSON-RPC and filters episodes", async (
         title: "Wave 1",
         tags: ["trimatrix"],
         score: 0.9,
-      },
-      {
-        kind: "note",
-        memory_id: "chunk:1",
-        title: "Some note",
-        tags: [],
-        score: 0.5,
       },
       {
         kind: "episode",
@@ -331,7 +326,15 @@ Deno.test("searchEpisodes: sends correct JSON-RPC and filters episodes", async (
   assertEquals(payload.params.arguments.query, "test query");
   assertEquals(payload.params.arguments.tags, ["trimatrix"]);
   assertEquals(payload.params.arguments.brains, ["all"]);
-  assertEquals(payload.params.arguments.budget_tokens, 1000);
+  // memory.retrieve takes `count` (not `budget_tokens`); budget→count: 1000/100 = 10.
+  assertEquals(payload.params.arguments.count, 10);
+  assertEquals(payload.params.arguments.kinds, ["episode"]);
+  // budget_tokens must NOT be sent — memory.retrieve does not accept it.
+  assertEquals(
+    "budget_tokens" in payload.params.arguments,
+    false,
+    "budget_tokens must not be sent — memory.retrieve does not accept it",
+  );
 });
 
 Deno.test("searchEpisodes: returns empty when no exec provided", async () => {
@@ -352,27 +355,13 @@ Deno.test("searchEpisodes: swallows errors and returns empty", async () => {
   assertEquals(result, []);
 });
 
-Deno.test("searchEpisodes: returns empty when all results are notes (no episodes)", async () => {
-  const searchResult = {
-    results: [
-      {
-        kind: "note",
-        memory_id: "chunk:1",
-        title: "A note",
-        tags: [],
-        score: 0.8,
-      },
-      {
-        kind: "task",
-        memory_id: "task:1",
-        title: "A task",
-        tags: [],
-        score: 0.6,
-      },
-    ],
-  };
+Deno.test("searchEpisodes: returns empty when brain returns empty results", async () => {
+  // Note: kinds:["episode"] is enforced server-side; the function no longer
+  // filters client-side. This test verifies the empty-pass-through behavior.
   const response = JSON.stringify({
-    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+    result: {
+      content: [{ type: "text", text: JSON.stringify({ results: [] }) }],
+    },
   });
   const { exec } = mockExec({ withStdinReturn: response });
   const result = await searchEpisodes(
@@ -413,7 +402,7 @@ Deno.test("searchEpisodes: strips sum: prefix from memory_id", async () => {
   assertEquals(result[0].summary_id, "01ABC");
 });
 
-Deno.test("searchEpisodes: uses default budget of 800", async () => {
+Deno.test("searchEpisodes: default budget of 800 maps to count of 8", async () => {
   const response = JSON.stringify({
     result: {
       content: [{ type: "text", text: JSON.stringify({ results: [] }) }],
@@ -431,7 +420,41 @@ Deno.test("searchEpisodes: uses default budget of 800", async () => {
   const payload = JSON.parse(calls[0].stdinData!);
   assertEquals(payload.method, "tools/call");
   assertEquals(payload.params.name, "memory.retrieve");
-  assertEquals(payload.params.arguments.budget_tokens, 800);
+  assertEquals(payload.params.arguments.count, 8);
+  assertEquals(payload.params.arguments.kinds, ["episode"]);
+});
+
+Deno.test("searchEpisodes: custom budget maps to count via budget/100 floor", async () => {
+  const response = JSON.stringify({
+    result: {
+      content: [{ type: "text", text: JSON.stringify({ results: [] }) }],
+    },
+  });
+  // budget=50 → max(1, floor(50/100)) = max(1, 0) = 1
+  const small = mockExec({ withStdinReturn: response });
+  await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    50,
+    undefined,
+    small.exec,
+  );
+  let payload = JSON.parse(small.calls[0].stdinData!);
+  assertEquals(payload.params.arguments.count, 1);
+
+  // budget=2500 → floor(2500/100) = 25
+  const large = mockExec({ withStdinReturn: response });
+  await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    2500,
+    undefined,
+    large.exec,
+  );
+  payload = JSON.parse(large.calls[0].stdinData!);
+  assertEquals(payload.params.arguments.count, 25);
 });
 
 // ---------------------------------------------------------------------------
@@ -562,7 +585,7 @@ Deno.test("callBrainTool: throws BrainError with code and message when brain ret
   }
 });
 
-Deno.test("callBrainTool: rethrows on malformed (unparseable) JSON response", async () => {
+Deno.test("callBrainTool: wraps outer-parse failure as BrainError with cause", async () => {
   const exec: BrainExec = {
     withStdin: async () => "not valid json {{{{",
     exec: async () => ({ stdout: "", stderr: "" }),
@@ -572,6 +595,43 @@ Deno.test("callBrainTool: rethrows on malformed (unparseable) JSON response", as
     async () => {
       await callBrainTool(exec, "tasks.get", { task_id: "t-2" });
     },
-    SyntaxError,
+    BrainError,
+    "malformed JSON envelope",
   );
+
+  // Verify the underlying SyntaxError is preserved as `cause`.
+  try {
+    await callBrainTool(exec, "tasks.get", { task_id: "t-2" });
+  } catch (err) {
+    assertEquals(err instanceof BrainError, true);
+    assertEquals((err as BrainError).cause instanceof SyntaxError, true);
+  }
+});
+
+Deno.test("callBrainTool: wraps inner-parse failure as BrainError with cause", async () => {
+  // Outer envelope parses fine, but result.content[0].text is invalid JSON.
+  const exec: BrainExec = {
+    withStdin: async () =>
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { content: [{ type: "text", text: "not valid json {{{" }] },
+      }),
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+
+  await assertRejects(
+    async () => {
+      await callBrainTool(exec, "tasks.get", { task_id: "t-3" });
+    },
+    BrainError,
+    "malformed JSON content",
+  );
+
+  try {
+    await callBrainTool(exec, "tasks.get", { task_id: "t-3" });
+  } catch (err) {
+    assertEquals(err instanceof BrainError, true);
+    assertEquals((err as BrainError).cause instanceof SyntaxError, true);
+  }
 });

@@ -48,6 +48,7 @@ import {
   addSubgraph,
   canDispatch,
   clearGate,
+  closeNodeGuard,
   completeNode,
   computeSubgraphs,
   computeWaves,
@@ -75,6 +76,7 @@ import {
   transition,
 } from "./state.ts";
 import {
+  buildExternalBlockerResponse,
   callBrainTool,
   getExternalBlockers,
   repoRoot as repoRootLookup,
@@ -1785,41 +1787,27 @@ server.tool(
     const cp = requireCheckpoint();
 
     const node = cp.graph.nodes[params.nodeId];
-    if (!node) {
-      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    const guard = closeNodeGuard(node, params.nodeId);
+    if (!guard.ok) {
+      throw new Error(guard.error);
     }
-    if (!node.taskId) {
-      throw new Error(
-        `Node "${params.nodeId}" has no associated taskId — cannot close`,
-      );
-    }
-
-    // Guard: node must be in a completed status
-    const completedStatuses = [
-      NodeStatus.DONE,
-      NodeStatus.MERGED,
-      NodeStatus.PR_CREATED,
-    ];
-    if (!completedStatuses.includes(node.status)) {
-      throw new Error(
-        `Node "${params.nodeId}" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`,
-      );
-    }
+    // closeNodeGuard.ok === true implies node and node.taskId are defined.
+    const taskId = node!.taskId!;
 
     // Validate task exists in brain
     try {
-      await execFileAsync(BRAIN_CLI, ["tasks", "get", node.taskId, "--json"], {
+      await execFileAsync(BRAIN_CLI, ["tasks", "get", taskId, "--json"], {
         timeout: 5000,
       });
     } catch {
       throw new Error(
-        `Task "${node.taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
+        `Task "${taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
       );
     }
 
     // Close the task — must succeed (fail-loud: errors bubble to caller)
-    const cwd = repoRoot(node.repo);
-    await brainExec.exec(BRAIN_CLI, ["tasks", "close", node.taskId], {
+    const cwd = repoRoot(node!.repo);
+    await brainExec.exec(BRAIN_CLI, ["tasks", "close", taskId], {
       timeout: 5000,
       ...(cwd ? { cwd } : {}),
     });
@@ -1831,7 +1819,7 @@ server.tool(
           text: JSON.stringify({
             ok: true,
             nodeId: params.nodeId,
-            taskId: node.taskId,
+            taskId,
             closed: true,
           }),
         },
@@ -3284,18 +3272,17 @@ server.tool(
         ...(params.url ? { url: params.url } : {}),
       },
     }, { timeout: 5000 });
-    const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
-      false;
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            ok: true,
-            idempotent,
-            externalId: params.externalId,
-            taskId: node.taskId,
-          }),
+          text: JSON.stringify(
+            buildExternalBlockerResponse(
+              node.taskId,
+              params.externalId,
+              result,
+            ),
+          ),
         },
       ],
     };
@@ -3339,18 +3326,17 @@ server.tool(
         externalId: params.externalId,
       },
     }, { timeout: 5000 });
-    const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
-      false;
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            ok: true,
-            idempotent,
-            externalId: params.externalId,
-            taskId: node.taskId,
-          }),
+          text: JSON.stringify(
+            buildExternalBlockerResponse(
+              node.taskId,
+              params.externalId,
+              result,
+            ),
+          ),
         },
       ],
     };

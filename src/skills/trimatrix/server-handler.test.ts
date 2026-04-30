@@ -22,6 +22,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import {
   addSubgraph,
   canDispatch,
+  closeNodeGuard,
   currentFrontier,
   nextFrontierBatch,
   validateDispatch,
@@ -29,6 +30,7 @@ import {
 import { transition } from "./state.ts";
 import {
   BrainError,
+  buildExternalBlockerResponse,
   callBrainTool,
   getExternalBlockers,
 } from "./brain-sync.ts";
@@ -366,23 +368,25 @@ Deno.test("handler: add_external_blocker — happy-path response shape { ok, ide
   const externalId = "PROJ-123";
   const exec = makeApplyEventMock({ idempotent: false });
 
-  // Simulate the handler call: callBrainTool → extract fields → build response
+  // Drive the actual response-shaping helper used by the production handler.
   const result = await callBrainTool(exec, "tasks.apply_event", {
     task_id: taskId,
     event: { type: "external_blocker_added", source: "jira", externalId },
   });
+  const response = buildExternalBlockerResponse(taskId, externalId, result);
 
-  const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
-    false;
-
-  // Assert response shape matches handler contract
-  const response = { ok: true, idempotent, externalId, taskId };
   assertEquals(response.ok, true);
   assertEquals(response.idempotent, false);
   assertEquals(response.externalId, externalId);
   assertEquals(response.taskId, taskId);
-  // Critically: no brainResponse envelope leak
-  assertEquals("brainResponse" in response, false);
+  // Critically: no brainResponse envelope leak — assert the response shape is
+  // exactly the four documented fields.
+  assertEquals(Object.keys(response).sort(), [
+    "externalId",
+    "idempotent",
+    "ok",
+    "taskId",
+  ]);
 });
 
 Deno.test("handler: add_external_blocker — idempotent=true surfaced when brain reports idempotent", async () => {
@@ -394,10 +398,26 @@ Deno.test("handler: add_external_blocker — idempotent=true surfaced when brain
     task_id: taskId,
     event: { type: "external_blocker_added", source: "jira", externalId },
   });
+  const response = buildExternalBlockerResponse(taskId, externalId, result);
+  assertEquals(response.idempotent, true);
+});
 
-  const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
-    false;
-  assertEquals(idempotent, true);
+Deno.test("handler: add_external_blocker — non-boolean idempotent in result coerces to false", () => {
+  // Brain returns idempotent: "yes" (wrong type), or omits the field entirely.
+  // The shaper must defensively coerce to false rather than leaking truthy strings.
+  const cases: Array<{ raw: unknown; expected: boolean }> = [
+    { raw: { idempotent: "true" }, expected: false },
+    { raw: { idempotent: 1 }, expected: false },
+    { raw: { idempotent: null }, expected: false },
+    { raw: {}, expected: false },
+    { raw: null, expected: false },
+    { raw: undefined, expected: false },
+    { raw: { idempotent: true }, expected: true },
+  ];
+  for (const { raw, expected } of cases) {
+    const r = buildExternalBlockerResponse("t", "x", raw);
+    assertEquals(r.idempotent, expected);
+  }
 });
 
 Deno.test("handler: add_external_blocker — BrainError thrown when brain returns error payload", async () => {
@@ -436,16 +456,18 @@ Deno.test("handler: resolve_external_blocker — happy-path response shape { ok,
     task_id: taskId,
     event: { type: "external_blocker_resolved", source: "jira", externalId },
   });
-
-  const idempotent = (result as Record<string, unknown> | null)?.idempotent ??
-    false;
-  const response = { ok: true, idempotent, externalId, taskId };
+  const response = buildExternalBlockerResponse(taskId, externalId, result);
 
   assertEquals(response.ok, true);
   assertEquals(response.idempotent, false);
   assertEquals(response.externalId, externalId);
   assertEquals(response.taskId, taskId);
-  assertEquals("brainResponse" in response, false);
+  assertEquals(Object.keys(response).sort(), [
+    "externalId",
+    "idempotent",
+    "ok",
+    "taskId",
+  ]);
 });
 
 Deno.test("handler: resolve_external_blocker — BrainError thrown when brain returns error payload", async () => {
@@ -535,47 +557,53 @@ Deno.test("handler: next_frontier — all nodes externallyBlocked → empty batc
 // ---------------------------------------------------------------------------
 
 Deno.test("handler: close_node guard — non-terminal node status produces error", () => {
-  // The close_node handler throws when node.status is not DONE/MERGED/PR_CREATED.
-  // We reproduce the guard logic directly.
   const node = makeNode("n1", {
     status: NodeStatus.ACTIVE,
     taskId: "task-active",
   });
-  const completedStatuses = [
-    NodeStatus.DONE,
-    NodeStatus.MERGED,
-    NodeStatus.PR_CREATED,
-  ];
-
-  const wouldError = !completedStatuses.includes(node.status);
-  assertEquals(wouldError, true, "ACTIVE node must trigger close_node guard");
-
-  const expectedMessage =
-    `Node "n1" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`;
-  assertEquals(expectedMessage.includes("ACTIVE"), true);
+  const result = closeNodeGuard(node, "n1");
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(
+      result.error.includes("ACTIVE"),
+      true,
+      "error must name the offending status",
+    );
+    assertEquals(
+      result.error.includes("DONE, MERGED, or PR_CREATED"),
+      true,
+      "error must list valid statuses",
+    );
+  }
 });
 
-Deno.test("handler: close_node guard — DONE status passes the guard", () => {
-  const node = makeNode("n1", { status: NodeStatus.DONE, taskId: "task-done" });
-  const completedStatuses = [
-    NodeStatus.DONE,
-    NodeStatus.MERGED,
-    NodeStatus.PR_CREATED,
-  ];
+Deno.test("handler: close_node guard — DONE / MERGED / PR_CREATED pass", () => {
+  for (
+    const status of [
+      NodeStatus.DONE,
+      NodeStatus.MERGED,
+      NodeStatus.PR_CREATED,
+    ]
+  ) {
+    const node = makeNode("n1", { status, taskId: "task-done" });
+    const result = closeNodeGuard(node, "n1");
+    assertEquals(result.ok, true, `${status} must pass the guard`);
+  }
+});
 
-  const wouldError = !completedStatuses.includes(node.status);
-  assertEquals(wouldError, false, "DONE node must pass close_node guard");
+Deno.test("handler: close_node guard — missing node produces error", () => {
+  const result = closeNodeGuard(undefined, "ghost");
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error.includes("not found"), true);
 });
 
 Deno.test("handler: close_node guard — no taskId produces error", () => {
-  const node = makeNode("n1", { status: NodeStatus.DONE }); // no taskId
-
-  const wouldError = !node.taskId;
-  assertEquals(
-    wouldError,
-    true,
-    "node without taskId must trigger close_node guard",
-  );
+  const node = makeNode("n1", { status: NodeStatus.DONE });
+  const result = closeNodeGuard(node, "n1");
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.error.includes("no associated taskId"), true);
+  }
 });
 
 // ---------------------------------------------------------------------------

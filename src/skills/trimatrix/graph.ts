@@ -50,6 +50,50 @@ export interface ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
+// close_node guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate that a node is in a state where its brain task can be closed.
+ *
+ * Pure function — extracted from the `close_node` MCP handler so tests can
+ * exercise the actual guard logic without reimplementing it. Production code
+ * and tests must converge on this single source of truth.
+ *
+ * Returns:
+ * - `{ ok: true }` if `node` exists, has a `taskId`, and is in DONE / MERGED /
+ *   PR_CREATED status.
+ * - `{ ok: false, error }` otherwise, with a caller-meaningful error message.
+ */
+export function closeNodeGuard(
+  node: Node | undefined,
+  nodeId: string,
+): { ok: true } | { ok: false; error: string } {
+  if (!node) {
+    return { ok: false, error: `Node "${nodeId}" not found in graph` };
+  }
+  if (!node.taskId) {
+    return {
+      ok: false,
+      error: `Node "${nodeId}" has no associated taskId — cannot close`,
+    };
+  }
+  const completedStatuses: NodeStatus[] = [
+    NodeStatus.DONE,
+    NodeStatus.MERGED,
+    NodeStatus.PR_CREATED,
+  ];
+  if (!completedStatuses.includes(node.status)) {
+    return {
+      ok: false,
+      error:
+        `Node "${nodeId}" is in status ${node.status} — must be DONE, MERGED, or PR_CREATED to close`,
+    };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Capability matching
 // ---------------------------------------------------------------------------
 
