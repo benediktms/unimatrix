@@ -175,11 +175,11 @@ Teams (Claude Code TeamCreate) are required for coordination. They are NOT used 
 | Adversarial architecture — competing architectural approaches | YES | Agents must challenge each other's feasibility assessments |
 | Compliance matrix review — multiple sentinels | YES | Cross-cutting findings affect other reviewers |
 | Vinculum analysis — multiple designates | YES | Insights in one area affect analysis of another |
-| Swarm — file-partitioned bulk changes | NO | Non-overlapping files, no coordination needed |
+| Swarm — file-partitioned bulk changes | YES | Cross-cutting findings require SendMessage; team enables real-time coordination |
 | Independent scan — self-contained questions | NO | Each agent answers independently |
 | Single adjunct dispatch | NO | Only one agent |
 
-**Collaborative vs swarm threshold:** If changing a function signature in partition A requires an update in partition B, use collaborative (team). If partitions execute independently, use swarm (no team).
+**Collaborative vs swarm threshold:** If changing a function signature in partition A requires an update in partition B, use collaborative (team). Swarm also uses a team — drones use SendMessage for cross-partition findings while keeping strict file-partition discipline.
 
 **Team lifecycle:** Create before spawning → spawn with `team_name` → monitor → shutdown and delete after wave. Teams are per-wave.
 
@@ -252,7 +252,7 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes `nodeExecution
 **Legacy patterns** (Sequential, Sequence relay, Swarm, Collaborative) are subsumed by the tier system:
 - Sequential → T2 with multi-wave graph
 - Sequence relay → T2 with handoff snapshots
-- Swarm → T2 INDEPENDENT with PARTITIONED coordination
+- Swarm → T2 with team (cross-partition SendMessage coordination) + PARTITIONED file discipline
 - Collaborative → T3 COORDINATED with team
 
 ### Protocol D2: PR Lifecycle
