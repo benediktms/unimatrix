@@ -41,7 +41,7 @@ python3 build.py --target all
 | # | Test | How | Expected |
 |---|------|-----|----------|
 | C1 | Agents load | `/agents` or check agent list | All 6 agents visible (Queen, Drone, Sentinel, Probe, Designate, Locutus) |
-| C2 | Skills load | Check available skills | All 15 skills available (/assemble, /adapt, /comply, /swarm, /recon, /diagnose, /designate, /assimilate, /analyse, /reengage, /harvest, /bisect, /bookmark, /resume, /status) |
+| C2 | Skills load | Check available skills | `/trimatrix` skill available (single entry point for all collective operations) |
 | C3 | Agent dispatch | Ask lead to dispatch a Drone | `Agent` tool invokes `drone-protocol`, receives response |
 | C4 | Skill invocation | Run `/comply` on a recent change | Validation Adjunct dispatched via `Agent` tool, returns review |
 | C5 | Background agents | Ask lead to investigate codebase | Probe fires in background, results collected |
@@ -69,7 +69,7 @@ python3 build.py --target all
 
 | # | Test | How | Expected |
 |---|------|-----|----------|
-| X1 | Same skill, both platforms | Run `/assemble` on both | Queen dispatched on both, uses platform-native dispatch syntax |
+| X1 | Same skill, both platforms | Run `/trimatrix` on both | Queen dispatched on both, uses platform-native dispatch syntax |
 | X2 | AGENTS.md consistent | Check behavioral instructions | Both platforms read same AGENTS.md, follow same rules |
 | X3 | Build reproducibility | Run `build.py` twice | Identical output both times |
 | X4 | Install idempotency | Run `install.sh` twice | No errors, symlinks unchanged |
