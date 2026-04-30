@@ -214,13 +214,48 @@ export enum SubgraphFailurePolicy {
 }
 
 /**
+ * A reference to a gating condition for a subgraph.
+ *
+ * Two flavors:
+ * - **Node gate** (string): a node ID within the subgraph. The gate clears when
+ *   the node reaches a terminal-OK status (DONE/MERGED/PR_CREATED).
+ * - **External gate** (object): an external blocker tracked outside trimatrix
+ *   (typically a brain task with first-class external blockers — see UNM-1b7.7).
+ *   The gate clears when the external system reports the blocker resolved.
+ *
+ * The polymorphism exists so `GATED` completion and `BEST_EFFORT` failure
+ * policies can express "this subgraph is gated on an upstream PR / Jira
+ * ticket" without forcing a node into the graph just to represent the
+ * blocker.
+ */
+export type SubgraphGate =
+  | string
+  | {
+    /** Discriminator — always `"external"` for object-form gates. */
+    kind: "external";
+    /** Source system (e.g., `"jira"`, `"github-pr"`, `"linear"`). */
+    source: string;
+    /** Identifier within the source system. */
+    externalId: string;
+    /** Optional URL for human navigation. */
+    url?: string;
+    /** Optional brain task ID this external blocker is associated with. */
+    taskId?: string;
+  };
+
+/**
  * A partition of the supergraph assigned to a specific executor.
  * Contains an ordered list of nodes forming the executor's strict traversal contract.
  *
  * Subgraphs may be **derived** (auto-computed from connectivity by `computeSubgraphs`)
- * or **explicit** (declared by the caller via the future `add_subgraph` tool).
+ * or **explicit** (declared by the caller via the `add_subgraph` tool).
  * Derived subgraphs use stable hash-based IDs so node addition/removal does not
  * renumber siblings; explicit subgraphs use the user-supplied slug as their ID.
+ *
+ * Explicit subgraphs are **immutable post-creation**. To revise structure, cancel
+ * the session or refine the graph and re-declare. There is no `update_subgraph`
+ * or `remove_subgraph` tool by design — mutation invariants are easier to reason
+ * about when the structural primitive is append-only within a session.
  */
 export interface Subgraph {
   /**
@@ -254,6 +289,31 @@ export interface Subgraph {
   failurePolicy: SubgraphFailurePolicy;
   /** Gate node IDs required by `GATED` completion or `BEST_EFFORT` failure policies. */
   gates?: string[];
+}
+
+/**
+ * Projection of a `Subgraph` returned by MCP tool responses.
+ *
+ * This is the contract callers depend on; adding a field here is a public-API
+ * change. Internal-only fields (raw `edges`, raw nodes for hashing) are
+ * deliberately omitted to keep response payloads compact and the surface stable.
+ */
+export interface SubgraphSummary {
+  id: string;
+  derived: boolean;
+  executor: Executor;
+  tier: Tier;
+  assignee: string;
+  nodeCount: number;
+  nodes: string[];
+  coordination: CoordinationContract;
+  completionPolicy: SubgraphCompletionPolicy;
+  failurePolicy: SubgraphFailurePolicy;
+  /** Computed by `subgraphOutcome` against current node statuses. */
+  outcome: "pending" | "active" | "completed" | "failed";
+  label?: string;
+  parentId?: string;
+  gates?: SubgraphGate[];
 }
 
 // ---------------------------------------------------------------------------
