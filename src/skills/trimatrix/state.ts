@@ -4,7 +4,19 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, EventLogEntry, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
+import type {
+  Checkpoint,
+  Event,
+  EventLogEntry,
+  Graph,
+  Intent,
+  Node,
+  RepoMetadata,
+  RoutingTrace,
+  Subgraph,
+  SubgraphStrategy,
+  Tier,
+} from "./types.ts";
 import {
   Executor,
   MachineState,
@@ -171,7 +183,10 @@ export function canTransition(
       return { allowed: true };
 
     case "execution_completed":
-      if (machineState !== MachineState.DISPATCHING && machineState !== MachineState.FAILED) {
+      if (
+        machineState !== MachineState.DISPATCHING &&
+        machineState !== MachineState.FAILED
+      ) {
         return {
           allowed: false,
           reason:
@@ -239,7 +254,10 @@ export function canTransition(
       return { allowed: true };
 
     case "cancel":
-      if (machineState === MachineState.COMPLETED || machineState === MachineState.CANCELLED) {
+      if (
+        machineState === MachineState.COMPLETED ||
+        machineState === MachineState.CANCELLED
+      ) {
         return {
           allowed: false,
           reason: `cancel is not allowed in terminal state ${machineState}`,
@@ -309,7 +327,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       if (!node) return { ...checkpoint, updatedAt: now };
       const updatedNode: Node = {
         ...node,
-        status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
+        status: node.prUrl
+          ? NodeStatus.PR_CREATED
+          : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
       };
       const nextGraph = recomputeReadiness({
         ...checkpoint.graph,
@@ -414,7 +434,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       return {
         ...checkpoint,
         graph: updatedGraph,
-        machineState: allGatesCleared ? MachineState.DISPATCHING : MachineState.GATE_HALTED,
+        machineState: allGatesCleared
+          ? MachineState.DISPATCHING
+          : MachineState.GATE_HALTED,
         updatedAt: now,
       };
     }
@@ -434,7 +456,10 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // contract is global re-fencing on refinement, conservative-safe.
       const refinedNodes: Record<string, Node> = {};
       for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
-        refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        refinedNodes[nId] = {
+          ...node,
+          leaseVersion: (node.leaseVersion ?? 0) + 1,
+        };
       }
       return {
         ...checkpoint,
@@ -486,7 +511,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       return {
         ...checkpoint,
         graph: nextGraph,
-        machineState: allTerminal ? MachineState.COMPLETED : checkpoint.machineState,
+        machineState: allTerminal
+          ? MachineState.COMPLETED
+          : checkpoint.machineState,
         updatedAt: now,
       };
     }
@@ -596,8 +623,14 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // WorkPackets worth invalidating; terminal nodes are left untouched.
       const cancelledNodes: Record<string, Node> = {};
       for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
-        if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
-          cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        if (
+          node.status === NodeStatus.PENDING ||
+          node.status === NodeStatus.ACTIVE
+        ) {
+          cancelledNodes[nId] = {
+            ...node,
+            leaseVersion: (node.leaseVersion ?? 0) + 1,
+          };
         } else {
           cancelledNodes[nId] = node;
         }
@@ -651,7 +684,9 @@ export function deserialize(json: string): Checkpoint {
   const cp = parsed as Checkpoint;
   if (!SUPPORTED_VERSIONS.has(cp.version)) {
     throw new Error(
-      `Checkpoint version unsupported — supported: ${[...SUPPORTED_VERSIONS].join(", ")}, got ${cp.version}`,
+      `Checkpoint version unsupported — supported: ${
+        [...SUPPORTED_VERSIONS].join(", ")
+      }, got ${cp.version}`,
     );
   }
 
@@ -685,7 +720,9 @@ export function deserialize(json: string): Checkpoint {
   for (const sg of (cp.subgraphs ?? []) as Subgraph[]) {
     const partial = sg as Partial<Subgraph>;
     if (partial.derived === undefined) sg.derived = true;
-    if (!sg.completionPolicy) sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    if (!sg.completionPolicy) {
+      sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    }
     if (!sg.failurePolicy) sg.failurePolicy = SubgraphFailurePolicy.FAIL_FAST;
   }
 

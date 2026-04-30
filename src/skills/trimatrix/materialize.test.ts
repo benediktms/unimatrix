@@ -104,9 +104,20 @@ function makeCp(
 // Derived:  derived-p (wave 1), derived-q (wave 2)
 // ---------------------------------------------------------------------------
 
-const leadA = makeNode("lead-a", { executor: Executor.LEAD, repo: "repo-main", taskId: "task-1" });
-const leadB = makeNode("lead-b", { executor: Executor.LEAD, status: NodeStatus.DONE, prUrl: "https://github.com/pr/1" });
-const explicitX = makeNode("explicit-x", { executor: Executor.ADJUNCT, tags: ["alpha", "beta"] });
+const leadA = makeNode("lead-a", {
+  executor: Executor.LEAD,
+  repo: "repo-main",
+  taskId: "task-1",
+});
+const leadB = makeNode("lead-b", {
+  executor: Executor.LEAD,
+  status: NodeStatus.DONE,
+  prUrl: "https://github.com/pr/1",
+});
+const explicitX = makeNode("explicit-x", {
+  executor: Executor.ADJUNCT,
+  tags: ["alpha", "beta"],
+});
 const derivedP = makeNode("derived-p", { executor: Executor.ADJUNCT });
 const derivedQ = makeNode("derived-q", { executor: Executor.ADJUNCT });
 
@@ -115,8 +126,18 @@ const graph = makeGraph([leadA, leadB, explicitX, derivedP, derivedQ]);
 const sgLead = makeSg("sg-lead", ["lead-a", "lead-b"], false, Executor.LEAD);
 Object.assign(sgLead, { assignee: "LEAD" });
 
-const sgExplicit = makeSg("auth-service", ["explicit-x"], false, Executor.ADJUNCT);
-const sgDerived = makeSg("auto-abcd1234", ["derived-p", "derived-q"], true, Executor.ADJUNCT);
+const sgExplicit = makeSg(
+  "auth-service",
+  ["explicit-x"],
+  false,
+  Executor.ADJUNCT,
+);
+const sgDerived = makeSg(
+  "auto-abcd1234",
+  ["derived-p", "derived-q"],
+  true,
+  Executor.ADJUNCT,
+);
 
 const waves: Wave[] = [
   { id: 1, nodes: ["lead-a", "explicit-x", "derived-p"], hasMergeGate: false },
@@ -226,7 +247,11 @@ Deno.test("materializePlan(markdown): sg-lead section appears first", () => {
   const leadIdx = md.indexOf("## Lead Subgraph (sg-lead)");
   const explicitIdx = md.indexOf("## Subgraph: auth-service");
   const derivedIdx = md.indexOf("## Subgraph: auto-abcd1234");
-  assertEquals(leadIdx < explicitIdx, true, "sg-lead must precede auth-service");
+  assertEquals(
+    leadIdx < explicitIdx,
+    true,
+    "sg-lead must precede auth-service",
+  );
   assertEquals(explicitIdx < derivedIdx, true, "explicit must precede derived");
 });
 
@@ -242,7 +267,9 @@ Deno.test("materializePlan(markdown): each subgraph has exactly one header", () 
 
 Deno.test("materializePlan(markdown): all node IDs appear in output", () => {
   const md = materializePlan(cp, "markdown");
-  for (const nodeId of ["lead-a", "lead-b", "explicit-x", "derived-p", "derived-q"]) {
+  for (
+    const nodeId of ["lead-a", "lead-b", "explicit-x", "derived-p", "derived-q"]
+  ) {
     assertStringIncludes(md, nodeId);
   }
 });
@@ -305,8 +332,12 @@ Deno.test("materializePlan(json): each node appears under exactly one subgraph",
 Deno.test("materializePlan(json): wave numbers are present on nodes", () => {
   const raw = materializePlan(cp, "json");
   const plan = JSON.parse(raw);
-  const allNodes = plan.subgraphs.flatMap((sg: { nodes: Array<{ id: string; wave: number }> }) => sg.nodes);
-  const byId = new Map<string, { id: string; wave: number }>(allNodes.map((n: { id: string; wave: number }) => [n.id, n]));
+  const allNodes = plan.subgraphs.flatMap((
+    sg: { nodes: Array<{ id: string; wave: number }> },
+  ) => sg.nodes);
+  const byId = new Map<string, { id: string; wave: number }>(
+    allNodes.map((n: { id: string; wave: number }) => [n.id, n]),
+  );
   assertEquals(byId.get("lead-a")!.wave, 1);
   assertEquals(byId.get("lead-b")!.wave, 2);
   assertEquals(byId.get("derived-q")!.wave, 2);

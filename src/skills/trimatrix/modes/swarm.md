@@ -2,8 +2,8 @@
 
 ## Coordination Protocol Override
 
-Swarm mode does NOT use the `neural_link` MCP server. SKILL.md Protocol F
-(which mandates `mcp__neural_link__room_open`/`room_close` for multi-adjunct
+Swarm mode does NOT use the `neural_link` MCP server. SKILL.md Protocol F (which
+mandates `mcp__neural_link__room_open`/`room_close` for multi-adjunct
 dispatches) does not apply here. Swarm coordinates via native Claude Code
 primitives only:
 
@@ -11,8 +11,8 @@ primitives only:
 - `Agent(team_name=...)` to spawn drones into the team
 - `SendMessage` for cross-partition messages
 - `TaskList` for shared task visibility
-- `mcp__brain__memory_write_episode` (or `records_save_snapshot`) at swarm
-  close to capture decisions / blockers / partition outcomes
+- `mcp__brain__memory_write_episode` (or `records_save_snapshot`) at swarm close
+  to capture decisions / blockers / partition outcomes
 
 The synthesis episode is the durable replacement for the room transcript a
 neural_link close would otherwise produce.
@@ -23,7 +23,8 @@ neural_link close would otherwise produce.
 
 - Bulk refactoring, migrations, convention enforcement
 - The same change applies independently to multiple file groups
-- Partitions may surface cross-cutting concerns requiring inter-drone coordination
+- Partitions may surface cross-cutting concerns requiring inter-drone
+  coordination
 
 ## Flags
 
@@ -36,8 +37,8 @@ neural_link close would otherwise produce.
 
 ### 1. Plan Partitions
 
-Search memory (`memory_search_minimal`) for prior recon on the target area.
-If file layout is unknown, dispatch a probe to enumerate candidates.
+Search memory (`memory_search_minimal`) for prior recon on the target area. If
+file layout is unknown, dispatch a probe to enumerate candidates.
 
 Partition files into logical groups by directory, module, or feature boundary.
 
@@ -47,10 +48,9 @@ Rules:
 - Hard maximum: 5 partitions. If more exist, merge smallest groups.
 - Apply `--scope` glob if provided to restrict candidates.
 
-Create brain tasks: one parent epic, one subtask per partition.
-All subtasks are independent — no dependencies set.
-Each subtask description includes:
-Goal / Files / Instructions / Verification (per task description format).
+Create brain tasks: one parent epic, one subtask per partition. All subtasks are
+independent — no dependencies set. Each subtask description includes: Goal /
+Files / Instructions / Verification (per task description format).
 
 ### 1b. Optional: Declare Explicit Subgraphs Per Partition
 
@@ -84,8 +84,8 @@ Goal / Files / Instructions / Verification (per task description format).
 
 ### 2. Generate Designations
 
-Use Designation Generation Protocol (Protocol A).
-Generate one designation per partition drone plus one for the sentinel.
+Use Designation Generation Protocol (Protocol A). Generate one designation per
+partition drone plus one for the sentinel.
 
 ### 3. Create Team
 
@@ -95,13 +95,13 @@ Before dispatching any drone, create a Claude Code team:
 TeamCreate(team_name: "swarm-<scope>")
 ```
 
-Where `<scope>` is a short slug from the target area (e.g., `swarm-auth-migration`).
-Record the team name — all drone `Agent` calls use it.
+Where `<scope>` is a short slug from the target area (e.g.,
+`swarm-auth-migration`). Record the team name — all drone `Agent` calls use it.
 
 ### 4. Dispatch Borg Cube
 
-Spawn one drone per partition. All `run_in_background: true`.
-Pass `team_name` from Step 3.
+Spawn one drone per partition. All `run_in_background: true`. Pass `team_name`
+from Step 3.
 
 ```text
 Agent(
@@ -133,10 +133,9 @@ TEAM COORDINATION ACTIVE (team: swarm-<scope>):
   proceeding past the point they concern.
 ```
 
-Also include the drone's designation.
-Do NOT include `NEURAL LINK ACTIVE` or `room_id` — swarm uses native team
-`SendMessage` for coordination, not neural_link rooms (see Coordination
-Protocol Override above).
+Also include the drone's designation. Do NOT include `NEURAL LINK ACTIVE` or
+`room_id` — swarm uses native team `SendMessage` for coordination, not
+neural_link rooms (see Coordination Protocol Override above).
 
 ### 5. Monitor
 
@@ -147,8 +146,8 @@ skipped. Report to user if skipping.
 
 ### 6. Verification Gate
 
-Use Protocol C (Verification Gate).
-Run after all drones complete (or all non-blocked drones complete).
+Use Protocol C (Verification Gate). Run after all drones complete (or all
+non-blocked drones complete).
 
 ### 7. Review
 
@@ -162,15 +161,17 @@ PASS; PASS only when all partitions pass.
 ### 8. Handle Verdict
 
 Per Protocol C § C6 primitives:
+
 - **PASS:** Proceed to synthesis (Step 9).
-- **NEEDS_CHANGES:** Identify which partitions require fixes. Spawn targeted
-  fix drones per affected partition. Re-run Verification Gate and Review
-  (cycle capped per Protocol C § C5a per-saga budget).
+- **NEEDS_CHANGES:** Identify which partitions require fixes. Spawn targeted fix
+  drones per affected partition. Re-run Verification Gate and Review (cycle
+  capped per Protocol C § C5a per-saga budget).
 - **BLOCK:** Escalate to user verbatim. Do not attempt autonomous resolution.
 
 ### 9. Synthesis (Persistence)
 
-After sentinel PASS (per Protocol C § C7), the lead writes a synthesis episode capturing the run.
+After sentinel PASS (per Protocol C § C7), the lead writes a synthesis episode
+capturing the run.
 
 Call `mcp__brain__memory_write_episode` with the following fields:
 
@@ -192,8 +193,8 @@ tags: ["swarm", "synthesis", "<scope>"]
 ```
 
 If `memory_write_episode` is unavailable, fall back to
-`mcp__brain__records_save_snapshot` with the same content as `text`,
-tagged `["swarm-synthesis", "epic:<epic-id>"]`.
+`mcp__brain__records_save_snapshot` with the same content as `text`, tagged
+`["swarm-synthesis", "epic:<epic-id>"]`.
 
 ### 10. Team Teardown
 
@@ -216,6 +217,6 @@ TeamDelete(team_name: "swarm-<scope>")
 
 ### 11. Task Closure
 
-Use Protocol E (Task Closure). Call `close_node(nodeId)` for each completed
-node after sentinel PASS, then close the epic via `tasks_close`.
-Report completion with partition summary and synthesis snapshot ID.
+Use Protocol E (Task Closure). Call `close_node(nodeId)` for each completed node
+after sentinel PASS, then close the epic via `tasks_close`. Report completion
+with partition summary and synthesis snapshot ID.

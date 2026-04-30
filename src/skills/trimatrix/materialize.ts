@@ -202,7 +202,9 @@ function renderMarkdown(plan: MaterializedPlan): string {
   const intentStr = plan.intent ?? "—";
   const tierStr = plan.tier ?? "—";
   const stratStr = plan.subgraphStrategy ?? "—";
-  lines.push(`- Intent: ${intentStr} · Tier: ${tierStr} · Strategy: ${stratStr}`);
+  lines.push(
+    `- Intent: ${intentStr} · Tier: ${tierStr} · Strategy: ${stratStr}`,
+  );
   lines.push(`- Waves: ${plan.waveCount} · Nodes: ${plan.nodeCount}`);
   lines.push("");
 

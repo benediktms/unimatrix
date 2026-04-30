@@ -8,7 +8,7 @@
  *   - Each individual non-trivial criterion → NON_TRIVIAL (5 tests)
  */
 
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { classifyTriviality } from "./triviality.ts";
 import type { TrivialityInput } from "./triviality.ts";
 

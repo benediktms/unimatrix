@@ -2739,7 +2739,11 @@ Deno.test("recomputeReadiness: INVALIDATED node not modified even if predecessor
   const g = makeGraph(
     [
       makeNode({ id: "A", status: NodeStatus.FAILED }),
-      makeNode({ id: "B", status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.INVALIDATED }),
+      makeNode({
+        id: "B",
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.INVALIDATED,
+      }),
     ],
     [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
   );

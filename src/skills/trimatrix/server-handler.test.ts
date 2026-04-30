@@ -649,10 +649,7 @@ Deno.test("callBrainTool: transport failure (throw) propagates out of callBrainT
 // saga_report: buildSagaReport aggregation
 // ---------------------------------------------------------------------------
 
-import {
-  buildSagaReport,
-  renderSagaReport,
-} from "./saga_report.ts";
+import { buildSagaReport, renderSagaReport } from "./saga_report.ts";
 
 Deno.test("buildSagaReport: synthetic 5-node graph — correct aggregates", () => {
   // Graph: 5 nodes
@@ -689,7 +686,10 @@ Deno.test("buildSagaReport: synthetic 5-node graph — correct aggregates", () =
   assertEquals(report.avgIterations, 1.2);
   assertEquals(report.escalations.length, 1);
   assertEquals(report.escalations[0].nodeId, "n5");
-  assertEquals(report.escalations[0].lastReviewNotes, "Types still broken after 3 attempts");
+  assertEquals(
+    report.escalations[0].lastReviewNotes,
+    "Types still broken after 3 attempts",
+  );
   assertEquals(report.nodeSummaries.length, 0);
 });
 
@@ -729,10 +729,17 @@ Deno.test("buildSagaReport: non-terminal nodes excluded from aggregates", () => 
 });
 
 Deno.test("buildSagaReport: nodeSummaries passed through correctly", () => {
-  const nodes: Node[] = [makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 })];
+  const nodes: Node[] = [
+    makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
+  ];
   const cp = makeCp(makeGraph(nodes));
   const summaries = [
-    { nodeId: "n1", status: "DONE", commits: ["abc1234"], whatChanged: "Added validation" },
+    {
+      nodeId: "n1",
+      status: "DONE",
+      commits: ["abc1234"],
+      whatChanged: "Added validation",
+    },
   ];
   const report = buildSagaReport(cp, summaries);
   assertEquals(report.nodeSummaries.length, 1);
@@ -743,7 +750,11 @@ Deno.test("buildSagaReport: nodeSummaries passed through correctly", () => {
 Deno.test("renderSagaReport: markdown output contains key headings", () => {
   const nodes: Node[] = [
     makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
-    makeNode("n2", { status: NodeStatus.FAILED, iterationCount: 2, lastReviewVerdict: "FAIL" }),
+    makeNode("n2", {
+      status: NodeStatus.FAILED,
+      iterationCount: 2,
+      lastReviewVerdict: "FAIL",
+    }),
   ];
   const cp = makeCp(makeGraph(nodes));
   const report = buildSagaReport(cp);
@@ -756,7 +767,9 @@ Deno.test("renderSagaReport: markdown output contains key headings", () => {
 });
 
 Deno.test("renderSagaReport: json output is valid JSON with correct shape", () => {
-  const nodes: Node[] = [makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 })];
+  const nodes: Node[] = [
+    makeNode("n1", { status: NodeStatus.DONE, iterationCount: 0 }),
+  ];
   const cp = makeCp(makeGraph(nodes));
   const report = buildSagaReport(cp);
   const json = renderSagaReport(report, "json");

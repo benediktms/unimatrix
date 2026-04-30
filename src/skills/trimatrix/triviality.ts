@@ -111,8 +111,7 @@ export type TrivialityVerdict = "TRIVIAL" | "NON_TRIVIAL";
  * @returns `"TRIVIAL"` or `"NON_TRIVIAL"`.
  */
 export function classifyTriviality(input: TrivialityInput): TrivialityVerdict {
-  const trivial =
-    input.locDelta <= 30 &&
+  const trivial = input.locDelta <= 30 &&
     input.fileCount === 1 &&
     input.riskKeywords === 0 &&
     !input.crossPackage &&

@@ -99,9 +99,21 @@ Deno.test("convergence scenario A: happy path — 3 nodes, all pass review immed
   let cp = makeDispatchingCheckpoint(nodes);
 
   // All three nodes pass review on the first attempt.
-  cp = transition(cp, { type: "review_passed", nodeId: "a1", reviewVerdict: "PASS" });
-  cp = transition(cp, { type: "review_passed", nodeId: "a2", reviewVerdict: "PASS" });
-  cp = transition(cp, { type: "review_passed", nodeId: "a3", reviewVerdict: "PASS" });
+  cp = transition(cp, {
+    type: "review_passed",
+    nodeId: "a1",
+    reviewVerdict: "PASS",
+  });
+  cp = transition(cp, {
+    type: "review_passed",
+    nodeId: "a2",
+    reviewVerdict: "PASS",
+  });
+  cp = transition(cp, {
+    type: "review_passed",
+    nodeId: "a3",
+    reviewVerdict: "PASS",
+  });
 
   // All nodes are DONE (no prUrl, no repo).
   assertEquals(cp.graph.nodes["a1"].status, NodeStatus.DONE);
@@ -141,12 +153,20 @@ Deno.test("convergence scenario B: one node retries twice then passes — iterat
   let cp = makeDispatchingCheckpoint(nodes);
 
   // Iteration 1: review fails.
-  cp = transition(cp, { type: "review_failed", nodeId: "b-retry", reviewNotes: "Missing tests." });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "b-retry",
+    reviewNotes: "Missing tests.",
+  });
   assertEquals(cp.graph.nodes["b-retry"].status, NodeStatus.ACTIVE);
   assertEquals(cp.graph.nodes["b-retry"].iterationCount, 1);
 
   // Iteration 2: review fails again.
-  cp = transition(cp, { type: "review_failed", nodeId: "b-retry", reviewNotes: "Still missing." });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "b-retry",
+    reviewNotes: "Still missing.",
+  });
   assertEquals(cp.graph.nodes["b-retry"].status, NodeStatus.ACTIVE);
   assertEquals(cp.graph.nodes["b-retry"].iterationCount, 2);
 
@@ -214,7 +234,11 @@ Deno.test("convergence scenario C: cap exhaustion — FAILED, dependent blocked,
   assertEquals(cp.graph.nodes["c-target"].status, NodeStatus.ACTIVE);
   assertEquals(cp.graph.nodes["c-target"].iterationCount, 2);
 
-  cp = transition(cp, { type: "review_failed", nodeId: "c-target", reviewNotes: "Cap hit." });
+  cp = transition(cp, {
+    type: "review_failed",
+    nodeId: "c-target",
+    reviewNotes: "Cap hit.",
+  });
   assertEquals(cp.graph.nodes["c-target"].status, NodeStatus.FAILED);
   assertEquals(cp.graph.nodes["c-target"].iterationCount, 3);
   assertEquals(
@@ -224,7 +248,10 @@ Deno.test("convergence scenario C: cap exhaustion — FAILED, dependent blocked,
   assertEquals(cp.graph.nodes["c-target"].lastReviewVerdict, "FAIL");
 
   // c-dep becomes BLOCKED with blockedBy=[c-target].
-  assertEquals(cp.graph.nodes["c-dep"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(
+    cp.graph.nodes["c-dep"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
   assertEquals(cp.graph.nodes["c-dep"].blockedBy, ["c-target"]);
 
   // c-upstream UNCHANGED — PR metadata, iterationCount, verdict all intact.
@@ -336,35 +363,86 @@ Deno.test("convergence scenario E: replay parity — event log reproduces live m
   live = appendEvent(live, { type: "plan_finalized" });
 
   // e1 fails twice then passes.
-  live = appendEvent(live, { type: "review_failed", nodeId: "e1", reviewNotes: "Round 1 fail." });
-  live = appendEvent(live, { type: "review_failed", nodeId: "e1", reviewNotes: "Round 2 fail." });
-  live = appendEvent(live, { type: "review_passed", nodeId: "e1", reviewVerdict: "PASS", reviewNotes: "Fixed." });
+  live = appendEvent(live, {
+    type: "review_failed",
+    nodeId: "e1",
+    reviewNotes: "Round 1 fail.",
+  });
+  live = appendEvent(live, {
+    type: "review_failed",
+    nodeId: "e1",
+    reviewNotes: "Round 2 fail.",
+  });
+  live = appendEvent(live, {
+    type: "review_passed",
+    nodeId: "e1",
+    reviewVerdict: "PASS",
+    reviewNotes: "Fixed.",
+  });
 
   // e2 and e3 pass immediately.
-  live = appendEvent(live, { type: "review_passed", nodeId: "e2", reviewVerdict: "PASS" });
-  live = appendEvent(live, { type: "review_passed", nodeId: "e3", reviewVerdict: "PASS" });
+  live = appendEvent(live, {
+    type: "review_passed",
+    nodeId: "e2",
+    reviewVerdict: "PASS",
+  });
+  live = appendEvent(live, {
+    type: "review_passed",
+    nodeId: "e3",
+    reviewVerdict: "PASS",
+  });
 
   // Replay from the same initial checkpoint using the captured event log.
   const freshInitial = createCheckpoint([], graph);
   const replayed = replay(live.eventLog!, freshInitial);
 
   // Node statuses match.
-  assertEquals(replayed.graph.nodes["e1"].status, live.graph.nodes["e1"].status);
-  assertEquals(replayed.graph.nodes["e2"].status, live.graph.nodes["e2"].status);
-  assertEquals(replayed.graph.nodes["e3"].status, live.graph.nodes["e3"].status);
+  assertEquals(
+    replayed.graph.nodes["e1"].status,
+    live.graph.nodes["e1"].status,
+  );
+  assertEquals(
+    replayed.graph.nodes["e2"].status,
+    live.graph.nodes["e2"].status,
+  );
+  assertEquals(
+    replayed.graph.nodes["e3"].status,
+    live.graph.nodes["e3"].status,
+  );
 
   // iterationCounts match.
-  assertEquals(replayed.graph.nodes["e1"].iterationCount, live.graph.nodes["e1"].iterationCount);
-  assertEquals(replayed.graph.nodes["e2"].iterationCount, live.graph.nodes["e2"].iterationCount);
-  assertEquals(replayed.graph.nodes["e3"].iterationCount, live.graph.nodes["e3"].iterationCount);
+  assertEquals(
+    replayed.graph.nodes["e1"].iterationCount,
+    live.graph.nodes["e1"].iterationCount,
+  );
+  assertEquals(
+    replayed.graph.nodes["e2"].iterationCount,
+    live.graph.nodes["e2"].iterationCount,
+  );
+  assertEquals(
+    replayed.graph.nodes["e3"].iterationCount,
+    live.graph.nodes["e3"].iterationCount,
+  );
 
   // Review verdicts match.
-  assertEquals(replayed.graph.nodes["e1"].lastReviewVerdict, live.graph.nodes["e1"].lastReviewVerdict);
-  assertEquals(replayed.graph.nodes["e2"].lastReviewVerdict, live.graph.nodes["e2"].lastReviewVerdict);
-  assertEquals(replayed.graph.nodes["e3"].lastReviewVerdict, live.graph.nodes["e3"].lastReviewVerdict);
+  assertEquals(
+    replayed.graph.nodes["e1"].lastReviewVerdict,
+    live.graph.nodes["e1"].lastReviewVerdict,
+  );
+  assertEquals(
+    replayed.graph.nodes["e2"].lastReviewVerdict,
+    live.graph.nodes["e2"].lastReviewVerdict,
+  );
+  assertEquals(
+    replayed.graph.nodes["e3"].lastReviewVerdict,
+    live.graph.nodes["e3"].lastReviewVerdict,
+  );
 
   // Review notes match.
-  assertEquals(replayed.graph.nodes["e1"].lastReviewNotes, live.graph.nodes["e1"].lastReviewNotes);
+  assertEquals(
+    replayed.graph.nodes["e1"].lastReviewNotes,
+    live.graph.nodes["e1"].lastReviewNotes,
+  );
 
   // Machine state matches.
   assertEquals(replayed.machineState, live.machineState);
@@ -426,7 +504,11 @@ Deno.test("convergence scenario F: checkpoint mid-loop — serialize after revie
   let reference = createCheckpoint([], graph);
   reference = transition(reference, { type: "plan_submitted" });
   reference = transition(reference, { type: "plan_finalized" });
-  reference = transition(reference, { type: "review_failed", nodeId: "f-node", reviewNotes: "Coverage gap." });
+  reference = transition(reference, {
+    type: "review_failed",
+    nodeId: "f-node",
+    reviewNotes: "Coverage gap.",
+  });
   reference = transition(reference, {
     type: "review_passed",
     nodeId: "f-node",
@@ -435,9 +517,18 @@ Deno.test("convergence scenario F: checkpoint mid-loop — serialize after revie
   });
 
   // Both paths converge to the same outcome.
-  assertEquals(continued.graph.nodes["f-node"].status, reference.graph.nodes["f-node"].status);
-  assertEquals(continued.graph.nodes["f-node"].iterationCount, reference.graph.nodes["f-node"].iterationCount);
-  assertEquals(continued.graph.nodes["f-node"].lastReviewVerdict, reference.graph.nodes["f-node"].lastReviewVerdict);
+  assertEquals(
+    continued.graph.nodes["f-node"].status,
+    reference.graph.nodes["f-node"].status,
+  );
+  assertEquals(
+    continued.graph.nodes["f-node"].iterationCount,
+    reference.graph.nodes["f-node"].iterationCount,
+  );
+  assertEquals(
+    continued.graph.nodes["f-node"].lastReviewVerdict,
+    reference.graph.nodes["f-node"].lastReviewVerdict,
+  );
   assertEquals(continued.machineState, reference.machineState);
 
   // Concrete checks.

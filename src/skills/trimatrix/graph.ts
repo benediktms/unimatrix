@@ -483,7 +483,9 @@ export function recomputeReadiness(graph: Graph): Graph {
       updatedNodes[id] = {
         ...node,
         readinessStatus: next,
-        blockedBy: failedPredecessors.length > 0 ? failedPredecessors : undefined,
+        blockedBy: failedPredecessors.length > 0
+          ? failedPredecessors
+          : undefined,
       };
       changed = true;
     } else {

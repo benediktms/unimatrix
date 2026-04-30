@@ -809,8 +809,7 @@ export function approvalSchema(opts?: {
       modifications: {
         type: "string",
         title: opts?.modificationsTitle ?? "Requested modifications",
-        description:
-          "Optional: describe any modifications before proceeding.",
+        description: "Optional: describe any modifications before proceeding.",
       },
     },
     required: ["approve"],
@@ -838,8 +837,7 @@ export function triageSchema(opts?: {
       context: {
         type: "string",
         title: opts?.contextTitle ?? "Additional context",
-        description:
-          "Optional: provide additional context for the decision.",
+        description: "Optional: provide additional context for the decision.",
       },
     },
     required: ["decision"],

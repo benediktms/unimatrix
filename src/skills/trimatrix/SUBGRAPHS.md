@@ -73,9 +73,9 @@ sufficient.
 | User slug            | `add_subgraph` caller         | Yes — slug becomes the ID for the session |
 
 **Slug validation:** `^[a-z](?:[a-z0-9-]{0,39}[a-z0-9])?$` — 1–41 characters,
-must start with a lowercase letter, end with a lowercase letter or digit,
-inner chars from `[a-z0-9-]`. Must not equal `sg-lead` and must not start
-with `auto-`. Slugs are case-sensitive and lowercase-only.
+must start with a lowercase letter, end with a lowercase letter or digit, inner
+chars from `[a-z0-9-]`. Must not equal `sg-lead` and must not start with
+`auto-`. Slugs are case-sensitive and lowercase-only.
 
 **Hash-input rule:** The hash is computed from the sorted node IDs of the
 derived component (`hashNodeSet` in `graph.ts`). Adding or removing a _sibling_
@@ -161,8 +161,8 @@ node statuses via `subgraphOutcome` in `graph.ts`.
 
 **External gates** allow a subgraph to express "gated on upstream PR / Jira
 ticket" without injecting a placeholder node into the graph. External gates
-carry `{ kind: "external", source, externalId, url?, taskId? }` and are
-resolved via brain consultation when `taskId` is supplied.
+carry `{ kind: "external", source, externalId, url?, taskId? }` and are resolved
+via brain consultation when `taskId` is supplied.
 
 Resolution flow: the caller declares a GATED subgraph with one or more external
 gates → `dispatch_wave` consults the brain via `getExternalBlockers` →
@@ -211,39 +211,45 @@ sorted by `auto-<hash>` ID. Within each subgraph, nodes appear in topological
 # Plan: Auth + UI migration
 
 ## Overview
+
 - Intent: IMPLEMENT · Tier: T2 · Strategy: INDEPENDENT
 - Waves: 2 · Nodes: 5
 
 ## Lead Subgraph (sg-lead)
-**Executor:** LEAD · **Tier:** T2 · **Assignee:** LEAD · **Coordination:** NONE · **Outcome:** pending
-**Completion:** ALL · **Failure:** FAIL_FAST
 
-| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
-|---|---|---|---|---|---|---|---|---|---|
-| lead-a | Implement auth handler | 1 | IMPLEMENTATION | DONE | — | api-service | unm-100 | — | — |
-| lead-b | Type-check api-service | 2 | VERIFY_COMPILE | PENDING | — | — | — | — | — |
+**Executor:** LEAD · **Tier:** T2 · **Assignee:** LEAD · **Coordination:** NONE
+· **Outcome:** pending **Completion:** ALL · **Failure:** FAIL_FAST
+
+| Node   | Label                  | Wave | Type           | Status  | Readiness | Repo        | Task    | PR | Tags |
+| ------ | ---------------------- | ---- | -------------- | ------- | --------- | ----------- | ------- | -- | ---- |
+| lead-a | Implement auth handler | 1    | IMPLEMENTATION | DONE    | —         | api-service | unm-100 | —  | —    |
+| lead-b | Type-check api-service | 2    | VERIFY_COMPILE | PENDING | —         | —           | —       | —  | —    |
 
 ## Subgraph: web-drone — Web UI drone (explicit)
-**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Two of Three · **Coordination:** NONE · **Outcome:** active
-**Completion:** ALL · **Failure:** FAIL_FAST
 
-| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
-|---|---|---|---|---|---|---|---|---|---|
-| adj-x | Implement UI component | 1 | IMPLEMENTATION | ACTIVE | — | web-app | — | https://github.com/org/repo/pull/42 | frontend |
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Two of Three ·
+**Coordination:** NONE · **Outcome:** active **Completion:** ALL · **Failure:**
+FAIL_FAST
+
+| Node  | Label                  | Wave | Type           | Status | Readiness | Repo    | Task | PR                                  | Tags     |
+| ----- | ---------------------- | ---- | -------------- | ------ | --------- | ------- | ---- | ----------------------------------- | -------- |
+| adj-x | Implement UI component | 1    | IMPLEMENTATION | ACTIVE | —         | web-app | —    | https://github.com/org/repo/pull/42 | frontend |
 
 ## Subgraph: auto-abc12345 (derived)
-**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Three of Three · **Coordination:** NONE · **Outcome:** pending
-**Completion:** ALL · **Failure:** FAIL_FAST
 
-| Node | Label | Wave | Type | Status | Readiness | Repo | Task | PR | Tags |
-|---|---|---|---|---|---|---|---|---|---|
-| drv-p | Migrate schema | 1 | IMPLEMENTATION | PENDING | — | db-service | — | — | — |
-| drv-q | Type-check db-service | 2 | VERIFY_COMPILE | PENDING | — | — | — | — | — |
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Three of Three ·
+**Coordination:** NONE · **Outcome:** pending **Completion:** ALL · **Failure:**
+FAIL_FAST
+
+| Node  | Label                 | Wave | Type           | Status  | Readiness | Repo       | Task | PR | Tags |
+| ----- | --------------------- | ---- | -------------- | ------- | --------- | ---------- | ---- | -- | ---- |
+| drv-p | Migrate schema        | 1    | IMPLEMENTATION | PENDING | —         | db-service | —    | —  | —    |
+| drv-q | Type-check db-service | 2    | VERIFY_COMPILE | PENDING | —         | —          | —    | —  | —    |
 ```
 
 Tool signature: `materialize_plan({ format?: "markdown" | "json" }): string`.
-Implementation: `src/skills/trimatrix/materialize.ts` (`buildPlan`, `materializePlan`).
-Tests: `src/skills/trimatrix/materialize.test.ts`.
+Implementation: `src/skills/trimatrix/materialize.ts` (`buildPlan`,
+`materializePlan`). Tests: `src/skills/trimatrix/materialize.test.ts`.
 
 ---
 

@@ -1984,11 +1984,17 @@ Deno.test("createCheckpoint: backfills iterationCount=0 and maxIterations=3 on f
 
 // createCheckpoint preserves explicit non-default maxIterations
 Deno.test("createCheckpoint: preserves explicit maxIterations when supplied", () => {
-  const graph = makeGraph([makeNode("n1", { maxIterations: 5, iterationCount: 2 })]);
+  const graph = makeGraph([
+    makeNode("n1", { maxIterations: 5, iterationCount: 2 }),
+  ]);
   const cp = createCheckpoint([], graph);
   const n1 = cp.graph.nodes["n1"];
   assertEquals(n1.maxIterations, 5, "explicit maxIterations must be preserved");
-  assertEquals(n1.iterationCount, 2, "explicit iterationCount must be preserved");
+  assertEquals(
+    n1.iterationCount,
+    2,
+    "explicit iterationCount must be preserved",
+  );
 });
 
 // deserialize backfills iterationCount/maxIterations on pre-2.7.0 checkpoint JSON
@@ -1997,7 +2003,8 @@ Deno.test("deserialize: backfills iterationCount=0 and maxIterations=3 for pre-2
   const cp = createCheckpoint([], graph);
   // Simulate a pre-2.7.0 payload by stripping the fields from the serialized JSON
   const raw = JSON.parse(serialize(cp)) as Record<string, unknown>;
-  const nodes = (raw.graph as { nodes: Record<string, Record<string, unknown>> }).nodes;
+  const nodes =
+    (raw.graph as { nodes: Record<string, Record<string, unknown>> }).nodes;
   for (const node of Object.values(nodes)) {
     delete node["iterationCount"];
     delete node["maxIterations"];
@@ -2005,8 +2012,16 @@ Deno.test("deserialize: backfills iterationCount=0 and maxIterations=3 for pre-2
   // Downgrade version so deserialize accepts it
   raw["version"] = "2.6.0";
   const restored = deserialize(JSON.stringify(raw));
-  assertEquals(restored.graph.nodes["n1"].iterationCount, 0, "backfilled iterationCount must be 0");
-  assertEquals(restored.graph.nodes["n1"].maxIterations, 3, "backfilled maxIterations must be 3");
+  assertEquals(
+    restored.graph.nodes["n1"].iterationCount,
+    0,
+    "backfilled iterationCount must be 0",
+  );
+  assertEquals(
+    restored.graph.nodes["n1"].maxIterations,
+    3,
+    "backfilled maxIterations must be 3",
+  );
   assertEquals(restored.graph.nodes["n2"].iterationCount, 0);
   assertEquals(restored.graph.nodes["n2"].maxIterations, 3);
 });
@@ -2017,7 +2032,13 @@ Deno.test("deserialize: backfills iterationCount=0 and maxIterations=3 for pre-2
 
 // Test RP-1: review_passed transitions node to DONE and records verdict
 Deno.test("transition: review_passed -> node DONE, lastReviewVerdict=PASS", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, {
     type: "review_passed",
@@ -2067,7 +2088,11 @@ Deno.test("transition: review_passed with prUrl and repo -> MERGED", () => {
 Deno.test("transition: review_passed makes all nodes terminal -> machineState COMPLETED", () => {
   const graph = makeGraph([
     makeNode("n1", { status: NodeStatus.DONE }),
-    makeNode("n2", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 }),
+    makeNode("n2", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
   ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, { type: "review_passed", nodeId: "n2" });
@@ -2079,7 +2104,11 @@ Deno.test("transition: review_passed makes all nodes terminal -> machineState CO
 Deno.test("transition: review_passed with remaining non-terminal nodes -> machineState unchanged", () => {
   const graph = makeGraph([
     makeNode("n1", { status: NodeStatus.ACTIVE }),
-    makeNode("n2", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 }),
+    makeNode("n2", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
   ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, { type: "review_passed", nodeId: "n2" });
@@ -2089,7 +2118,13 @@ Deno.test("transition: review_passed with remaining non-terminal nodes -> machin
 
 // Test RF-1: review_failed bumps iterationCount from 0 to 1, stays ACTIVE
 Deno.test("transition: review_failed -> ACTIVE, iterationCount bumped 0->1, verdict=FAIL", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, {
     type: "review_failed",
@@ -2100,12 +2135,21 @@ Deno.test("transition: review_failed -> ACTIVE, iterationCount bumped 0->1, verd
   assertEquals(result.graph.nodes["n1"].status, NodeStatus.ACTIVE);
   assertEquals(result.graph.nodes["n1"].iterationCount, 1);
   assertEquals(result.graph.nodes["n1"].lastReviewVerdict, "FAIL");
-  assertEquals(result.graph.nodes["n1"].lastReviewNotes, "Test coverage insufficient.");
+  assertEquals(
+    result.graph.nodes["n1"].lastReviewNotes,
+    "Test coverage insufficient.",
+  );
 });
 
 // Test RF-2: review_failed at maxIterations → node FAILED with cap-exhaustion reason
 Deno.test("transition: review_failed 3rd time with maxIterations=3 -> FAILED with cap-exhaustion reason", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 2, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 2,
+      maxIterations: 3,
+    }),
+  ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, {
     type: "review_failed",
@@ -2124,7 +2168,13 @@ Deno.test("transition: review_failed 3rd time with maxIterations=3 -> FAILED wit
 
 // Test RF-3: three sequential review_failed events exhaust cap
 Deno.test("transition: three sequential review_failed events exhaust cap -> iterationCount=3, FAILED", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
   let cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   cp = transition(cp, { type: "review_failed", nodeId: "n1" });
   assertEquals(cp.graph.nodes["n1"].status, NodeStatus.ACTIVE);
@@ -2164,28 +2214,51 @@ Deno.test("canTransition: review_passed allowed in dispatching", () => {
 
 // Test RR-1: replay parity — review_passed event log reproduces final state
 Deno.test("replay: review_passed event log reproduces final state (replay parity)", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
   const initial = createCheckpoint([], graph);
   // Build live execution: plan -> dispatch -> review_passed
-  let cp = appendEvent(
+  const cp = appendEvent(
     appendEvent(
       appendEvent(initial, { type: "plan_submitted" }),
       { type: "plan_finalized" },
     ),
-    { type: "review_passed", nodeId: "n1", reviewVerdict: "PASS", reviewNotes: "LGTM" },
+    {
+      type: "review_passed",
+      nodeId: "n1",
+      reviewVerdict: "PASS",
+      reviewNotes: "LGTM",
+    },
   );
   // Replay from the event log
   const fresh = createCheckpoint([], graph);
   const replayed = replay(cp.eventLog!, fresh);
   assertEquals(replayed.graph.nodes["n1"].status, cp.graph.nodes["n1"].status);
-  assertEquals(replayed.graph.nodes["n1"].lastReviewVerdict, cp.graph.nodes["n1"].lastReviewVerdict);
-  assertEquals(replayed.graph.nodes["n1"].lastReviewNotes, cp.graph.nodes["n1"].lastReviewNotes);
+  assertEquals(
+    replayed.graph.nodes["n1"].lastReviewVerdict,
+    cp.graph.nodes["n1"].lastReviewVerdict,
+  );
+  assertEquals(
+    replayed.graph.nodes["n1"].lastReviewNotes,
+    cp.graph.nodes["n1"].lastReviewNotes,
+  );
   assertEquals(replayed.machineState, cp.machineState);
 });
 
 // Test RR-2: replay parity — review_failed sequence reproduces cap exhaustion
 Deno.test("replay: review_failed cap exhaustion event log reproduces FAILED state (replay parity)", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE, iterationCount: 0, maxIterations: 3 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.ACTIVE,
+      iterationCount: 0,
+      maxIterations: 3,
+    }),
+  ]);
   const initial = createCheckpoint([], graph);
   let cp = appendEvent(
     appendEvent(initial, { type: "plan_submitted" }),
@@ -2213,7 +2286,12 @@ Deno.test("replay: review_failed cap exhaustion event log reproduces FAILED stat
 // Test NR-1: reset a FAILED node → PENDING, leaseVersion bumped
 Deno.test("transition: node_reset from FAILED -> PENDING, leaseVersion bumped", () => {
   const graph = makeGraph([
-    makeNode("n1", { status: NodeStatus.FAILED, leaseVersion: 2, iterationCount: 2, failureReason: "something broke" }),
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      leaseVersion: 2,
+      iterationCount: 2,
+      failureReason: "something broke",
+    }),
   ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, { type: "node_reset", nodeId: "n1" });
@@ -2236,10 +2314,18 @@ Deno.test("transition: node_reset from non-FAILED -> throws", () => {
 // Test NR-3: reset with resetIterationCount: true → iterationCount = 0
 Deno.test("transition: node_reset with resetIterationCount:true -> iterationCount=0", () => {
   const graph = makeGraph([
-    makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 3, leaseVersion: 1 }),
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      iterationCount: 3,
+      leaseVersion: 1,
+    }),
   ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
-  const result = transition(cp, { type: "node_reset", nodeId: "n1", resetIterationCount: true });
+  const result = transition(cp, {
+    type: "node_reset",
+    nodeId: "n1",
+    resetIterationCount: true,
+  });
   assertEquals(result.graph.nodes["n1"].status, NodeStatus.PENDING);
   assertEquals(result.graph.nodes["n1"].iterationCount, 0);
 });
@@ -2247,7 +2333,11 @@ Deno.test("transition: node_reset with resetIterationCount:true -> iterationCoun
 // Test NR-4: reset without resetIterationCount flag → iterationCount preserved
 Deno.test("transition: node_reset without resetIterationCount -> iterationCount preserved", () => {
   const graph = makeGraph([
-    makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 2, leaseVersion: 1 }),
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      iterationCount: 2,
+      leaseVersion: 1,
+    }),
   ]);
   const cp = makeCheckpoint({ machineState: MachineState.DISPATCHING, graph });
   const result = transition(cp, { type: "node_reset", nodeId: "n1" });
@@ -2261,7 +2351,10 @@ Deno.test("transition: node_reset — downstream BLOCKED node readiness recomput
   const graph = makeGraph(
     [
       makeNode("n1", { status: NodeStatus.FAILED, leaseVersion: 1 }),
-      makeNode("n2", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+      makeNode("n2", {
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.BLOCKED,
+      }),
     ],
     [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
   );
@@ -2271,7 +2364,10 @@ Deno.test("transition: node_reset — downstream BLOCKED node readiness recomput
   // n2 is blocked on n1 which is now PENDING (not terminal-done), so still BLOCKED
   // recomputeReadiness was called (no crash, n2 still present)
   assertEquals(result.graph.nodes["n2"].status, NodeStatus.PENDING);
-  assertEquals(result.graph.nodes["n2"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(
+    result.graph.nodes["n2"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
 });
 
 // Test NR-6: canTransition permits node_reset in DISPATCHING
@@ -2290,13 +2386,24 @@ Deno.test("canTransition: node_reset rejected in initializing", () => {
 
 // Test NR-8: replay parity — node_reset event log reproduces final state
 Deno.test("replay: node_reset event log reproduces PENDING state (replay parity)", () => {
-  const graph = makeGraph([makeNode("n1", { status: NodeStatus.FAILED, iterationCount: 2, leaseVersion: 1 })]);
+  const graph = makeGraph([
+    makeNode("n1", {
+      status: NodeStatus.FAILED,
+      iterationCount: 2,
+      leaseVersion: 1,
+    }),
+  ]);
   const initial = createCheckpoint([], graph);
   let cp = appendEvent(
     appendEvent(initial, { type: "plan_submitted" }),
     { type: "plan_finalized" },
   );
-  cp = appendEvent(cp, { type: "node_reset", nodeId: "n1", reason: "manual recovery", resetIterationCount: true });
+  cp = appendEvent(cp, {
+    type: "node_reset",
+    nodeId: "n1",
+    reason: "manual recovery",
+    resetIterationCount: true,
+  });
   // Replay from the event log
   const fresh = createCheckpoint([], graph);
   const replayed = replay(cp.eventLog!, fresh);
@@ -2313,9 +2420,18 @@ Deno.test("replay: node_reset event log reproduces PENDING state (replay parity)
 Deno.test("failure isolation: B fails in A→B→C chain — C blocked, A untouched", () => {
   const graph = makeGraph(
     [
-      makeNode("A", { status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
-      makeNode("B", { status: NodeStatus.ACTIVE, readinessStatus: ReadinessStatus.READY }),
-      makeNode("C", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+      makeNode("A", {
+        status: NodeStatus.DONE,
+        readinessStatus: ReadinessStatus.READY,
+      }),
+      makeNode("B", {
+        status: NodeStatus.ACTIVE,
+        readinessStatus: ReadinessStatus.READY,
+      }),
+      makeNode("C", {
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.BLOCKED,
+      }),
     ],
     [
       { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
@@ -2330,7 +2446,10 @@ Deno.test("failure isolation: B fails in A→B→C chain — C blocked, A untouc
   });
 
   // C must be BLOCKED and its blockedBy must list B
-  assertEquals(result.graph.nodes["C"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(
+    result.graph.nodes["C"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
   assertEquals(result.graph.nodes["C"].blockedBy, ["B"]);
 
   // A must be completely untouched — status, readinessStatus, and iteration fields intact
@@ -2346,8 +2465,15 @@ Deno.test("failure isolation: B fails in A→B→C chain — C blocked, A untouc
 Deno.test("failure isolation: node_reset clears blockedBy on downstream dependents", () => {
   const graph = makeGraph(
     [
-      makeNode("A", { status: NodeStatus.DONE, readinessStatus: ReadinessStatus.READY }),
-      makeNode("B", { status: NodeStatus.FAILED, leaseVersion: 1, readinessStatus: ReadinessStatus.READY }),
+      makeNode("A", {
+        status: NodeStatus.DONE,
+        readinessStatus: ReadinessStatus.READY,
+      }),
+      makeNode("B", {
+        status: NodeStatus.FAILED,
+        leaseVersion: 1,
+        readinessStatus: ReadinessStatus.READY,
+      }),
       makeNode("C", {
         status: NodeStatus.PENDING,
         readinessStatus: ReadinessStatus.BLOCKED,
@@ -2369,7 +2495,10 @@ Deno.test("failure isolation: node_reset clears blockedBy on downstream dependen
   assertEquals(result.graph.nodes["C"].blockedBy, undefined);
 
   // C is still BLOCKED (B is now PENDING, not DONE/MERGED) — but not due to failure
-  assertEquals(result.graph.nodes["C"].readinessStatus, ReadinessStatus.BLOCKED);
+  assertEquals(
+    result.graph.nodes["C"].readinessStatus,
+    ReadinessStatus.BLOCKED,
+  );
 });
 
 // FI-3: upstream preservation — A node with PR_CREATED + iterationCount=2 + review PASS
@@ -2386,7 +2515,10 @@ Deno.test("failure isolation: upstream node PR metadata and review verdict prese
         lastReviewVerdict: "PASS",
         lastReviewNotes: "Looks good.",
       }),
-      makeNode("B", { status: NodeStatus.PENDING, readinessStatus: ReadinessStatus.BLOCKED }),
+      makeNode("B", {
+        status: NodeStatus.PENDING,
+        readinessStatus: ReadinessStatus.BLOCKED,
+      }),
     ],
     [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
   );

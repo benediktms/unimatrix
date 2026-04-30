@@ -3,6 +3,7 @@
 Alias: architect
 
 ## When Triggered
+
 - Significant architectural shifts proposed
 - "Compare approaches for X", "evaluate architecture options"
 - Feature-driven re-architecture
@@ -12,7 +13,8 @@ Alias: architect
 
 ## Flags
 
-- `--execute` — After convergence, hand winning approach to plan-execute mode for implementation.
+- `--execute` — After convergence, hand winning approach to plan-execute mode
+  for implementation.
 
 ---
 
@@ -69,30 +71,42 @@ Save snapshot tagged architect-final with:
 ## Flow
 
 ### Step 1: Generate Approaches
-Budget: ~30 tool uses. Scan the relevant area — existing architecture, constraints, dependencies, prior art.
-Generate 2–4 competing architectural approaches. Include the user's proposed approach if provided.
-Create brain tasks: one epic + one subtask per approach (all independent, no chained dependencies).
+
+Budget: ~30 tool uses. Scan the relevant area — existing architecture,
+constraints, dependencies, prior art. Generate 2–4 competing architectural
+approaches. Include the user's proposed approach if provided. Create brain
+tasks: one epic + one subtask per approach (all independent, no chained
+dependencies).
 
 ### Step 1b: Present Approaches
-Present approaches to user before spawning agents. User may approve, add, or remove entries.
-Proceed only on explicit approval.
+
+Present approaches to user before spawning agents. User may approve, add, or
+remove entries. Proceed only on explicit approval.
 
 ### Step 2: Create Team and Spawn Analysts
+
 1. Use Designation Generation Protocol. Role: DESIGNATE for all analysts.
-2. Create team: `TeamCreate(team_name: "architect-<epic-id>")` — **MANDATORY**. Abort if creation fails.
-3. Build execution graph: `mcp__unimatrix__init` with `repos: []`, then `mcp__unimatrix__add_node` per subtask with `type: ANALYSIS`. No edges — single wave, all parallel.
+2. Create team: `TeamCreate(team_name: "architect-<epic-id>")` — **MANDATORY**.
+   Abort if creation fails.
+3. Build execution graph: `mcp__unimatrix__init` with `repos: []`, then
+   `mcp__unimatrix__add_node` per subtask with `type: ANALYSIS`. No edges —
+   single wave, all parallel.
 4. `mcp__unimatrix__compute_waves` to validate.
 5. Spawn one designate per approach into the team.
-6. Each agent prompt includes: the Architecture Adversarial Protocol block above, the specific `APPROACH:` line, and the agent's brain task ID.
+6. Each agent prompt includes: the Architecture Adversarial Protocol block
+   above, the specific `APPROACH:` line, and the agent's brain task ID.
 7. Dispatch all with `run_in_background: true`.
 
 ### Step 3: Monitor Analysis
-Agents evaluate, communicate, and challenge each other autonomously.
-Queen does NOT intervene unless an agent is stuck or unresponsive.
 
-Unresponsive agent: sever link, mark task blocked, note which approaches remain under evaluation.
+Agents evaluate, communicate, and challenge each other autonomously. Queen does
+NOT intervene unless an agent is stuck or unresponsive.
+
+Unresponsive agent: sever link, mark task blocked, note which approaches remain
+under evaluation.
 
 ### Step 4: Convergence
+
 Collect all snapshots tagged `architect-final` via `records_fetch_content`.
 Synthesize tradeoff matrix:
 
@@ -109,22 +123,28 @@ Synthesize tradeoff matrix:
 ```
 
 Recommendation with rationale. Confidence:
+
 - HIGH — clear winner with margin of 3+ points and no INFEASIBLE/RISKY verdict
 - MEDIUM — winner exists but margin is narrow or one dimension is weak
 - LOW — no clear winner or multiple approaches rated RISKY/INFEASIBLE
 
-Save architect brief as artifact: `kind: plan`, tags `["architect-brief"]`, `task_id: <epic-id>`.
-Save tradeoff matrix as snapshot tagged `architect-evidence`.
-Save final recommendation as snapshot tagged `architect-recommendation`.
+Save architect brief as artifact: `kind: plan`, tags `["architect-brief"]`,
+`task_id: <epic-id>`. Save tradeoff matrix as snapshot tagged
+`architect-evidence`. Save final recommendation as snapshot tagged
+`architect-recommendation`.
 
 ### Step 5: Present Recommendation
-Report tradeoff matrix, recommendation, and confidence level.
-If `--execute` was not passed: stop here. Task Closure Protocol applies.
+
+Report tradeoff matrix, recommendation, and confidence level. If `--execute` was
+not passed: stop here. Task Closure Protocol applies.
 
 ### Step 6: Execute (if --execute)
-If confidence is LOW: ask user before proceeding. Do not auto-execute an inconclusive evaluation.
+
+If confidence is LOW: ask user before proceeding. Do not auto-execute an
+inconclusive evaluation.
 
 Hand winning approach to plan-execute mode:
+
 - Pass architect brief as the directive
 - The brief contains the winning approach, tradeoff context, and key constraints
 - Plan-execute mode decomposes and implements from there
@@ -150,5 +170,6 @@ Hand winning approach to plan-execute mode:
 </step-6b>
 
 ### Step 7: Cleanup
-Shut down all team members. Delete team.
-Confirm all brain tasks — subtasks and epic — are in terminal state before reporting completion.
+
+Shut down all team members. Delete team. Confirm all brain tasks — subtasks and
+epic — are in terminal state before reporting completion.

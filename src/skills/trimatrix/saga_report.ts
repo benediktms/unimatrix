@@ -162,7 +162,11 @@ export function renderSagaReportMarkdown(report: SagaReport): string {
   if (report.escalations.length > 0) {
     lines.push("## Escalations");
     for (const e of report.escalations) {
-      lines.push(`- **${e.nodeId}**: ${e.reason}${e.lastReviewNotes ? ` — ${e.lastReviewNotes}` : ""}`);
+      lines.push(
+        `- **${e.nodeId}**: ${e.reason}${
+          e.lastReviewNotes ? ` — ${e.lastReviewNotes}` : ""
+        }`,
+      );
     }
     lines.push("");
   }
@@ -171,7 +175,9 @@ export function renderSagaReportMarkdown(report: SagaReport): string {
     lines.push("## Node Summaries");
     for (const s of report.nodeSummaries) {
       const commits = s.commits.length > 0 ? s.commits.join(", ") : "none";
-      lines.push(`- **${s.nodeId}** [${s.status}]: ${s.whatChanged} (commits: ${commits})`);
+      lines.push(
+        `- **${s.nodeId}** [${s.status}]: ${s.whatChanged} (commits: ${commits})`,
+      );
     }
     lines.push("");
   }
