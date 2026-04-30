@@ -463,8 +463,30 @@ export function recomputeReadiness(graph: Graph): Graph {
     const next = unsatisfied.length === 0
       ? ReadinessStatus.READY
       : ReadinessStatus.BLOCKED;
-    if (node.readinessStatus !== next) {
-      updatedNodes[id] = { ...node, readinessStatus: next };
+
+    // Compute the set of FAILED predecessor IDs for failure-isolation tracking.
+    // A node is in `blockedBy` only when the source node is currently FAILED.
+    const failedPredecessors: string[] = [];
+    for (const edge of graph.edges) {
+      if (edge.to !== id) continue;
+      const source = graph.nodes[edge.from];
+      if (source && source.status === NodeStatus.FAILED) {
+        failedPredecessors.push(edge.from);
+      }
+    }
+    const prevBlockedBy = node.blockedBy ?? [];
+    const blockedByChanged =
+      failedPredecessors.length !== prevBlockedBy.length ||
+      failedPredecessors.some((fid) => !prevBlockedBy.includes(fid));
+
+    if (node.readinessStatus !== next || blockedByChanged) {
+      updatedNodes[id] = {
+        ...node,
+        readinessStatus: next,
+        blockedBy: failedPredecessors.length > 0
+          ? failedPredecessors
+          : undefined,
+      };
       changed = true;
     } else {
       updatedNodes[id] = node;
@@ -730,11 +752,20 @@ export function addNode(
     ? node
     : { ...node, readinessStatus: ReadinessStatus.READY };
 
+  // Backfill iteration-tracking defaults introduced in 2.7.0. Fresh nodes that
+  // do not supply these fields start at 0 / 3 respectively. Mirror the pattern
+  // used above for readinessStatus so the graph always has coherent defaults.
+  const nodeWithIterations: Node = {
+    ...nodeWithReadiness,
+    iterationCount: nodeWithReadiness.iterationCount ?? 0,
+    maxIterations: nodeWithReadiness.maxIterations ?? 3,
+  };
+
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: { ...graph.nodes, [node.id]: nodeWithReadiness },
+      nodes: { ...graph.nodes, [node.id]: nodeWithIterations },
     },
   };
 }

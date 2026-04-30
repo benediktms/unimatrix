@@ -85,6 +85,9 @@ import {
 } from "./brain-sync.ts";
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
+import { materializePlan } from "./materialize.ts";
+import { buildSagaReport, renderSagaReport } from "./saga_report.ts";
+import type { NodeSummaryEntry } from "./saga_report.ts";
 
 // ---------------------------------------------------------------------------
 // In-memory checkpoint store
@@ -799,9 +802,16 @@ server.tool(
 
 server.tool(
   "compute_waves",
-  "Validate graph and compute execution waves. In initializing state, transitions to plan_review (call finalize_plan to approve). In refining state, uses partial recomputation and transitions to dispatching (refinement_approved).",
-  {},
-  async () => {
+  "Validate graph and compute execution waves. In initializing state, transitions to plan_review (call finalize_plan to approve). In refining state, uses partial recomputation and transitions to dispatching (refinement_approved). Pass `approve: true` to bypass interactive elicitation in refining state — required for headless/subagent contexts where elicitForm cannot be presented.",
+  {
+    approve: z.boolean().optional().describe(
+      "If true and machineState is refining, bypass the interactive elicitForm approval prompt and transition directly to refinement_approved. Use for headless callers (CI, subagents) or to recover from a wedged refining state where prior elicitations cannot be resolved (see unm-735.15).",
+    ),
+    notes: z.string().optional().describe(
+      "Optional notes recorded with the refinement. Only used when `approve: true`.",
+    ),
+  },
+  async (params: { approve?: boolean; notes?: string }) => {
     const cp = requireCheckpoint();
 
     const validationResult = validate(cp.graph);
@@ -879,6 +889,48 @@ server.tool(
         `New edges: ${addedEdges.length}`,
         `New repos: ${addedRepos.length}`,
       ].join(" | ");
+
+      // Headless / wedge-recovery short-circuit: if caller explicitly approves
+      // via the `approve: true` parameter, skip the interactive elicitForm and
+      // transition directly. Required for subagents, CI, and recovery from a
+      // wedged refining state where elicitForm cannot be presented or has
+      // already been declined (see unm-735.15).
+      if (params.approve === true) {
+        const refinementRecord = {
+          timestamp: new Date().toISOString(),
+          addedNodes,
+          addedEdges,
+          addedRepos,
+          ...(params.notes !== undefined ? { notes: params.notes } : {}),
+        };
+
+        const refinementResult = await transitionWithEffects(
+          {
+            ...cp,
+            waves: mergedWaves,
+            refinementHistory: [...cp.refinementHistory, refinementRecord],
+          },
+          { type: "refinement_approved" },
+        );
+        checkpoint = applySubgraphs(refinementResult.checkpoint);
+
+        await syncGraphDepsToBrainCore(cp.graph, undefined, brainExec);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                machineState: checkpoint.machineState,
+                waves: checkpoint.waves,
+                refinementHistory: checkpoint.refinementHistory,
+                approvedHeadless: true,
+              }),
+            },
+          ],
+        };
+      }
 
       const elicitMessage = `Refinement ready to apply.\n\n` +
         `Changes: ${changesSummary}\n\n` +
@@ -1345,6 +1397,148 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: materialize_plan
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "materialize_plan",
+  "Render the full execution plan as a single human-readable document. Groups all nodes by subgraph: sg-lead first, then explicit subgraphs (sorted by slug), then derived subgraphs (sorted by auto-hash ID). Per-node: wave, type, status, readiness, repo, task, PR, tags. Supports markdown (default) and json output formats.",
+  {
+    format: z.enum(["markdown", "json"]).optional().default("markdown")
+      .describe(
+        'Output format: "markdown" (default, human-readable) or "json" (structured, for programmatic consumers).',
+      ),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+    const rendered = materializePlan(cp, params.format);
+    return {
+      content: [
+        {
+          type: "text",
+          text: rendered,
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: saga_report
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "saga_report",
+  "Generate a structured aggregate report after all saga nodes reach terminal status. Summarises convergence quality: total nodes, one-shot completions, retried convergences, failures, iteration statistics, escalations, and C7 node-summary records. Call this after the final `close_node` before `tasks_close`. Supports markdown (default) and json output formats. By default requires all nodes to be terminal; pass allowPartial: true to generate a partial report mid-saga.",
+  {
+    format: z.enum(["markdown", "json"]).optional().default("markdown")
+      .describe(
+        'Output format: "markdown" (default, human-readable) or "json" (structured, for programmatic consumers).',
+      ),
+    sessionLabel: z.string().optional().describe(
+      "Session label used to filter C7 node-summary records from the brain. When omitted, nodeSummaries will be empty.",
+    ),
+    allowPartial: z.boolean().optional().describe(
+      "When true, skips the terminal-saga precondition check and generates a partial report mid-execution. Defaults to false.",
+    ),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const label = params.sessionLabel ?? cp.sessionLabel;
+
+    // Precondition: all nodes must be terminal unless allowPartial is set.
+    if (!params.allowPartial) {
+      const allNodes = Object.values(cp.graph.nodes);
+      const nonTerminal = allNodes.filter(
+        (n) =>
+          n.status !== NodeStatus.DONE &&
+          n.status !== NodeStatus.MERGED &&
+          n.status !== NodeStatus.FAILED,
+      );
+      if (nonTerminal.length > 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                reason:
+                  `saga not terminal — ${nonTerminal.length} of ${allNodes.length} nodes still pending or active`,
+              }),
+            },
+          ],
+        };
+      }
+    }
+
+    // Fetch C7 node-summary records from the brain when a session label is available.
+    const nodeSummaries: NodeSummaryEntry[] = [];
+    if (label) {
+      try {
+        // records.list filtered by tag "node-summary"
+        const listResp = await callBrainTool(brainExec, "records.list", {
+          tag: "node-summary",
+        });
+        const listData = listResp as {
+          records?: Array<{ id?: string; tags?: string[] }>;
+          items?: Array<{ id?: string; tags?: string[] }>;
+        };
+        const records: Array<{ id?: string; tags?: string[] }> =
+          listData.records ?? listData.items ?? [];
+
+        // Filter to records that carry the session label tag.
+        const sessionRecords = records.filter(
+          (r) => Array.isArray(r.tags) && r.tags.includes(label),
+        );
+
+        for (const rec of sessionRecords) {
+          if (!rec.id) continue;
+          try {
+            const content = await callBrainTool(
+              brainExec,
+              "records.fetch_content",
+              {
+                record_id: rec.id,
+              },
+            );
+            const parsed = content as { text?: string; data?: string };
+            const text: string = parsed.text ?? parsed.data ?? "";
+            // Parse the C7 markdown template for key fields.
+            const statusMatch = text.match(/\*\*Status:\*\*\s*(\S+)/);
+            const commitsMatch = text.match(/\*\*Commits:\*\*\s*([^\n]+)/);
+            const whatMatch = text.match(/\*\*What changed:\*\*\s*([^\n]+)/);
+            const nodeIdMatch = text.match(/## Node Summary:\s*(\S+)/);
+            nodeSummaries.push({
+              nodeId: nodeIdMatch?.[1] ?? rec.id,
+              status: statusMatch?.[1] ?? "unknown",
+              commits: commitsMatch?.[1]
+                ? commitsMatch[1].split(/[,\s]+/).filter(Boolean)
+                : [],
+              whatChanged: whatMatch?.[1] ?? "(no summary)",
+            });
+          } catch {
+            // Skip unreadable records — best-effort aggregation.
+          }
+        }
+      } catch {
+        // Brain unavailable — proceed with empty summaries.
+      }
+    }
+
+    const report = buildSagaReport(cp, nodeSummaries);
+    const rendered = renderSagaReport(report, params.format);
+    return {
+      content: [
+        {
+          type: "text",
+          text: rendered,
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: dispatch_wave
 // ---------------------------------------------------------------------------
 
@@ -1422,6 +1616,25 @@ server.tool(
     }
 
     // ---------------------------------------------------------------------------
+    // At-cap FAILED pre-rejection: nodes that are FAILED and have exhausted
+    // their iteration cap must not be re-dispatched. They are excluded from
+    // activation and returned in capExhaustedNodes for the caller to handle.
+    // ---------------------------------------------------------------------------
+    const capExhaustedNodes: string[] = [];
+    const capExhaustedRejected = new Set<string>();
+    for (const nId of regularNodeIds) {
+      if (capabilityRejected.has(nId)) continue;
+      const node = cp.graph.nodes[nId];
+      if (
+        node?.status === NodeStatus.FAILED &&
+        (node.iterationCount ?? 0) >= (node.maxIterations ?? 3)
+      ) {
+        capExhaustedNodes.push(nId);
+        capExhaustedRejected.add(nId);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
     // UNM-1b7.7: External-blocker consultation
     //
     // Before activating each regular node, check whether its brain task has
@@ -1441,10 +1654,13 @@ server.tool(
     let workingCp = cp;
 
     for (const nId of regularNodeIds) {
-      // Skip nodes already rejected by the capability gate (UNM-1b7.4).
+      // Skip nodes already rejected by the capability gate (UNM-1b7.4) or
+      // the at-cap FAILED pre-rejection above.
       // They should not be activated; they should not consume a brain
       // round-trip; they should not receive a fence.
-      if (capabilityRejected.has(nId)) continue;
+      if (capabilityRejected.has(nId) || capExhaustedRejected.has(nId)) {
+        continue;
+      }
       const node = workingCp.graph.nodes[nId];
       if (!node?.taskId) {
         clearToActivate.push(nId);
@@ -1583,6 +1799,7 @@ server.tool(
             ...(capabilityMismatches.length > 0
               ? { capabilityMismatches }
               : {}),
+            ...(capExhaustedNodes.length > 0 ? { capExhaustedNodes } : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
@@ -1982,6 +2199,120 @@ server.tool(
             ...(noCapability
               ? { reason: "Client lacks elicitation capability." }
               : {}),
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: reset_node
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "reset_node",
+  "Transition a FAILED node back to PENDING, bumping leaseVersion to invalidate any in-flight WorkPackets. Completes the convergence loop's retry path. Provide attemptId + leaseVersion to enable fence validation; omit both for backward-compatible unfenced writes.",
+  {
+    nodeId: z.string().describe("Node ID to reset"),
+    reason: z.string().optional().describe(
+      "Human-readable reason for the reset (recorded in the event log).",
+    ),
+    resetIterationCount: z.boolean().optional().describe(
+      "If true, resets iterationCount to 0. Otherwise preserves the current count so the cap still bites on next failure.",
+    ),
+    attemptId: z.string().optional().describe(
+      "Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided.",
+    ),
+    leaseVersion: z.coerce.number().int().optional().describe(
+      "Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided.",
+    ),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+
+    const resetTarget = cp.graph.nodes[params.nodeId];
+    if (!resetTarget) {
+      throw new Error(`Node "${params.nodeId}" not found in checkpoint`);
+    }
+
+    // Idempotency: if already PENDING with the same leaseVersion, return ok without re-resetting.
+    if (resetTarget.status === NodeStatus.PENDING) {
+      const sameVersion = params.leaseVersion === undefined ||
+        resetTarget.leaseVersion === params.leaseVersion;
+      if (sameVersion) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                idempotent: true,
+                nodeId: params.nodeId,
+                leaseVersion: resetTarget.leaseVersion,
+              }),
+            },
+          ],
+        };
+      }
+      // PENDING but leaseVersion mismatch — stale fence.
+      throw new Error(
+        `Stale lease for node ${params.nodeId}: expected leaseVersion=${resetTarget.leaseVersion}, got leaseVersion=${params.leaseVersion}`,
+      );
+    }
+
+    // Precondition: only FAILED nodes may be reset (non-PENDING, non-FAILED path)
+    if (resetTarget.status !== NodeStatus.FAILED) {
+      throw new Error(
+        `Cannot reset node "${params.nodeId}" — node is ${resetTarget.status} (still being executed), expected ${NodeStatus.FAILED}. Wait for completion or call fail_node first.`,
+      );
+    }
+
+    // Lease fencing: validate fence if both fields are provided
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        resetTarget.attemptId !== params.attemptId ||
+        resetTarget.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${resetTarget.attemptId}, leaseVersion=${resetTarget.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
+    }
+
+    const check = canTransition(cp, {
+      type: "node_reset",
+      nodeId: params.nodeId,
+      reason: params.reason,
+      resetIterationCount: params.resetIterationCount,
+    });
+    if (!check.allowed) {
+      throw new Error(`Cannot reset node: ${check.reason}`);
+    }
+
+    const resetResult = await transitionWithEffects(cp, {
+      type: "node_reset",
+      nodeId: params.nodeId,
+      reason: params.reason,
+      resetIterationCount: params.resetIterationCount,
+    });
+    checkpoint = resetResult.checkpoint;
+    if (resetResult.shouldSaveCheckpoint) {
+      await saveCheckpointToBrain(checkpoint);
+    }
+
+    const updatedNode = checkpoint.graph.nodes[params.nodeId];
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            status: updatedNode?.status,
+            leaseVersion: updatedNode?.leaseVersion,
+            iterationCount: updatedNode?.iterationCount,
+            machineState: checkpoint.machineState,
           }),
         },
       ],

@@ -4,7 +4,19 @@
  * All functions are pure — no I/O, no side effects.
  */
 
-import type { Checkpoint, Event, EventLogEntry, Graph, Intent, Node, RepoMetadata, RoutingTrace, Subgraph, SubgraphStrategy, Tier } from "./types.ts";
+import type {
+  Checkpoint,
+  Event,
+  EventLogEntry,
+  Graph,
+  Intent,
+  Node,
+  RepoMetadata,
+  RoutingTrace,
+  Subgraph,
+  SubgraphStrategy,
+  Tier,
+} from "./types.ts";
 import {
   Executor,
   MachineState,
@@ -19,7 +31,7 @@ import { computeWaves, recomputeReadiness } from "./graph.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = "2.6.0";
+const VERSION = "2.7.0";
 
 /** All checkpoint versions this runtime can load. */
 const SUPPORTED_VERSIONS = new Set([
@@ -34,6 +46,7 @@ const SUPPORTED_VERSIONS = new Set([
   "2.4.0",
   "2.5.0",
   "2.6.0",
+  "2.7.0",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -60,14 +73,20 @@ export function createCheckpoint(
   // Defensive: callers may pass a graph whose nodes lack `readinessStatus`
   // (older fixtures, manually-constructed test graphs). Backfill `READY` and
   // recompute against edge satisfaction so the checkpoint starts coherent.
+  // Also backfill 2.7.0 iteration fields (iterationCount / maxIterations) so
+  // manually-constructed test fixtures do not have to thread these defaults.
   const initialGraph = recomputeReadiness({
     ...graph,
     nodes: Object.fromEntries(
       Object.entries(graph.nodes).map(([id, node]) => [
         id,
-        node.readinessStatus !== undefined
-          ? node
-          : { ...node, readinessStatus: ReadinessStatus.READY },
+        {
+          ...(node.readinessStatus !== undefined
+            ? node
+            : { ...node, readinessStatus: ReadinessStatus.READY }),
+          iterationCount: node.iterationCount ?? 0,
+          maxIterations: node.maxIterations ?? 3,
+        },
       ]),
     ),
   });
@@ -149,9 +168,11 @@ export function canTransition(
     case "wave_dispatched":
     case "node_completed":
     case "node_failed":
+    case "node_reset":
     case "wave_completed":
     case "wave_failed":
     case "review_passed":
+    case "review_failed":
       if (machineState !== MachineState.DISPATCHING) {
         return {
           allowed: false,
@@ -162,7 +183,10 @@ export function canTransition(
       return { allowed: true };
 
     case "execution_completed":
-      if (machineState !== MachineState.DISPATCHING && machineState !== MachineState.FAILED) {
+      if (
+        machineState !== MachineState.DISPATCHING &&
+        machineState !== MachineState.FAILED
+      ) {
         return {
           allowed: false,
           reason:
@@ -230,7 +254,10 @@ export function canTransition(
       return { allowed: true };
 
     case "cancel":
-      if (machineState === MachineState.COMPLETED || machineState === MachineState.CANCELLED) {
+      if (
+        machineState === MachineState.COMPLETED ||
+        machineState === MachineState.CANCELLED
+      ) {
         return {
           allowed: false,
           reason: `cancel is not allowed in terminal state ${machineState}`,
@@ -300,7 +327,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       if (!node) return { ...checkpoint, updatedAt: now };
       const updatedNode: Node = {
         ...node,
-        status: node.prUrl ? NodeStatus.PR_CREATED : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
+        status: node.prUrl
+          ? NodeStatus.PR_CREATED
+          : (node.repo ? NodeStatus.MERGED : NodeStatus.DONE),
       };
       const nextGraph = recomputeReadiness({
         ...checkpoint.graph,
@@ -405,7 +434,9 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       return {
         ...checkpoint,
         graph: updatedGraph,
-        machineState: allGatesCleared ? MachineState.DISPATCHING : MachineState.GATE_HALTED,
+        machineState: allGatesCleared
+          ? MachineState.DISPATCHING
+          : MachineState.GATE_HALTED,
         updatedAt: now,
       };
     }
@@ -425,7 +456,10 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // contract is global re-fencing on refinement, conservative-safe.
       const refinedNodes: Record<string, Node> = {};
       for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
-        refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        refinedNodes[nId] = {
+          ...node,
+          leaseVersion: (node.leaseVersion ?? 0) + 1,
+        };
       }
       return {
         ...checkpoint,
@@ -442,12 +476,149 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
         updatedAt: now,
       };
 
-    case "review_passed":
-      // Identity transition — no state change, recorded for audit trail
+    case "review_passed": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      // Precondition: FAILED nodes cannot be un-FAILed by review_passed.
+      // Operators must call node_reset first to recover from cap-exhausted state.
+      if (node.status === NodeStatus.FAILED) {
+        throw new Error(
+          `Cannot apply review_passed to node "${event.nodeId}" — node is FAILED. ` +
+            `Use node_reset first to recover.`,
+        );
+      }
+      // Derive target status matching complete_node logic
+      const passedStatus = node.prUrl
+        ? (node.repo ? NodeStatus.MERGED : NodeStatus.PR_CREATED)
+        : NodeStatus.DONE;
+      // Design note (LOW-A4): if the node is already DONE, status is idempotent
+      // (passedStatus === DONE), but lastReviewVerdict and lastReviewNotes are
+      // still overwritten. This is intentional — event sequence (event seq) is
+      // the source of truth for freshness. A stale review event applied out of
+      // order will clobber a fresher verdict; callers are responsible for
+      // ordering. If stronger semantics are needed (e.g. seq-guarded writes),
+      // that is a future task.
+      const updatedNode: Node = {
+        ...node,
+        status: passedStatus,
+        lastReviewVerdict: "PASS",
+        ...(event.reviewNotes !== undefined
+          ? { lastReviewNotes: event.reviewNotes }
+          : {}),
+      };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
+      // Detect saga completion: all nodes in terminal status
+      const terminalStatuses = new Set<NodeStatus>([
+        NodeStatus.DONE,
+        NodeStatus.MERGED,
+        NodeStatus.PR_CREATED,
+        NodeStatus.FAILED,
+      ]);
+      const allTerminal = Object.values(nextGraph.nodes).every((n) =>
+        terminalStatuses.has(n.status)
+      );
       return {
         ...checkpoint,
+        graph: nextGraph,
+        machineState: allTerminal
+          ? MachineState.COMPLETED
+          : checkpoint.machineState,
         updatedAt: now,
       };
+    }
+
+    case "review_failed": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      // Symmetric guard with review_passed (HIGH-A1): a node already in FAILED
+      // status MUST NOT be resurrected or have its iterationCount mutated by
+      // another review event. node_reset is the only legal recovery path.
+      // Covers: cap-exhausted FAILED (avoids "4/3" arithmetic), drone-crash
+      // FAILED via node_failed with iterationCount < cap (avoids
+      // ACTIVE-resurrection), any other FAILED entry. Replay-safe no-op.
+      if (node.status === NodeStatus.FAILED) {
+        return checkpoint; // idempotent no-op — terminal failure, await reset
+      }
+      const newIterationCount = (node.iterationCount ?? 0) + 1;
+      const cap = node.maxIterations ?? 3;
+      const capExhausted = newIterationCount >= cap;
+      const updatedNode: Node = capExhausted
+        ? {
+          ...node,
+          status: NodeStatus.FAILED,
+          iterationCount: newIterationCount,
+          lastReviewVerdict: "FAIL",
+          failureReason:
+            `iteration cap exhausted: review failed ${newIterationCount}/${cap} times`,
+          ...(event.reviewNotes !== undefined
+            ? { lastReviewNotes: event.reviewNotes }
+            : {}),
+        }
+        : {
+          ...node,
+          status: NodeStatus.ACTIVE,
+          iterationCount: newIterationCount,
+          lastReviewVerdict: "FAIL",
+          ...(event.reviewNotes !== undefined
+            ? { lastReviewNotes: event.reviewNotes }
+            : {}),
+        };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: updatedNode,
+        },
+      });
+      return {
+        ...checkpoint,
+        graph: nextGraph,
+        updatedAt: now,
+      };
+    }
+
+    case "node_reset": {
+      const node = checkpoint.graph.nodes[event.nodeId] as Node | undefined;
+      if (!node) return { ...checkpoint, updatedAt: now };
+      // Precondition: only FAILED nodes may be reset
+      if (node.status !== NodeStatus.FAILED) {
+        throw new Error(
+          `Cannot reset node "${event.nodeId}" — node is ${node.status}, expected ${NodeStatus.FAILED}`,
+        );
+      }
+      const resetNode: Node = {
+        ...node,
+        status: NodeStatus.PENDING,
+        // Bump leaseVersion to invalidate any in-flight WorkPackets for the old attempt
+        leaseVersion: (node.leaseVersion ?? 0) + 1,
+        // Clear the failure reason on reset
+        failureReason: undefined,
+        // Clear stale review verdict and notes — leaving these set would surface
+        // a "FAIL" verdict in saga_report and operator UIs for a recovered node.
+        lastReviewVerdict: undefined,
+        lastReviewNotes: undefined,
+        // Reset iterationCount only when explicitly requested
+        ...(event.resetIterationCount ? { iterationCount: 0 } : {}),
+      };
+      const nextGraph = recomputeReadiness({
+        ...checkpoint.graph,
+        nodes: {
+          ...checkpoint.graph.nodes,
+          [event.nodeId]: resetNode,
+        },
+      });
+      return {
+        ...checkpoint,
+        graph: nextGraph,
+        updatedAt: now,
+      };
+    }
 
     case "subgraph_added": {
       /**
@@ -480,8 +651,14 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
       // WorkPackets worth invalidating; terminal nodes are left untouched.
       const cancelledNodes: Record<string, Node> = {};
       for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
-        if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
-          cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+        if (
+          node.status === NodeStatus.PENDING ||
+          node.status === NodeStatus.ACTIVE
+        ) {
+          cancelledNodes[nId] = {
+            ...node,
+            leaseVersion: (node.leaseVersion ?? 0) + 1,
+          };
         } else {
           cancelledNodes[nId] = node;
         }
@@ -535,7 +712,9 @@ export function deserialize(json: string): Checkpoint {
   const cp = parsed as Checkpoint;
   if (!SUPPORTED_VERSIONS.has(cp.version)) {
     throw new Error(
-      `Checkpoint version unsupported — supported: ${[...SUPPORTED_VERSIONS].join(", ")}, got ${cp.version}`,
+      `Checkpoint version unsupported — supported: ${
+        [...SUPPORTED_VERSIONS].join(", ")
+      }, got ${cp.version}`,
     );
   }
 
@@ -569,7 +748,9 @@ export function deserialize(json: string): Checkpoint {
   for (const sg of (cp.subgraphs ?? []) as Subgraph[]) {
     const partial = sg as Partial<Subgraph>;
     if (partial.derived === undefined) sg.derived = true;
-    if (!sg.completionPolicy) sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    if (!sg.completionPolicy) {
+      sg.completionPolicy = SubgraphCompletionPolicy.ALL;
+    }
     if (!sg.failurePolicy) sg.failurePolicy = SubgraphFailurePolicy.FAIL_FAST;
   }
 
@@ -591,6 +772,22 @@ export function deserialize(json: string): Checkpoint {
   // Backward compat: pre-2.6.0 checkpoints lack eventLog — default to [].
   // They cannot replay (the log was not written), but they round-trip cleanly.
   if (!cp.eventLog) cp.eventLog = [];
+
+  // Backward compat: pre-2.7.0 nodes lack iterationCount / maxIterations.
+  // Default iterationCount to 0 (no iterations attempted) and maxIterations to
+  // 3 (the convergence-loop cap). Optional at the type level; backfilled here
+  // for loaded checkpoints and by `addNode` in graph.ts for fresh creations.
+  for (const node of Object.values(cp.graph.nodes)) {
+    const n = node as Partial<Node>;
+    if (n.iterationCount === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).iterationCount = 0;
+    }
+    if (n.maxIterations === undefined) {
+      // deno-lint-ignore no-explicit-any
+      (node as any).maxIterations = 3;
+    }
+  }
 
   return cp;
 }

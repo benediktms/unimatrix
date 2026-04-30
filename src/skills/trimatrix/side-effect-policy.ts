@@ -45,29 +45,64 @@ export interface SideEffectSpec {
  * Maps event types to an ordered list of side-effect specs.
  * Events not in the table produce zero side effects.
  */
-export const SIDE_EFFECT_POLICY: Partial<Record<Event["type"], SideEffectSpec[]>> = {
+export const SIDE_EFFECT_POLICY: Partial<
+  Record<Event["type"], SideEffectSpec[]>
+> = {
   node_completed: [
-    { action: SideEffectAction.SYNC_TASK, mode: TaskSyncMode.ACTIVATE, tier: SideEffectTier.BEST_EFFORT },
-    { action: SideEffectAction.RECORD_EPISODE, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SYNC_TASK,
+      mode: TaskSyncMode.ACTIVATE,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
+    {
+      action: SideEffectAction.RECORD_EPISODE,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   node_failed: [
-    { action: SideEffectAction.SYNC_TASK, mode: TaskSyncMode.BLOCK, tier: SideEffectTier.BEST_EFFORT },
-    { action: SideEffectAction.RECORD_EPISODE, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SYNC_TASK,
+      mode: TaskSyncMode.BLOCK,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
+    {
+      action: SideEffectAction.RECORD_EPISODE,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   wave_dispatched: [
-    { action: SideEffectAction.SYNC_TASK, mode: TaskSyncMode.ACTIVATE, tier: SideEffectTier.BEST_EFFORT },
-    { action: SideEffectAction.RECORD_EPISODE, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SYNC_TASK,
+      mode: TaskSyncMode.ACTIVATE,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
+    {
+      action: SideEffectAction.RECORD_EPISODE,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   wave_completed: [
-    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SAVE_CHECKPOINT,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   wave_failed: [
-    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SAVE_CHECKPOINT,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   cancel: [
-    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SAVE_CHECKPOINT,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
   execution_completed: [
-    { action: SideEffectAction.SAVE_CHECKPOINT, tier: SideEffectTier.BEST_EFFORT },
+    {
+      action: SideEffectAction.SAVE_CHECKPOINT,
+      tier: SideEffectTier.BEST_EFFORT,
+    },
   ],
 };

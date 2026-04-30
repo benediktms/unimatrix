@@ -252,6 +252,72 @@ export interface Node {
    * BLOCKED marker on the next `node_completed` event.
    */
   externallyBlocked?: boolean;
+  /**
+   * Number of times this node has re-entered the implement→review→fix loop.
+   * Starts at 0 on creation; incremented by the `review_failed` event handler
+   * (Wave 2, unm-735.2). Read by the convergence-cap check in `dispatch_wave`
+   * before activation.
+   *
+   * **Orthogonal axes note:** `iterationCount` tracks loop cycles, which is
+   * independent of both `NodeStatus` (execution lifecycle: PENDING → ACTIVE →
+   * DONE/FAILED) and `ReadinessStatus` (topology eligibility: READY/BLOCKED/
+   * INVALIDATED). A node may be FAILED due to cap exhaustion while its
+   * `readinessStatus` remains READY — the axes do not conflict.
+   *
+   * Introduced in checkpoint version 2.7.0. Pre-2.7.0 checkpoints default to
+   * 0 on deserialize (see `state.ts` backfill). Optional at the type level so
+   * callers constructing fresh `Node` literals do not have to supply it;
+   * `addNode` in `graph.ts` backfills the default on creation.
+   */
+  iterationCount?: number;
+  /**
+   * Maximum number of review→fix iterations before the node is hard-failed.
+   * Configurable per node at `add_node` time; defaults to 3.
+   *
+   * When `iterationCount` reaches `maxIterations`, the convergence loop
+   * marks the node `FAILED` with a cap-exhaustion reason rather than
+   * re-dispatching. Optional at the type level; backfilled to 3 by `addNode`
+   * and `deserialize`.
+   */
+  maxIterations?: number;
+  /**
+   * Verdict from the most recent sentinel review of this node.
+   * Set by `review_passed` (→ `"PASS"`) and `review_failed` (→ `"FAIL"`) event
+   * handlers (Wave 2, unm-735.2). Absent until the first review completes.
+   *
+   * Orthogonal to `NodeStatus`: a node may be `ACTIVE` while `lastReviewVerdict`
+   * is `"FAIL"` (fix iteration in progress) or absent (never reviewed).
+   */
+  lastReviewVerdict?: "PASS" | "FAIL";
+  /**
+   * Free-form notes from the most recent sentinel review.
+   * Populated alongside `lastReviewVerdict` by the review event handlers.
+   * Absent until the first review completes.
+   */
+  lastReviewNotes?: string;
+  /**
+   * IDs of direct predecessors that are currently in NodeStatus.FAILED.
+   * Empty array (or undefined) when no direct predecessor is failed.
+   *
+   * Populated and cleared by `recomputeReadiness` in graph.ts:
+   * - When a predecessor transitions to FAILED, its ID is appended here.
+   * - When a predecessor is reset (back to PENDING via `node_reset`), its ID
+   *   is removed; if the list empties and all other deps are satisfied the
+   *   node returns to READY.
+   *
+   * A non-empty `blockedBy` implies `readinessStatus === BLOCKED`.
+   * An empty (or absent) `blockedBy` does NOT imply READY — there may still
+   * be unsatisfied-but-not-failed predecessors (e.g. PENDING, ACTIVE).
+   *
+   * **Direct-only:** transitive failures are not propagated. In A→B→C with
+   * A FAILED and B PENDING, C.blockedBy = [] because B is not failed.
+   * Operators querying for the originating failure must walk predecessor
+   * edges. This keeps the field cheap to recompute and reset.
+   *
+   * Introduced alongside the failure-isolation invariant (UNM-735.9).
+   * Pre-existing checkpoints treat `undefined` as `[]` (backfill compat).
+   */
+  blockedBy?: string[];
 }
 
 /**
@@ -750,8 +816,7 @@ export function approvalSchema(opts?: {
       modifications: {
         type: "string",
         title: opts?.modificationsTitle ?? "Requested modifications",
-        description:
-          "Optional: describe any modifications before proceeding.",
+        description: "Optional: describe any modifications before proceeding.",
       },
     },
     required: ["approve"],
@@ -779,8 +844,7 @@ export function triageSchema(opts?: {
       context: {
         type: "string",
         title: opts?.contextTitle ?? "Additional context",
-        description:
-          "Optional: provide additional context for the decision.",
+        description: "Optional: provide additional context for the decision.",
       },
     },
     required: ["decision"],
@@ -841,8 +905,27 @@ export type Event =
   | { type: "wave_failed"; waveId: number }
   | { type: "execution_completed" }
   | { type: "retry_wave"; waveId: number }
-  | { type: "review_passed"; nodeId?: string }
+  | {
+    type: "review_passed";
+    nodeId: string;
+    reviewVerdict?: "PASS";
+    reviewNotes?: string;
+  }
+  | {
+    type: "review_failed";
+    nodeId: string;
+    reviewVerdict?: "FAIL";
+    reviewNotes?: string;
+  }
   | { type: "refine" }
   | { type: "refinement_approved" }
   | { type: "subgraph_added"; subgraph: Subgraph }
-  | { type: "cancel"; reason?: string };
+  | { type: "cancel"; reason?: string }
+  | {
+    type: "node_reset";
+    nodeId: string;
+    /** Optional human-readable reason for the reset (preserved in event log). */
+    reason?: string;
+    /** If true, resets iterationCount to 0. Otherwise preserves the current count. */
+    resetIterationCount?: boolean;
+  };

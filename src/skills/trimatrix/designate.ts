@@ -12,7 +12,10 @@
  * is synchronous and a `git rev-parse` subprocess would force async. Session id alone
  * provides cross-session uniqueness across the [1, 999] codomain.
  */
-export function deriveTrimatrixId(sessionId: string, gitCommit?: string): number {
+export function deriveTrimatrixId(
+  sessionId: string,
+  gitCommit?: string,
+): number {
   // FNV-1a 32-bit: offset basis and prime are standard constants.
   const FNV_PRIME = 0x01000193;
   const FNV_OFFSET = 0x811c9dc5;
@@ -22,7 +25,7 @@ export function deriveTrimatrixId(sessionId: string, gitCommit?: string): number
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
     // Multiply mod 2^32 using unsigned 32-bit arithmetic.
-    hash = (Math.imul(hash, FNV_PRIME) >>> 0);
+    hash = Math.imul(hash, FNV_PRIME) >>> 0;
   }
   // Map to [1, 999].
   return (hash % 999) + 1;
@@ -111,10 +114,9 @@ export function designate(
   let resolved_trimatrix_id: number | undefined;
 
   if (trimatrix) {
-    resolved_trimatrix_id =
-      trimatrix_id !== undefined
-        ? trimatrix_id
-        : Math.floor(Math.random() * 999) + 1;
+    resolved_trimatrix_id = trimatrix_id !== undefined
+      ? trimatrix_id
+      : Math.floor(Math.random() * 999) + 1;
     unit = `Trimatrix ${resolved_trimatrix_id}`;
   } else {
     unit = "Unimatrix Zero";
@@ -122,7 +124,10 @@ export function designate(
 
   // Locutus always receives a fixed designation regardless of count.
   if (role === Role.LOCUTUS) {
-    return { designations: ["Locutus of Borg"], trimatrix_id: resolved_trimatrix_id };
+    return {
+      designations: ["Locutus of Borg"],
+      trimatrix_id: resolved_trimatrix_id,
+    };
   }
 
   if (count === 1) {
@@ -131,7 +136,9 @@ export function designate(
     const ordinal = Math.floor(Math.random() * 12) + 1;
     return {
       designations: [
-        `${NUMBERS[position]} of ${NUMBERS[total]}, ${ORDINALS[ordinal]} ${titleBase} of ${unit}`,
+        `${NUMBERS[position]} of ${NUMBERS[total]}, ${
+          ORDINALS[ordinal]
+        } ${titleBase} of ${unit}`,
       ],
       trimatrix_id: resolved_trimatrix_id,
     };
@@ -148,7 +155,9 @@ export function designate(
     return {
       designations: positions.map(
         (p) =>
-          `${NUMBERS[p]} of ${NUMBERS[count]}, ${ORDINALS[p]} ${titleBase} of ${unit}`,
+          `${NUMBERS[p]} of ${NUMBERS[count]}, ${
+            ORDINALS[p]
+          } ${titleBase} of ${unit}`,
       ),
       trimatrix_id: resolved_trimatrix_id,
     };
@@ -158,7 +167,9 @@ export function designate(
   return {
     designations: positions.map(
       (p) =>
-        `${NUMBERS[p]} of ${NUMBERS[count]}, ${ORDINALS[sharedOrdinal]} ${titleBase} of ${unit}`,
+        `${NUMBERS[p]} of ${NUMBERS[count]}, ${
+          ORDINALS[sharedOrdinal]
+        } ${titleBase} of ${unit}`,
     ),
     trimatrix_id: resolved_trimatrix_id,
   };
