@@ -47,6 +47,7 @@ import {
   clearGate,
   completeNode,
   computeSubgraphs,
+  SUBGRAPH_SLUG_RE,
   computeWaves,
   computeWavesFromRefinement,
   failNode,
@@ -1053,7 +1054,7 @@ server.tool(
 
 server.tool(
   "add_subgraph",
-  "Declare an explicit subgraph with a stable slug, hierarchy, and completion/failure policies. Explicit subgraphs are preserved across compute_subgraphs runs. Slug becomes the subgraph ID — must match ^[a-z][a-z0-9-]{0,40}$, cannot be 'sg-lead' or start with 'auto-'.",
+  `Declare an explicit subgraph with a stable slug, hierarchy, and completion/failure policies. Explicit subgraphs are preserved across compute_subgraphs runs. Slug becomes the subgraph ID — must match ${SUBGRAPH_SLUG_RE.source}, cannot be 'sg-lead' or start with 'auto-'.`,
   {
     slug: z.string().describe(
       "Stable subgraph identifier (also used as the ID). Lowercase letters, digits, hyphens, 1–41 chars, must start with a letter. Cannot be 'sg-lead' or start with 'auto-'.",
