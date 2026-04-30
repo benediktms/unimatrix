@@ -277,6 +277,105 @@ Deno.test("get_subgraph wiring: absent subgraph ID lookup returns undefined", ()
   assertEquals(found, undefined);
 });
 
+// ---------------------------------------------------------------------------
+// Tests: lease fencing (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulate dispatch_wave fence-stamp logic: mint attemptId + increment leaseVersion
+ * on each activated node, collect WorkPackets.
+ */
+function simulateDispatch(
+  graph: import("./types.ts").Graph,
+  nodeIds: string[],
+): {
+  graph: import("./types.ts").Graph;
+  workPackets: import("./types.ts").WorkPacket[];
+} {
+  let g = graph;
+  const workPackets: import("./types.ts").WorkPacket[] = [];
+  for (const nId of nodeIds) {
+    const node = g.nodes[nId];
+    if (!node) continue;
+    const attemptId = crypto.randomUUID();
+    const leaseVersion = (node.leaseVersion ?? 0) + 1;
+    g = { ...g, nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } } };
+    workPackets.push({ nodeId: nId, attemptId, leaseVersion });
+  }
+  return { graph: g, workPackets };
+}
+
+/**
+ * Simulate complete_node fence validation logic.
+ * Returns null on success, error message on stale fence.
+ */
+function simulateFenceCheck(
+  graph: import("./types.ts").Graph,
+  nodeId: string,
+  attemptId?: string,
+  leaseVersion?: number,
+): string | null {
+  const node = graph.nodes[nodeId];
+  if (!node) return `Node "${nodeId}" not found`;
+  if (attemptId !== undefined && leaseVersion !== undefined) {
+    if (node.attemptId !== attemptId || node.leaseVersion !== leaseVersion) {
+      return `Stale lease for node ${nodeId}: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${attemptId}, leaseVersion=${leaseVersion})`;
+    }
+  }
+  return null;
+}
+
+Deno.test("fence: dispatch_wave returns one WorkPacket per activated node", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+  const { workPackets } = simulateDispatch(graph, ["n1", "n2"]);
+
+  assertEquals(workPackets.length, 2);
+  assertEquals(workPackets[0].nodeId, "n1");
+  assertEquals(workPackets[1].nodeId, "n2");
+  assertEquals(typeof workPackets[0].attemptId, "string");
+  assertEquals(workPackets[0].leaseVersion, 1);
+  assertEquals(workPackets[1].leaseVersion, 1);
+});
+
+Deno.test("fence: two consecutive dispatches mint different attemptIds and incrementing leaseVersion", () => {
+  const graph = makeGraph([makeNode("n1")]);
+
+  const first = simulateDispatch(graph, ["n1"]);
+  assertEquals(first.workPackets[0].leaseVersion, 1);
+  const firstAttemptId = first.workPackets[0].attemptId;
+
+  const second = simulateDispatch(first.graph, ["n1"]);
+  assertEquals(second.workPackets[0].leaseVersion, 2);
+  const secondAttemptId = second.workPackets[0].attemptId;
+
+  // UUIDs must differ
+  assertEquals(firstAttemptId !== secondAttemptId, true);
+});
+
+Deno.test("fence: complete_node with matching fence succeeds (no error)", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const { graph: fencedGraph, workPackets } = simulateDispatch(graph, ["n1"]);
+  const packet = workPackets[0];
+
+  const err = simulateFenceCheck(fencedGraph, "n1", packet.attemptId, packet.leaseVersion);
+  assertEquals(err, null);
+});
+
+Deno.test("fence: complete_node with stale fence (mismatched attemptId) is rejected", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const { graph: fencedGraph, workPackets } = simulateDispatch(graph, ["n1"]);
+
+  // Caller presents wrong attemptId
+  const err = simulateFenceCheck(
+    fencedGraph,
+    "n1",
+    "stale-attempt-id-that-does-not-match",
+    workPackets[0].leaseVersion,
+  );
+  assertEquals(err !== null, true);
+  assertEquals(err!.includes("Stale lease for node n1"), true);
+});
+
 Deno.test("get_subgraph wiring: present subgraph ID lookup returns correct subgraph", () => {
   const graph = makeGraph([makeNode("n1")]);
   let cp = makeCp(graph);

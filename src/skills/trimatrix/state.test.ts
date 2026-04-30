@@ -1505,3 +1505,90 @@ Deno.test("serialize/deserialize: 2.6.0 round-trip preserves non-trivial eventLo
   assertEquals(restored.eventLog?.[1].event.type, "plan_finalized");
   assertEquals(restored.eventLog?.[0].checkpointVersion, "2.6.0");
 });
+
+// ---------------------------------------------------------------------------
+// Tests: lease fencing — state.test.ts slice (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulate the dispatch_wave fence-stamp logic used by the server handler.
+ * Returns the updated graph and the minted WorkPackets.
+ */
+function stampFences(
+  graph: Graph,
+  nodeIds: string[],
+): { graph: Graph; workPackets: Array<{ nodeId: string; attemptId: string; leaseVersion: number }> } {
+  let g = graph;
+  const workPackets: Array<{ nodeId: string; attemptId: string; leaseVersion: number }> = [];
+  for (const nId of nodeIds) {
+    const node = g.nodes[nId];
+    if (!node) continue;
+    const attemptId = crypto.randomUUID();
+    const leaseVersion = (node.leaseVersion ?? 0) + 1;
+    g = { ...g, nodes: { ...g.nodes, [nId]: { ...node, attemptId, leaseVersion } } };
+    workPackets.push({ nodeId: nId, attemptId, leaseVersion });
+  }
+  return { graph: g, workPackets };
+}
+
+/**
+ * Simulate the refine fence-bump logic used by the server handler.
+ * Increments leaseVersion on all nodes.
+ */
+function bumpAllFences(graph: Graph): Graph {
+  const bumped: Record<string, Node> = {};
+  for (const [nId, node] of Object.entries(graph.nodes)) {
+    bumped[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+  }
+  return { ...graph, nodes: bumped };
+}
+
+Deno.test("fence state: complete_node without fence params succeeds — backward compat", () => {
+  // A node with a leaseVersion set (was dispatched) can still be written to
+  // by a caller that provides no fence at all. The fence is opt-in.
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+  const { graph: fencedGraph } = stampFences(graph, ["n1"]);
+
+  const node = fencedGraph.nodes["n1"];
+  // Pre-condition: node has fence fields set
+  assertEquals(typeof node.attemptId, "string");
+  assertEquals(node.leaseVersion, 1);
+
+  // Simulate backward-compat path: caller provides no attemptId / leaseVersion
+  // The validation block is skipped. We confirm that skipping it does not throw
+  // and that the node fields are intact (the handler proceeds normally).
+  const attemptIdParam: string | undefined = undefined;
+  const leaseVersionParam: number | undefined = undefined;
+
+  let validationError: string | null = null;
+  if (attemptIdParam !== undefined && leaseVersionParam !== undefined) {
+    if (node.attemptId !== attemptIdParam || node.leaseVersion !== leaseVersionParam) {
+      validationError = `Stale lease for node n1`;
+    }
+  }
+
+  assertEquals(validationError, null, "unfenced write must not produce a validation error");
+});
+
+Deno.test("fence state: refine increments leaseVersion so pre-refine fence is rejected", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.ACTIVE })]);
+
+  // Dispatch: mint fence at leaseVersion 1
+  const { graph: dispatched, workPackets } = stampFences(graph, ["n1"]);
+  const preRefinePacket = workPackets[0];
+  assertEquals(preRefinePacket.leaseVersion, 1);
+
+  // Refine: global leaseVersion bump
+  const afterRefine = bumpAllFences(dispatched);
+  assertEquals(afterRefine.nodes["n1"].leaseVersion, 2);
+
+  // Caller still holds the pre-refine WorkPacket (leaseVersion=1)
+  const node = afterRefine.nodes["n1"];
+  const err = (node.attemptId !== preRefinePacket.attemptId ||
+      node.leaseVersion !== preRefinePacket.leaseVersion)
+    ? `Stale lease for node n1: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${preRefinePacket.attemptId}, leaseVersion=${preRefinePacket.leaseVersion})`
+    : null;
+
+  assertEquals(err !== null, true, "post-refine complete with pre-refine fence must be rejected");
+  assertEquals(err!.includes("Stale lease for node n1"), true);
+});

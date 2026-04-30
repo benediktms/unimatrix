@@ -22,6 +22,7 @@ import type {
   ElicitationRequestedSchema,
   ElicitResult,
   RepoMetadata,
+  WorkPacket,
 } from "./types.ts";
 import {
   approvalSchema,
@@ -670,7 +671,21 @@ server.tool(
       throw new Error(`Cannot enter refining state: ${check.reason}`);
     }
 
-    const result = await transitionWithEffects(cp, { type: "refine" });
+    // Lease fencing (UNM-1b7.6): increment leaseVersion on all nodes to
+    // invalidate any in-flight WorkPackets. Refinement is rare and global
+    // re-fencing is conservative-safe. This covers all nodes regardless of
+    // status; only dispatched nodes carry a leaseVersion but bumping PENDING
+    // ones is harmless — their first dispatch will mint the initial value.
+    const refinedNodes: Record<string, import("./types.ts").Node> = {};
+    for (const [nId, node] of Object.entries(cp.graph.nodes)) {
+      refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+    }
+    const cpWithBumpedFences: Checkpoint = {
+      ...cp,
+      graph: { ...cp.graph, nodes: refinedNodes },
+    };
+
+    const result = await transitionWithEffects(cpWithBumpedFences, { type: "refine" });
     checkpoint = result.checkpoint;
 
     return {
@@ -1293,6 +1308,25 @@ server.tool(
       }
     }
 
+    // Lease fencing (UNM-1b7.6): mint a fresh attemptId and increment leaseVersion
+    // for every activated regular node. WorkPackets are returned so callers can
+    // echo them back in complete_node / fail_node / update_node.
+    const workPackets: WorkPacket[] = [];
+    for (const nId of regularNodeIds) {
+      const node = updatedGraph.nodes[nId];
+      if (!node) continue;
+      const attemptId = crypto.randomUUID();
+      const leaseVersion = (node.leaseVersion ?? 0) + 1;
+      updatedGraph = {
+        ...updatedGraph,
+        nodes: {
+          ...updatedGraph.nodes,
+          [nId]: { ...node, attemptId, leaseVersion },
+        },
+      };
+      workPackets.push({ nodeId: nId, attemptId, leaseVersion });
+    }
+
     const dispatchResult = await transitionWithEffects(
       { ...cp, graph: updatedGraph },
       { type: "wave_dispatched", waveId: params.waveId },
@@ -1330,6 +1364,7 @@ server.tool(
             machineState: checkpoint.machineState,
             nodeExecution,
             parallelBatches: batches,
+            workPackets,
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
@@ -1352,9 +1387,11 @@ server.tool(
 
 server.tool(
   "complete_node",
-  "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion.",
+  "Mark a node as completed. Status is derived from existing node metadata: PR_CREATED if prUrl is set (use update_node first), MERGED if node has a repo, DONE otherwise. Nodes with outgoing MERGE_GATE edges require prUrl/prNumber to be set via update_node before completion. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to complete"),
+    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
+    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1362,6 +1399,19 @@ server.tool(
     const node = cp.graph.nodes[params.nodeId];
     if (!node) {
       throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    // Backward compat: if neither is provided, the write proceeds unfenced.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        node.attemptId !== params.attemptId ||
+        node.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${node.attemptId}, leaseVersion=${node.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
     }
 
     // Guard: ELICIT_GATE nodes must be cleared via clear_gate, not completed directly
@@ -1434,14 +1484,33 @@ server.tool(
 
 server.tool(
   "update_node",
-  "Update metadata on a node without changing its status. Use to attach PR info (prUrl, prNumber) before calling complete_node.",
+  "Update metadata on a node without changing its status. Use to attach PR info (prUrl, prNumber) before calling complete_node. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to update"),
     prUrl: z.string().optional().describe("URL of the pull request"),
     prNumber: z.coerce.number().int().optional().describe("Pull request number"),
+    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
+    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
   },
   async (params) => {
     const cp = requireCheckpoint();
+
+    const updateTarget = cp.graph.nodes[params.nodeId];
+    if (!updateTarget) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        updateTarget.attemptId !== params.attemptId ||
+        updateTarget.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${updateTarget.attemptId}, leaseVersion=${updateTarget.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
+    }
 
     const patch: { prUrl?: string; prNumber?: number } = {};
     if (params.prUrl !== undefined) patch.prUrl = params.prUrl;
@@ -1532,10 +1601,12 @@ server.tool(
 
 server.tool(
   "fail_node",
-  "Mark a node as failed with a human-readable reason.",
+  "Mark a node as failed with a human-readable reason. Provide attemptId + leaseVersion (from dispatch_wave workPackets) to enable fence validation; omit both for backward-compatible unfenced writes.",
   {
     nodeId: z.string().describe("Node ID to fail"),
     reason: z.string().describe("Human-readable failure reason"),
+    attemptId: z.string().optional().describe("Fence: attemptId from the WorkPacket issued at dispatch. Required when leaseVersion is provided."),
+    leaseVersion: z.coerce.number().int().optional().describe("Fence: leaseVersion from the WorkPacket issued at dispatch. Required when attemptId is provided."),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -1556,6 +1627,18 @@ server.tool(
       throw new Error(
         `Cannot fail node "${params.nodeId}" — node is PENDING and has not been dispatched`,
       );
+    }
+
+    // Lease fencing (UNM-1b7.6): validate fence if both fields are provided.
+    if (params.attemptId !== undefined && params.leaseVersion !== undefined) {
+      if (
+        failTarget?.attemptId !== params.attemptId ||
+        failTarget?.leaseVersion !== params.leaseVersion
+      ) {
+        throw new Error(
+          `Stale lease for node ${params.nodeId}: expected (attemptId=${failTarget?.attemptId}, leaseVersion=${failTarget?.leaseVersion}), got (attemptId=${params.attemptId}, leaseVersion=${params.leaseVersion})`,
+        );
+      }
     }
 
     const check = canTransition(cp, {
@@ -1880,7 +1963,20 @@ server.tool(
       }
     }
 
-    const cancelResult = await transitionWithEffects(cp, { type: "cancel", reason: params.reason });
+    // Lease fencing (UNM-1b7.6): increment leaseVersion on every PENDING or
+    // ACTIVE node so any in-flight WorkPackets held by adjuncts are invalidated
+    // before the cancellation transition completes.
+    const cancelledNodes: Record<string, import("./types.ts").Node> = {};
+    for (const [nId, node] of Object.entries(cp.graph.nodes)) {
+      if (node.status === NodeStatus.PENDING || node.status === NodeStatus.ACTIVE) {
+        cancelledNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+      } else {
+        cancelledNodes[nId] = node;
+      }
+    }
+    const cpBeforeCancel: Checkpoint = { ...cp, graph: { ...cp.graph, nodes: cancelledNodes } };
+
+    const cancelResult = await transitionWithEffects(cpBeforeCancel, { type: "cancel", reason: params.reason });
     checkpoint = cancelResult.checkpoint;
     if (cancelResult.shouldSaveCheckpoint) {
       await saveCheckpointToBrain(checkpoint);

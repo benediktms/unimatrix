@@ -212,6 +212,19 @@ export interface Node {
   elicitSchema?: ElicitationRequestedSchema;
   /** User's structured response after elicitation completes. Populated by clear_gate. */
   elicitResponse?: Record<string, unknown>;
+  /**
+   * Opaque UUID minted by `dispatch_wave` to identify the current dispatch
+   * attempt. Callers must echo this back in `complete_node` / `fail_node` /
+   * `update_node` for fence validation. Absent until the node is first dispatched.
+   */
+  attemptId?: string;
+  /**
+   * Monotonically incrementing counter stamped on the node each time it is
+   * dispatched or invalidated by `refine` / `cancel`. Callers must echo the
+   * version they received; a mismatch means the node has been re-fenced since
+   * dispatch and the write is rejected. Absent until the node is first dispatched.
+   */
+  leaseVersion?: number;
 }
 
 /**
@@ -398,6 +411,29 @@ export interface SubgraphSummary {
   label?: string;
   parentId?: string;
   gates?: SubgraphGate[];
+}
+
+// ---------------------------------------------------------------------------
+// Lease fencing types (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Issued to whichever actor (lead session or adjunct) is currently authorized
+ * to write completion/failure for a node. Every write to a node must echo
+ * both `attemptId` and `leaseVersion`; stale fences are rejected.
+ *
+ * Lifecycle:
+ * - `dispatch_wave` mints a fresh WorkPacket per activated node and returns
+ *   them in the response.
+ * - `complete_node` / `fail_node` / `update_node` accept a WorkPacket and
+ *   reject if it does not match the node's current `attemptId` + `leaseVersion`.
+ * - `refine` and `cancel` increment `leaseVersion` on every affected node,
+ *   invalidating any in-flight WorkPacket for those nodes.
+ */
+export interface WorkPacket {
+  nodeId: string;
+  attemptId: string;
+  leaseVersion: number;
 }
 
 // ---------------------------------------------------------------------------
