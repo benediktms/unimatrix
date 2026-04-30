@@ -5,7 +5,7 @@
  * and node state mutation — all as pure functions returning new graph copies.
  */
 
-import type { CoordinationContract, Edge, Graph, Node, Subgraph, SubgraphGate, Wave } from "./types.ts";
+import type { Capabilities, CoordinationContract, Edge, Graph, Node, Requirements, Subgraph, SubgraphGate, Wave } from "./types.ts";
 import {
   CoordinationMode,
   EdgeType,
@@ -36,6 +36,100 @@ export interface MutationResult<T> {
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Capability matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a dispatcher's capabilities satisfy a node's requirements.
+ *
+ * Subset semantics:
+ * - Every required `repos[]` entry must appear in `capabilities.repos`, or
+ *   `capabilities.repos` must include `"*"` (write-anywhere).
+ * - Every required `tools[]` entry must appear in `capabilities.tools`.
+ * - If `requirements.canWrite` is true, `capabilities.canWrite` must be true.
+ * - If `requirements.humanPresent` is true, `capabilities.humanPresent` must be true.
+ * - Every required `labels[]` entry must appear in `capabilities.labels`.
+ *
+ * Returns `{ ok: true }` when all requirements are met, or
+ * `{ ok: false, missing: [...] }` with concrete unmet items
+ * (e.g. `"repo:foo"`, `"tool:bash"`, `"canWrite"`, `"humanPresent"`, `"label:urgent"`).
+ */
+export function canDispatch(
+  capabilities: Capabilities,
+  requirements: Requirements | undefined,
+): { ok: true } | { ok: false; missing: string[] } {
+  if (!requirements) return { ok: true };
+
+  const missing: string[] = [];
+
+  if (requirements.repos && requirements.repos.length > 0) {
+    const capRepos = capabilities.repos ?? [];
+    const wildcard = capRepos.includes("*");
+    for (const repo of requirements.repos) {
+      if (!wildcard && !capRepos.includes(repo)) {
+        missing.push(`repo:${repo}`);
+      }
+    }
+  }
+
+  if (requirements.tools && requirements.tools.length > 0) {
+    const capTools = capabilities.tools ?? [];
+    for (const tool of requirements.tools) {
+      if (!capTools.includes(tool)) {
+        missing.push(`tool:${tool}`);
+      }
+    }
+  }
+
+  if (requirements.canWrite === true && !capabilities.canWrite) {
+    missing.push("canWrite");
+  }
+
+  if (requirements.humanPresent === true && !capabilities.humanPresent) {
+    missing.push("humanPresent");
+  }
+
+  if (requirements.labels && requirements.labels.length > 0) {
+    const capLabels = capabilities.labels ?? [];
+    for (const label of requirements.labels) {
+      if (!capLabels.includes(label)) {
+        missing.push(`label:${label}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) return { ok: false, missing };
+  return { ok: true };
+}
+
+/**
+ * Validate that the given dispatcher can handle a specific node's requirements.
+ *
+ * Looks up `nodeId` in the graph, evaluates `canDispatch`, and returns a
+ * `MutationResult<void>` with a human-readable error message on mismatch.
+ *
+ * Does NOT wire into `dispatch_wave` — caller is responsible for integration.
+ */
+export function validateDispatch(
+  graph: Graph,
+  nodeId: string,
+  capabilities: Capabilities,
+): MutationResult<void> {
+  const node = graph.nodes[nodeId];
+  if (!node) {
+    return { ok: false, error: `Node "${nodeId}" not found in graph` };
+  }
+
+  const result = canDispatch(capabilities, node.requirements);
+  if (result.ok) return { ok: true };
+
+  return {
+    ok: false,
+    error: `Node ${nodeId} requires ${result.missing.join(", ")}; dispatcher lacks these capabilities`,
+  };
 }
 
 // ---------------------------------------------------------------------------

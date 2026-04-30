@@ -12,6 +12,7 @@ import {
   addEdge,
   addNode,
   addSubgraph,
+  canDispatch,
   clearGate,
   completeNode,
   updateNode,
@@ -25,6 +26,7 @@ import {
   subgraphOutcome,
   unsatisfiedDependencies,
   validate,
+  validateDispatch,
   waveStatus,
 } from "./graph.ts";
 import {
@@ -38,7 +40,7 @@ import {
   SubgraphStrategy,
   Tier,
 } from "./types.ts";
-import type { Graph, Node, Wave } from "./types.ts";
+import type { Capabilities, Graph, Node, Wave } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2100,4 +2102,77 @@ Deno.test("computeSubgraphs: derived ID changes when own member set changes (M5 
   assertEquals(ab !== aOnly, true, "subgraph ID must change when member set changes");
   assertEquals(ab.startsWith("auto-"), true);
   assertEquals(aOnly.startsWith("auto-"), true);
+});
+
+// ---------------------------------------------------------------------------
+// canDispatch — capability matching
+// ---------------------------------------------------------------------------
+
+Deno.test("canDispatch: accepts node with no requirements (undefined)", () => {
+  const caps: Capabilities = { repos: ["repo-a"], tools: ["bash"], canWrite: true };
+  const result = canDispatch(caps, undefined);
+  assertEquals(result.ok, true);
+});
+
+Deno.test("canDispatch: rejects when required repo is absent from capabilities", () => {
+  const caps: Capabilities = { repos: ["repo-a"] };
+  const result = canDispatch(caps, { repos: ["repo-b"] });
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.missing.includes("repo:repo-b"), true);
+  }
+});
+
+Deno.test("canDispatch: accepts when capabilities advertise wildcard repo '*'", () => {
+  const caps: Capabilities = { repos: ["*"] };
+  const result = canDispatch(caps, { repos: ["repo-any", "repo-other"] });
+  assertEquals(result.ok, true);
+});
+
+Deno.test("canDispatch: rejects when required tool is absent from capabilities", () => {
+  const caps: Capabilities = { tools: ["edit"] };
+  const result = canDispatch(caps, { tools: ["bash", "web"] });
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.missing.includes("tool:bash"), true);
+    assertEquals(result.missing.includes("tool:web"), true);
+  }
+});
+
+Deno.test("canDispatch: enforces canWrite strictly — true required but capability false", () => {
+  const caps: Capabilities = { canWrite: false };
+  const result = canDispatch(caps, { canWrite: true });
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.missing.includes("canWrite"), true);
+  }
+});
+
+Deno.test("canDispatch: enforces humanPresent strictly — true required but capability absent", () => {
+  const caps: Capabilities = {};
+  const result = canDispatch(caps, { humanPresent: true });
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.missing.includes("humanPresent"), true);
+  }
+});
+
+Deno.test("validateDispatch: returns missing list in error message when requirements unmet", () => {
+  const node = makeNode({ id: "n1", requirements: { repos: ["repo-secret"], tools: ["bash"] } });
+  const graph = makeGraph([node]);
+  const caps: Capabilities = { repos: ["repo-public"], tools: [] };
+  const result = validateDispatch(graph, "n1", caps);
+  assertEquals(result.ok, false);
+  if (!result.ok && result.error) {
+    assertEquals(result.error.includes("repo:repo-secret"), true);
+    assertEquals(result.error.includes("tool:bash"), true);
+  }
+});
+
+Deno.test("validateDispatch: returns ok:true when all requirements are satisfied", () => {
+  const node = makeNode({ id: "n2", requirements: { repos: ["repo-a"], canWrite: true } });
+  const graph = makeGraph([node]);
+  const caps: Capabilities = { repos: ["*"], canWrite: true };
+  const result = validateDispatch(graph, "n2", caps);
+  assertEquals(result.ok, true);
 });

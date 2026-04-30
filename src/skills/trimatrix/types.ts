@@ -110,6 +110,31 @@ export enum Executor {
 }
 
 // ---------------------------------------------------------------------------
+// Capability matching types
+// ---------------------------------------------------------------------------
+
+/**
+ * Capabilities a dispatcher (lead session or adjunct) advertises. Used at
+ * dispatch time to decide whether a node's requirements are satisfied.
+ */
+export interface Capabilities {
+  /** Repository names the dispatcher can write to (`"*"` means all). */
+  repos?: string[];
+  /** Tool names the dispatcher can invoke (e.g. `"bash"`, `"edit"`, `"web"`). */
+  tools?: string[];
+  /** Whether the dispatcher can write code (vs. read-only analysis). */
+  canWrite?: boolean;
+  /** Whether a human is present to handle elicitation prompts. */
+  humanPresent?: boolean;
+  /** Free-form labels for custom matching. */
+  labels?: string[];
+}
+
+/** Requirements a node declares. Subset semantics: every requirement must be
+ *  satisfied by the dispatcher's `Capabilities` for `canDispatch` to return true. */
+export type Requirements = Capabilities;
+
+// ---------------------------------------------------------------------------
 // Routing types
 // ---------------------------------------------------------------------------
 
@@ -179,6 +204,8 @@ export interface Node {
   subgraph?: string;
   /** Who executes this node: the lead session or a dispatched adjunct. */
   executor: Executor;
+  /** Capability requirements that must be satisfied by the dispatcher before this node can be dispatched. */
+  requirements?: Requirements;
   /** Markdown prompt/context to present to the user during elicitation. Only for ELICIT_GATE nodes. */
   elicitPrompt?: string;
   /** JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted. */
