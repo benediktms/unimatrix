@@ -591,14 +591,18 @@ server.tool(
       );
     }
 
-    // Validate taskId exists in brain if provided
+    // Validate taskId exists in brain if provided. Uses `tasks show
+    // --output=json` — the canonical CLI subcommand and current output flag.
+    // (`tasks get` is the MCP method name and does not exist on the CLI
+    // surface; `--json` is deprecated in favor of `--output=json`. See
+    // unm-17c.)
     if (params.taskId) {
       try {
         await execFileAsync(BRAIN_CLI, [
           "tasks",
-          "get",
+          "show",
           params.taskId,
-          "--json",
+          "--output=json",
         ], { timeout: 5000 });
       } catch (err) {
         const stderr = (err as { stderr?: string }).stderr?.trim();
@@ -2011,18 +2015,10 @@ server.tool(
     // closeNodeGuard.ok === true implies node and node.taskId are defined.
     const taskId = node!.taskId!;
 
-    // Validate task exists in brain
-    try {
-      await execFileAsync(BRAIN_CLI, ["tasks", "get", taskId, "--json"], {
-        timeout: 5000,
-      });
-    } catch {
-      throw new Error(
-        `Task "${taskId}" for node "${params.nodeId}" not found in brain — cannot close`,
-      );
-    }
-
-    // Close the task — must succeed (fail-loud: errors bubble to caller)
+    // Close the task — single integration surface via brainExec. A pre-flight
+    // existence probe was removed (unm-17c): it duplicated I/O and drifted
+    // from the canonical CLI subcommand surface. `tasks close` fails loudly
+    // if the task is missing; the error bubbles to the caller intact.
     const cwd = repoRoot(node!.repo);
     await brainExec.exec(BRAIN_CLI, ["tasks", "close", taskId], {
       timeout: 5000,
