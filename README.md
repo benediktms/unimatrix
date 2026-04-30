@@ -191,26 +191,46 @@ This ensures all projects using Unimatrix have consistent, up-to-date personalit
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [OpenCode](https://opencode.ai)
 - [Brain](https://github.com/benediktms/brain) — task tracking, memory, and artifact persistence
-- Python 3.12+ (for build system and hooks)
-- [Deno](https://deno.com) (for MCP server compilation and OpenCode hook type-checking)
+- [mise](https://mise.jdx.dev/getting-started.html) — pins `just`, `python`, and `deno` at the versions in `.mise.toml`
 
 ### Install
 
 ```bash
-# Clone the repository
 git clone https://github.com/benediktms/unimatrix.git
+cd unimatrix
+mise install && just install-global
+```
 
-# Set up dependencies
-just setup                # or: python3 -m venv .venv && pip install -e . && deno install
+`mise install` provisions the pinned `just`, `python`, and `deno`. `just install-global` then builds, compiles the MCP server, and installs both platforms.
 
-# Build and install globally for both platforms
-just install-global
+Restart your editor/CLI after installation to pick up changes.
 
-# Or install per-platform
+### Smoke test
+
+Verify the install with:
+
+```bash
+just check
+```
+
+Expected output (last line):
+
+```
+All source files valid.
+```
+
+Any failure here means the install is incomplete — usually a missing tool from `mise install` or a stale `dist/`.
+
+### Advanced / per-project install
+
+For per-platform or per-project installs, drive `install.sh` directly:
+
+```bash
+# Per-platform global installs
 ./install.sh --claude --global
 ./install.sh --opencode --global
 
-# Per-project installation
+# Per-project installs
 ./install.sh --claude --project ~/code/my-project
 ./install.sh --opencode --project ~/code/my-project
 ./install.sh --both --project ~/code/my-project
@@ -230,8 +250,6 @@ The installer:
 - Backs up existing files before overwriting
 - Cleans up stale symlinks from previous installs
 - Skips project-level `.claude/skills/` when installing OpenCode to the unimatrix repo itself (if Claude Code skills are already installed globally) to prevent duplicate skills
-
-Restart your editor/CLI after installation to pick up changes.
 
 ## Workflows
 
