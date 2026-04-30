@@ -32,6 +32,7 @@ import {
   MachineState,
   NodeStatus,
   NodeType,
+  ReadinessStatus,
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
   SubgraphStrategy,
@@ -55,6 +56,7 @@ import {
   nextWave,
   parallelNodesInWave,
   subgraphOutcome,
+  subgraphOutcomeWithBlockers,
   unsatisfiedDependencies,
   updateNode,
   serializeSubgraphBrief,
@@ -70,12 +72,13 @@ import {
   transition,
 } from "./state.ts";
 import {
+  getExternalBlockers,
   repoRoot as repoRootLookup,
   searchEpisodes as searchEpisodesCore,
   syncGraphDepsToBrain as syncGraphDepsToBrainCore,
   syncTaskStatus as syncTaskStatusCore,
 } from "./brain-sync.ts";
-import type { BrainExec } from "./brain-sync.ts";
+import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
 
 // ---------------------------------------------------------------------------
@@ -1288,8 +1291,73 @@ server.tool(
       );
     }
 
+    // ---------------------------------------------------------------------------
+    // UNM-1b7.7: External-blocker consultation
+    //
+    // Before activating each regular node, check whether its brain task has
+    // unresolved external blockers. Nodes with blockers are NOT activated —
+    // they are marked BLOCKED (readinessStatus) and collected in externalBlocked.
+    // Brain CLI failures are treated as "no blockers" (graceful degradation).
+    // This section runs BEFORE WorkPacket minting (Drone Delta's lease-fencing
+    // section follows in a subsequent merge).
+    // ---------------------------------------------------------------------------
+    const externalBlocked: Array<{
+      nodeId: string;
+      blockers: ExternalBlockerSnapshot[];
+    }> = [];
+    const clearToActivate: string[] = [];
+
+    // Mutable working copy of the checkpoint for stamping blocker snapshots.
+    let workingCp = cp;
+
+    for (const nId of regularNodeIds) {
+      const node = workingCp.graph.nodes[nId];
+      if (!node?.taskId) {
+        clearToActivate.push(nId);
+        continue;
+      }
+      const { unresolvedCount, blockers } = await getExternalBlockers(
+        node.taskId,
+        brainExec,
+      );
+      if (unresolvedCount > 0) {
+        // Stamp cached snapshot onto the node and mark readinessStatus BLOCKED
+        workingCp = {
+          ...workingCp,
+          graph: {
+            ...workingCp.graph,
+            nodes: {
+              ...workingCp.graph.nodes,
+              [nId]: {
+                ...node,
+                readinessStatus: ReadinessStatus.BLOCKED,
+                externalBlockers: blockers,
+              },
+            },
+          },
+        };
+        externalBlocked.push({ nodeId: nId, blockers });
+      } else {
+        // Clear any stale snapshot; node is eligible for activation
+        workingCp = {
+          ...workingCp,
+          graph: {
+            ...workingCp.graph,
+            nodes: {
+              ...workingCp.graph.nodes,
+              [nId]: {
+                ...node,
+                externalBlockers: blockers.length > 0 ? blockers : undefined,
+              },
+            },
+          },
+        };
+        clearToActivate.push(nId);
+      }
+    }
+
     // Activate regular nodes; set elicit gates to BLOCKED with resolved schema
-    let updatedGraph = activateNodes(cp.graph, regularNodeIds);
+    let updatedGraph = activateNodes(workingCp.graph, clearToActivate);
     for (const gateId of elicitGateIds) {
       const gateNode = updatedGraph.nodes[gateId];
       if (gateNode) {
@@ -1328,7 +1396,7 @@ server.tool(
     }
 
     const dispatchResult = await transitionWithEffects(
-      { ...cp, graph: updatedGraph },
+      { ...workingCp, graph: updatedGraph },
       { type: "wave_dispatched", waveId: params.waveId },
     );
     if (dispatchResult.shouldSaveCheckpoint) {
@@ -1341,6 +1409,9 @@ server.tool(
       : dispatchResult.checkpoint;
 
     // Compute per-node execution info and parallelism groups
+    const activatedNodes = wave.nodes.filter(
+      (nId) => !externalBlocked.some((eb) => eb.nodeId === nId),
+    );
     const nodeExecution = wave.nodes.map((nId) => {
       const node = checkpoint!.graph.nodes[nId];
       return {
@@ -1360,11 +1431,12 @@ server.tool(
           text: JSON.stringify({
             ok: true,
             waveId: params.waveId,
-            activatedNodes: wave.nodes,
+            activatedNodes,
             machineState: checkpoint.machineState,
             nodeExecution,
             parallelBatches: batches,
             workPackets,
+            ...(externalBlocked.length > 0 ? { externalBlocked } : {}),
             ...(elicitGateIds.length > 0
               ? {
                 pendingElicitGates: elicitGateIds.map((nId) => ({
@@ -2870,6 +2942,139 @@ function searchPriorEpisodes(
 ) {
   return searchEpisodesCore(query, tags, brains, budget, cwd, brainExec);
 }
+
+// ---------------------------------------------------------------------------
+// Tool: add_external_blocker
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "add_external_blocker",
+  "Add an external blocker to the brain task associated with a graph node. The node must have a taskId set.",
+  {
+    nodeId: z.string().describe("Node ID whose brain task receives the blocker"),
+    source: z.string().describe("Source system identifier (e.g. 'jira', 'github-pr', 'linear')"),
+    externalId: z.string().describe("Identifier within the source system"),
+    url: z.string().optional().describe("Optional URL for human navigation"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+    if (!node.taskId) {
+      throw new Error(
+        `Node "${params.nodeId}" has no taskId — cannot add external blocker. Set taskId via update_node first.`,
+      );
+    }
+    const eventPayload = {
+      type: "external_blocker_added",
+      source: params.source,
+      externalId: params.externalId,
+      ...(params.url ? { url: params.url } : {}),
+    };
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "tasks.apply_event",
+        arguments: {
+          task_id: node.taskId,
+          event: eventPayload,
+        },
+      },
+      id: 1,
+    });
+    let brainResponse: unknown;
+    try {
+      const raw = await brainExec.withStdin("brain", ["mcp"], rpc, 5000);
+      brainResponse = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`brain mcp call failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            taskId: node.taskId,
+            source: params.source,
+            externalId: params.externalId,
+            ...(params.url ? { url: params.url } : {}),
+            brainResponse,
+          }),
+        },
+      ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_external_blocker
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "resolve_external_blocker",
+  "Resolve an external blocker on the brain task associated with a graph node. The node must have a taskId set.",
+  {
+    nodeId: z.string().describe("Node ID whose brain task has the blocker resolved"),
+    source: z.string().describe("Source system identifier matching the blocker to resolve"),
+    externalId: z.string().describe("Identifier within the source system matching the blocker to resolve"),
+  },
+  async (params) => {
+    const cp = requireCheckpoint();
+    const node = cp.graph.nodes[params.nodeId];
+    if (!node) {
+      throw new Error(`Node "${params.nodeId}" not found in graph`);
+    }
+    if (!node.taskId) {
+      throw new Error(
+        `Node "${params.nodeId}" has no taskId — cannot resolve external blocker. Set taskId via update_node first.`,
+      );
+    }
+    const eventPayload = {
+      type: "external_blocker_resolved",
+      source: params.source,
+      externalId: params.externalId,
+    };
+    const rpc = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "tasks.apply_event",
+        arguments: {
+          task_id: node.taskId,
+          event: eventPayload,
+        },
+      },
+      id: 1,
+    });
+    let brainResponse: unknown;
+    try {
+      const raw = await brainExec.withStdin("brain", ["mcp"], rpc, 5000);
+      brainResponse = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`brain mcp call failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            nodeId: params.nodeId,
+            taskId: node.taskId,
+            source: params.source,
+            externalId: params.externalId,
+            brainResponse,
+          }),
+        },
+      ],
+    };
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Tool: reflect_session

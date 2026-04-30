@@ -1482,15 +1482,15 @@ export function subgraphOutcome(
     .filter((m): m is Member => m.status !== undefined);
   if (members.length === 0) return "pending";
 
-  // Partition gates into node-ID gates (resolvable here) and external gates
-  // (not yet resolvable — always unresolved until UNM-1b7.7).
+  // Partition gates into node-ID gates (resolvable here) and external gates.
   const rawGates = subgraph.gates ?? [];
   const nodeGateIds = new Set<string>(
     rawGates.filter((g): g is string => typeof g === "string"),
   );
   const externalGates = rawGates.filter((g) => typeof g !== "string");
-  // TODO(UNM-1b7.7): consult brain external_blockers to resolve external gate status.
-  // For now, treat every external gate as always unresolved.
+  // External gates without a cached blocker snapshot are treated as unresolved.
+  // Resolution requires the async getExternalBlockers call at the dispatch boundary
+  // in server.ts; see subgraphOutcomeWithBlockers for the snapshot-aware variant.
   const hasUnresolvedExternalGates = externalGates.length > 0;
 
   const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
@@ -1534,6 +1534,102 @@ export function subgraphOutcome(
       break;
     case SubgraphCompletionPolicy.GATED: {
       // External gates are always unresolved — GATED never completes if any are present.
+      if (hasUnresolvedExternalGates) break;
+      if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
+      break;
+    }
+  }
+
+  if (members.some((m) => m.status === NodeStatus.ACTIVE)) return "active";
+  return "pending";
+}
+
+/**
+ * Snapshot-aware variant of `subgraphOutcome` that incorporates pre-fetched
+ * external-blocker counts.
+ *
+ * **Design rationale**: `subgraphOutcome` is intentionally synchronous so it
+ * can be called freely during graph traversal without async overhead. Making it
+ * async would be a breaking change to every call site. The async
+ * `getExternalBlockers` call happens once at the dispatch boundary in server.ts;
+ * the resolved counts are placed in `blockerSnapshot` keyed by brain task ID.
+ *
+ * External gates that carry a `taskId` look up their unresolved count from the
+ * snapshot: count === 0 means the gate is resolved. Gates without a `taskId`
+ * fall back to the conservative "always unresolved" behavior.
+ *
+ * @param graph - The full execution graph.
+ * @param subgraph - The subgraph to evaluate.
+ * @param blockerSnapshot - Map of `taskId → unresolved external blocker count`
+ *   collected at the dispatch boundary. Pass an empty Map to reproduce the
+ *   behavior of `subgraphOutcome` (all external gates treated as unresolved).
+ */
+export function subgraphOutcomeWithBlockers(
+  graph: Graph,
+  subgraph: Subgraph,
+  blockerSnapshot: Map<string, number>,
+): SubgraphOutcome {
+  type Member = { id: string; status: NodeStatus };
+  const members: Member[] = subgraph.nodes
+    .map((id) => ({ id, status: graph.nodes[id]?.status }))
+    .filter((m): m is Member => m.status !== undefined);
+  if (members.length === 0) return "pending";
+
+  const rawGates = subgraph.gates ?? [];
+  const nodeGateIds = new Set<string>(
+    rawGates.filter((g): g is string => typeof g === "string"),
+  );
+  const externalGates = rawGates.filter((g) => typeof g !== "string");
+
+  // Resolve each external gate using the snapshot. A gate is unresolved when:
+  // - it has no taskId (no lookup possible), OR
+  // - its taskId is absent from the snapshot (never queried), OR
+  // - the snapshot reports unresolvedCount > 0.
+  const hasUnresolvedExternalGates = externalGates.some((g) => {
+    if (typeof g === "string") return false;
+    const tId = (g as { taskId?: string }).taskId;
+    if (!tId) return true; // no taskId → conservative: treat as unresolved
+    const count = blockerSnapshot.get(tId);
+    return count === undefined || count > 0;
+  });
+
+  const nodeGates: Member[] = members.filter((m) => nodeGateIds.has(m.id));
+
+  const isOk = (s: NodeStatus): boolean => TERMINAL_OK.includes(s);
+  const isFailed = (s: NodeStatus): boolean => s === NodeStatus.FAILED;
+
+  switch (subgraph.failurePolicy) {
+    case SubgraphFailurePolicy.FAIL_FAST:
+      if (members.some((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.CONTINUE:
+      if (members.every((m) => isFailed(m.status))) return "failed";
+      break;
+    case SubgraphFailurePolicy.BEST_EFFORT:
+      if (hasUnresolvedExternalGates) return "failed";
+      if (nodeGates.some((g) => isFailed(g.status))) return "failed";
+      break;
+  }
+
+  const settled = (m: Member): boolean => {
+    if (isOk(m.status)) return true;
+    if (!isFailed(m.status)) return false;
+    if (subgraph.failurePolicy === SubgraphFailurePolicy.CONTINUE) return true;
+    if (
+      subgraph.failurePolicy === SubgraphFailurePolicy.BEST_EFFORT &&
+      !nodeGateIds.has(m.id)
+    ) return true;
+    return false;
+  };
+
+  switch (subgraph.completionPolicy) {
+    case SubgraphCompletionPolicy.ALL:
+      if (members.every(settled)) return "completed";
+      break;
+    case SubgraphCompletionPolicy.ANY:
+      if (members.some((m) => isOk(m.status))) return "completed";
+      break;
+    case SubgraphCompletionPolicy.GATED: {
       if (hasUnresolvedExternalGates) break;
       if (nodeGates.length > 0 && nodeGates.every((g) => isOk(g.status))) return "completed";
       break;

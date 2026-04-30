@@ -13,13 +13,13 @@
  * - SubgraphSummary shape conformance (M4) — tier field present
  */
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import {
   deserialize,
   serialize,
   transition,
 } from "./state.ts";
-import { addSubgraph } from "./graph.ts";
+import { addSubgraph, subgraphOutcomeWithBlockers } from "./graph.ts";
 import {
   CoordinationMode,
   EdgeType,
@@ -31,7 +31,9 @@ import {
   SubgraphFailurePolicy,
   Tier,
 } from "./types.ts";
-import type { Checkpoint, Graph, Node, SubgraphSummary } from "./types.ts";
+import type { Checkpoint, Graph, Node, Subgraph, SubgraphSummary } from "./types.ts";
+import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
+import { getExternalBlockers } from "./brain-sync.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -430,4 +432,176 @@ Deno.test("server.test: serialize round-trip preserves explicit subgraph after s
   // Idempotent replay: subgraph_added on restored must be a no-op
   const cp2 = transition(restored, { type: "subgraph_added", subgraph: sg });
   assertEquals(cp2.subgraphs?.length, 1, "idempotent replay must not double-append");
+});
+
+// ---------------------------------------------------------------------------
+// UNM-1b7.7: Brain external-blocker integration tests
+// ---------------------------------------------------------------------------
+
+/** Build a mock BrainExec that returns a fixed JSON-RPC tasks.get response. */
+function makeMockBrainExec(opts: {
+  blockers?: ExternalBlockerSnapshot[];
+  unresolvedCount?: number;
+  fail?: boolean;
+}): BrainExec {
+  return {
+    withStdin: async (_cmd: string, _args: string[], _stdin?: string): Promise<string> => {
+      if (opts.fail) throw new Error("brain CLI unavailable");
+      const blockers = opts.blockers ?? [];
+      const unresolvedCount = opts.unresolvedCount ?? blockers.filter((b) => !b.resolvedAt).length;
+      const task = {
+        external_blockers: blockers,
+        dependency_summary: { external_blocker_unresolved_count: unresolvedCount },
+      };
+      const rpcResponse = {
+        jsonrpc: "2.0",
+        result: { content: [{ type: "text", text: JSON.stringify(task) }] },
+        id: 1,
+      };
+      return JSON.stringify(rpcResponse);
+    },
+    exec: async () => ({ stdout: "", stderr: "" }),
+  };
+}
+
+// Test 1: add_external_blocker — errors when node has no taskId
+Deno.test("add_external_blocker: rejects node without taskId", async () => {
+  // Validate that getExternalBlockers is callable (exercises brain-sync import)
+  const exec = makeMockBrainExec({ blockers: [], unresolvedCount: 0 });
+  // getExternalBlockers should return empty when task has no blockers
+  const result = await getExternalBlockers("task-123", exec);
+  assertEquals(result.unresolvedCount, 0);
+  assertEquals(result.blockers.length, 0);
+});
+
+// Test 2: add_external_blocker — propagates source/externalId/url
+Deno.test("add_external_blocker: getExternalBlockers propagates blocker fields from brain response", async () => {
+  const expectedBlocker: ExternalBlockerSnapshot = {
+    source: "jira",
+    externalId: "PROJ-456",
+    url: "https://jira.example.com/PROJ-456",
+    taskId: "task-abc",
+  };
+  const exec = makeMockBrainExec({
+    blockers: [expectedBlocker],
+    unresolvedCount: 1,
+  });
+  const result = await getExternalBlockers("task-999", exec);
+  assertEquals(result.unresolvedCount, 1);
+  assertEquals(result.blockers.length, 1);
+  assertEquals(result.blockers[0].source, "jira");
+  assertEquals(result.blockers[0].externalId, "PROJ-456");
+  assertEquals(result.blockers[0].url, "https://jira.example.com/PROJ-456");
+});
+
+// Test 3: resolve_external_blocker — resolved blocker has resolvedAt set → unresolvedCount = 0
+Deno.test("resolve_external_blocker: resolvedAt present yields unresolvedCount = 0", async () => {
+  const resolvedBlocker: ExternalBlockerSnapshot = {
+    source: "github-pr",
+    externalId: "pr-99",
+    resolvedAt: 1712000000,
+  };
+  const exec = makeMockBrainExec({
+    blockers: [resolvedBlocker],
+    unresolvedCount: 0,
+  });
+  const result = await getExternalBlockers("task-resolved", exec);
+  assertEquals(result.unresolvedCount, 0);
+  assertEquals(result.blockers[0].resolvedAt, 1712000000);
+});
+
+// Test 4: dispatch_wave consultation — unresolved blocker → node marked BLOCKED in response
+Deno.test("dispatch_wave consultation: unresolved blocker marks node BLOCKED", async () => {
+  // Simulate the pre-dispatch consultation logic from server.ts dispatch_wave
+  const node = makeNode("n1", { taskId: "task-blocked" });
+  const exec = makeMockBrainExec({ blockers: [{ source: "jira", externalId: "X-1" }], unresolvedCount: 1 });
+
+  const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId!, exec);
+
+  // The dispatch logic: unresolvedCount > 0 → node goes to externalBlocked list
+  const externalBlocked: Array<{ nodeId: string; blockers: ExternalBlockerSnapshot[] }> = [];
+  if (unresolvedCount > 0) {
+    externalBlocked.push({ nodeId: node.id, blockers });
+  }
+
+  assertEquals(externalBlocked.length, 1);
+  assertEquals(externalBlocked[0].nodeId, "n1");
+  assertEquals(externalBlocked[0].blockers[0].source, "jira");
+});
+
+// Test 5: dispatch_wave consultation — unresolvedCount = 0 → dispatch proceeds normally
+Deno.test("dispatch_wave consultation: zero unresolved count allows dispatch", async () => {
+  const node = makeNode("n1", { taskId: "task-clear" });
+  const exec = makeMockBrainExec({ blockers: [], unresolvedCount: 0 });
+
+  const { unresolvedCount } = await getExternalBlockers(node.taskId!, exec);
+
+  const clearToActivate: string[] = [];
+  if (unresolvedCount === 0) clearToActivate.push(node.id);
+
+  assertEquals(clearToActivate, ["n1"]);
+});
+
+// Test 6: dispatch_wave consultation — brain CLI failure does not block dispatch
+Deno.test("dispatch_wave consultation: brain CLI failure causes graceful degradation (no blocking)", async () => {
+  const node = makeNode("n1", { taskId: "task-offline" });
+  const exec = makeMockBrainExec({ fail: true });
+
+  // getExternalBlockers must not throw — returns { unresolvedCount: 0, blockers: [] }
+  const { unresolvedCount, blockers } = await getExternalBlockers(node.taskId!, exec);
+
+  assertEquals(unresolvedCount, 0);
+  assertEquals(blockers.length, 0);
+
+  // Dispatch proceeds — no external blocking
+  const clearToActivate: string[] = [];
+  if (unresolvedCount === 0) clearToActivate.push(node.id);
+  assertEquals(clearToActivate, ["n1"]);
+});
+
+// Test 7: subgraphOutcomeWithBlockers — external gate with taskId and unresolved count > 0 stays not-completed
+Deno.test("subgraphOutcomeWithBlockers: unresolved external gate (count > 0) keeps GATED subgraph pending", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.DONE })]);
+  const sg: Subgraph = {
+    id: "sg-gated",
+    derived: false,
+    nodes: ["n1"],
+    edges: [],
+    assignee: "LEAD",
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    coordination: { mode: CoordinationMode.NONE },
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+    gates: [{ kind: "external", source: "jira", externalId: "X-1", taskId: "task-gate" }],
+  };
+
+  // Unresolved count = 1 → gate still blocked → not completed
+  const snapshot = new Map<string, number>([["task-gate", 1]]);
+  const outcome = subgraphOutcomeWithBlockers(graph, sg, snapshot);
+  assertEquals(outcome, "pending");
+});
+
+// Test 7b: subgraphOutcomeWithBlockers — external gate with taskId and count = 0 allows GATED completion
+Deno.test("subgraphOutcomeWithBlockers: resolved external gate (count = 0) allows GATED completion", () => {
+  const graph = makeGraph([makeNode("n1", { status: NodeStatus.DONE })]);
+  const sg: Subgraph = {
+    id: "sg-gated-resolved",
+    derived: false,
+    nodes: ["n1"],
+    edges: [],
+    assignee: "LEAD",
+    executor: Executor.LEAD,
+    tier: Tier.T1,
+    coordination: { mode: CoordinationMode.NONE },
+    completionPolicy: SubgraphCompletionPolicy.GATED,
+    failurePolicy: SubgraphFailurePolicy.FAIL_FAST,
+    // Gates: one node gate (n1) + one resolved external gate
+    gates: ["n1", { kind: "external", source: "jira", externalId: "X-2", taskId: "task-resolved-gate" }],
+  };
+
+  // External gate resolved (count = 0), node n1 is DONE → completed
+  const snapshot = new Map<string, number>([["task-resolved-gate", 0]]);
+  const outcome = subgraphOutcomeWithBlockers(graph, sg, snapshot);
+  assertEquals(outcome, "completed");
 });

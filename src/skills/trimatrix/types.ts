@@ -225,6 +225,19 @@ export interface Node {
    * dispatch and the write is rejected. Absent until the node is first dispatched.
    */
   leaseVersion?: number;
+  /**
+   * Cached external-blocker snapshots from the last brain consultation at dispatch time.
+   * Populated by dispatch_wave when `taskId` is set; cleared on each new consultation.
+   * Type mirrors ExternalBlockerSnapshot in brain-sync.ts (duplicated to avoid a
+   * circular import — types.ts must not import from brain-sync.ts).
+   */
+  externalBlockers?: Array<{
+    source: string;
+    externalId: string;
+    url?: string;
+    taskId?: string;
+    resolvedAt?: number;
+  }>;
 }
 
 /**
