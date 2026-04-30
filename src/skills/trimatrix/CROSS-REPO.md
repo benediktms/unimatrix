@@ -647,27 +647,31 @@ Refinement:
 
 ## Explicit Subgraphs in Cross-Repo Flows
 
-When `subgraphStrategy: COORDINATED` is in play, the supergraph is partitioned
-into subgraphs that share a coordination contract (exports/imports/dependsOn).
-By default those subgraphs are derived automatically by `compute_subgraphs`.
+<context strategy="COORDINATED">
+  The supergraph is partitioned into subgraphs that share a coordination
+  contract (`exports`, `imports`, `dependsOn`). By default those subgraphs
+  are derived automatically by `compute_subgraphs`.
+</context>
 
-For cross-repo flows where coordination contracts are known before execution
-begins — for example, a contract node that exports a proto definition and an
-implementation node that imports it — the operator may declare per-repo
-explicit subgraphs via `mcp__unimatrix__add_subgraph` before calling
-`compute_subgraphs`. This approach:
-
-- Encodes the coordination contract up-front rather than letting it be inferred.
-- Gives each subgraph a stable user-supplied slug, independent of node membership
-  changes in sibling subgraphs.
-- Allows `failurePolicy: BEST_EFFORT` and `completionPolicy: GATED` to be
-  applied precisely to the nodes that carry cross-repo gate obligations.
-
-Call `mcp__unimatrix__list_subgraphs` after `compute_subgraphs` to verify the
-resulting partition before dispatch.
-
-See `SUBGRAPHS.md` for the full design note on explicit subgraphs, ID rules,
-policy semantics, and the resume contract.
+<recipe name="declare-coordination-contracts" optional="true">
+  <when>
+    Coordination contracts are known before execution — e.g., a contract
+    node exports a proto definition and implementation nodes import it.
+  </when>
+  <action>
+    Declare per-repo explicit subgraphs via `mcp__unimatrix__add_subgraph`
+    before calling `compute_subgraphs`.
+  </action>
+  <benefits>
+    <benefit>Encodes the coordination contract up-front rather than letting it be inferred.</benefit>
+    <benefit>Each subgraph gets a stable user-supplied slug, independent of node membership changes in sibling subgraphs.</benefit>
+    <benefit>`failurePolicy: BEST_EFFORT` and `completionPolicy: GATED` can be applied precisely to nodes that carry cross-repo gate obligations.</benefit>
+  </benefits>
+  <verify tool="mcp__unimatrix__list_subgraphs">
+    Inspect the resulting derived/explicit partition before dispatch.
+  </verify>
+  <reference path="src/skills/trimatrix/SUBGRAPHS.md"/>
+</recipe>
 
 ---
 

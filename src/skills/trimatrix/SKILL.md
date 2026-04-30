@@ -62,24 +62,33 @@ COORDINATED. The full Intent × Tier dispatch matrix is in `AGENTS.md`.
 
 After init, every classified prompt enters the graph:
 
-1. Add nodes via `mcp__unimatrix__add_node` with appropriate `executor`
-   (LEAD or ADJUNCT).
-2. Add edges via `mcp__unimatrix__add_edge`.
-3. **Optional — declare explicit subgraphs** via `mcp__unimatrix__add_subgraph`
-   before computing waves. Use this when partitions are known up-front and
-   stable across runs. Each explicit subgraph takes a user-supplied slug as its
-   stable ID; it survives checkpoint serialization unchanged. For T2/T3 with
-   user-declared file partitions or coordination contracts, explicit subgraphs
-   are preferred over auto-derived ones. See `SUBGRAPHS.md` for the full
-   design note.
-4. Call `mcp__unimatrix__compute_waves` — validates the graph, computes
-   topological waves, and auto-derives subgraphs for any nodes not already
-   claimed by an explicit subgraph. Derived adjunct subgraphs receive stable
-   `auto-<8-char-hash>` IDs; the lead subgraph always gets the reserved ID
-   `sg-lead`. Use `mcp__unimatrix__list_subgraphs` to inspect the resulting
-   partition before dispatch.
-5. Dispatch per subgraph: LEAD nodes executed directly, ADJUNCT subgraphs
-   dispatched as agents.
+<auto-graph-entry>
+  <step n="1" tool="mcp__unimatrix__add_node">
+    Add nodes with appropriate `executor` (`LEAD` or `ADJUNCT`).
+  </step>
+  <step n="2" tool="mcp__unimatrix__add_edge">
+    Add edges (`MERGE_GATE`, `STACKED`, `DEPENDS_ON`).
+  </step>
+  <step n="3" tool="mcp__unimatrix__add_subgraph" optional="true">
+    <when>Partitions are known up-front and stable across runs (T2/T3 with user-declared file partitions or coordination contracts).</when>
+    <effect>Slug becomes the stable subgraph ID; survives checkpoint serialization unchanged. Preferred over auto-derived subgraphs when applicable.</effect>
+    <reference path="src/skills/trimatrix/SUBGRAPHS.md"/>
+  </step>
+  <step n="4" tool="mcp__unimatrix__compute_waves">
+    Validates the graph, computes topological waves, and auto-derives subgraphs
+    for any nodes not already claimed by an explicit subgraph.
+    <ids>
+      <id form="sg-lead">Reserved for the lead subgraph.</id>
+      <id form="auto-&lt;8-char-hash&gt;">Stable derived adjunct subgraph ID.</id>
+    </ids>
+    <inspect tool="mcp__unimatrix__list_subgraphs">
+      Inspect the derived/explicit partition before dispatch.
+    </inspect>
+  </step>
+  <step n="5">
+    Dispatch per subgraph: `LEAD` nodes executed directly; `ADJUNCT` subgraphs dispatched as agents.
+  </step>
+</auto-graph-entry>
 
 For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead
 traverses directly.

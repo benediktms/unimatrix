@@ -29,29 +29,33 @@ Each subtask description includes: Goal / Files / Instructions / Verification (p
 
 ### 1b. Optional: Declare Explicit Subgraphs Per Partition
 
-Swarm mode derives subgraphs automatically from connected components. For
-partitions that are known up-front and expected to remain stable across runs,
-declare explicit subgraphs before calling `compute_waves`:
-
+<step name="declare-explicit-subgraphs" optional="true">
+  <when>
+    Partitions are known up-front and expected to remain stable across runs.
+    Skip otherwise — connected-component derivation is sufficient for ad-hoc swarms.
+  </when>
+  <action>Call `mcp__unimatrix__add_subgraph` for each partition before `compute_waves`.</action>
+  <example tool="mcp__unimatrix__add_subgraph">
+```json
+{
+  "slug": "auth-partition",
+  "label": "Auth files — Drone Two of Five",
+  "nodeIds": ["auth-impl", "auth-verify-compile"],
+  "executor": "ADJUNCT",
+  "tier": "T2",
+  "completionPolicy": "ALL",
+  "failurePolicy": "FAIL_FAST"
+}
 ```
-mcp__unimatrix__add_subgraph({
-  slug: "auth-partition",
-  label: "Auth files — Drone Two of Five",
-  nodeIds: ["auth-impl", "auth-verify-compile"],
-  executor: "ADJUNCT",
-  tier: "T2",
-  completionPolicy: "ALL",
-  failurePolicy: "FAIL_FAST",
-})
-```
-
-Explicit subgraphs use the user-supplied slug as their stable ID. If a
-partition is later resized (nodes added or removed), the derived `auto-*`
-sibling IDs shift but the explicit subgraph's slug remains constant. This
-makes checkpoint-based resume more predictable across runs with differing
-file counts.
-
-See `SUBGRAPHS.md` for the full design note.
+  </example>
+  <stability-guarantee>
+    Explicit subgraphs use the user-supplied slug as their stable ID. If a
+    partition is later resized, the derived `auto-*` sibling IDs shift but
+    the explicit subgraph's slug remains constant — checkpoint-based resume
+    stays predictable across runs with differing file counts.
+  </stability-guarantee>
+  <reference path="src/skills/trimatrix/SUBGRAPHS.md"/>
+</step>
 
 ### 2. Generate Designations
 Use Designation Generation Protocol. Generate one designation per partition adjunct plus one for the sentinel.

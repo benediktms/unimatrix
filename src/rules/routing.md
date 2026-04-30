@@ -25,88 +25,132 @@ decisions.
 Override gates are checked **first**, in order. The first matching gate wins
 and skips scoring entirely.
 
-| Gate | Trigger | Result |
-|---|---|---|
-| `scope:quick` | prompt contains `quick` (word-boundary) | force T1 |
-| `scope:thorough` | prompt contains `thorough` or `deep dive` | force T3 |
-| `flag:--include` | prompt contains `--include` | force T3 (cross-repo) |
-| `flag:--resume` | prompt contains `--resume`, `resume <id>`, bare task ID, or "continue"/"reengage" | bypass classifier — route to RESUME |
-| `ambiguity` | prompt is too vague to score (word_count < 4 AND no signals fire) | ask one clarifying question, then re-classify |
-| `legacy:alias` | recognized legacy mode word (e.g. `swarm`, `relay`, `scout`, `architect`) | route to canonical intent; tier still scored |
+<override-gates evaluation="first-match-wins">
+  <gate name="scope:quick" result="force T1">
+    <trigger>prompt contains `quick` (word-boundary)</trigger>
+  </gate>
+  <gate name="scope:thorough" result="force T3">
+    <trigger>prompt contains `thorough` or `deep dive`</trigger>
+  </gate>
+  <gate name="flag:--include" result="force T3 (cross-repo)">
+    <trigger>prompt contains `--include`</trigger>
+  </gate>
+  <gate name="flag:--resume" result="bypass classifier — route to RESUME">
+    <trigger>prompt contains `--resume`, `resume <id>`, bare task ID, or `continue` / `reengage`</trigger>
+  </gate>
+  <gate name="ambiguity" result="ask one clarifying question, then re-classify">
+    <trigger>prompt is too vague to score (`word_count < 4` AND no signals fire)</trigger>
+  </gate>
+  <gate name="legacy:alias" result="route to canonical intent; tier still scored">
+    <trigger>recognized legacy mode word (e.g. `swarm`, `relay`, `scout`, `architect`)</trigger>
+  </gate>
+</override-gates>
 
-Legacy aliases recognized:
-
-- `swarm`, `relay`, `scout`, `borg`, `vinculum` → INVESTIGATE/IMPLEMENT (mode-specific)
-- `architect`, `architecture review` → ARCHITECT
-- `review`, `audit` → REVIEW
-- `diagnose`, `debug` → DIAGNOSE
-- `refactor`, `rename` → REFACTOR
+<legacy-aliases>
+  <alias word="swarm,relay,scout,borg,vinculum" intent="INVESTIGATE | IMPLEMENT (mode-specific)"/>
+  <alias word="architect,architecture review" intent="ARCHITECT"/>
+  <alias word="review,audit" intent="REVIEW"/>
+  <alias word="diagnose,debug" intent="DIAGNOSE"/>
+  <alias word="refactor,rename" intent="REFACTOR"/>
+</legacy-aliases>
 
 ## Signal Categories
 
 Signals are computed by the UserPromptSubmit hook (lexical + structural) and
 the in-skill router (context, which needs session state). Each signal
-normalizes to `[0, 1]`. Raw extraction rules are listed in the comments.
+normalizes to `[0, 1]`.
 
-```yaml
-signals:
-  lexical:
-    word_count:
-      # Binned: <=15 → 0.0, 16-50 → 0.4, 51-150 → 0.7, >150 → 1.0
-      weight: 0.10
-    file_path_count:
-      # Count of regex matches: [a-zA-Z0-9_./-]+\.[a-z]+
-      # Normalized: 0 → 0.0, 1 → 0.2, 2-4 → 0.5, 5-8 → 0.8, 9+ → 1.0
-      weight: 0.15
-    arch_keywords:
-      # Match count of: refactor|architecture|migration|decoupl|boundary
-      # Normalized: 0 → 0.0, 1 → 0.5, 2+ → 1.0
-      weight: 0.15
-    debug_keywords:
-      # Match count of: bug|error|crash|fail|broken
-      # Normalized: 0 → 0.0, 1 → 0.4, 2+ → 0.7
-      weight: 0.05
-    risk_keywords:
-      # Match count of: auth|secret|prod|critical|delete
-      # Normalized: 0 → 0.0, 1 → 0.6, 2+ → 1.0
-      weight: 0.10
-    question_depth:
-      # Count of '?' characters
-      # Normalized: 0 → 0.0, 1 → 0.3, 2-3 → 0.6, 4+ → 1.0
-      weight: 0.05
+<signals total-weight="0.975" headroom="0.025">
+  <category name="lexical">
+    <signal name="word_count" weight="0.10">
+      <extract>Count whitespace-separated tokens in the prompt.</extract>
+      <bin range="<=15" value="0.0"/>
+      <bin range="16-50" value="0.4"/>
+      <bin range="51-150" value="0.7"/>
+      <bin range=">150" value="1.0"/>
+    </signal>
+    <signal name="file_path_count" weight="0.15">
+      <extract>Count regex matches: `[a-zA-Z0-9_./-]+\.[a-z]+`</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.2"/>
+      <bin range="2-4" value="0.5"/>
+      <bin range="5-8" value="0.8"/>
+      <bin range="9+" value="1.0"/>
+    </signal>
+    <signal name="arch_keywords" weight="0.15">
+      <extract>Match count of: `refactor|architecture|migration|decoupl|boundary`</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.5"/>
+      <bin range="2+" value="1.0"/>
+    </signal>
+    <signal name="debug_keywords" weight="0.05">
+      <extract>Match count of: `bug|error|crash|fail|broken`</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.4"/>
+      <bin range="2+" value="0.7"/>
+    </signal>
+    <signal name="risk_keywords" weight="0.10">
+      <extract>Match count of: `auth|secret|prod|critical|delete`</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.6"/>
+      <bin range="2+" value="1.0"/>
+    </signal>
+    <signal name="question_depth" weight="0.05">
+      <extract>Count of `?` characters.</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.3"/>
+      <bin range="2-3" value="0.6"/>
+      <bin range="4+" value="1.0"/>
+    </signal>
+  </category>
 
-  structural:
-    estimated_subtasks:
-      # Lead-side estimate: enumerated steps / "and then" / "after that"
-      # Normalized: <=1 → 0.0, 2-3 → 0.4, 4-6 → 0.7, 7+ → 1.0
-      weight: 0.15
-    cross_file_deps:
-      # Boolean: file_path_count >= 2
-      # 0.0 or 1.0
-      weight: 0.05
-    impact_scope:
-      # Distinct top-level path prefixes referenced (e.g. src/, test/, docs/)
-      # Normalized: 0-1 → 0.0, 2 → 0.5, 3+ → 1.0
-      weight: 0.10
-    reversibility:
-      # Boolean: contains delete|drop|rm |force (irreversible action)
-      # 0.0 (reversible) or 1.0 (irreversible)
-      weight: 0.05
+  <category name="structural">
+    <signal name="estimated_subtasks" weight="0.15">
+      <extract>Lead-side estimate: enumerated steps / "and then" / "after that".</extract>
+      <bin range="<=1" value="0.0"/>
+      <bin range="2-3" value="0.4"/>
+      <bin range="4-6" value="0.7"/>
+      <bin range="7+" value="1.0"/>
+    </signal>
+    <signal name="cross_file_deps" weight="0.05">
+      <extract>Boolean: `file_path_count >= 2`.</extract>
+      <bin value="0.0 (false)"/>
+      <bin value="1.0 (true)"/>
+    </signal>
+    <signal name="impact_scope" weight="0.10">
+      <extract>Distinct top-level path prefixes referenced (e.g. `src/`, `test/`, `docs/`).</extract>
+      <bin range="0-1" value="0.0"/>
+      <bin range="2" value="0.5"/>
+      <bin range="3+" value="1.0"/>
+    </signal>
+    <signal name="reversibility" weight="0.05">
+      <extract>Boolean: contains `delete|drop|rm |force` (irreversible action).</extract>
+      <bin value="0.0 (reversible)"/>
+      <bin value="1.0 (irreversible)"/>
+    </signal>
+  </category>
 
-  context:
-    prior_session_failures:
-      # Count of prior FAILED nodes in this session (lead-side)
-      # Normalized: 0 → 0.0, 1 → 0.4, 2+ → 0.8
-      weight: 0.025
-    conversation_depth:
-      # Number of prior user turns this session (lead-side)
-      # Normalized: <=2 → 0.0, 3-6 → 0.3, 7+ → 0.6
-      weight: 0.025
-    brain_task_references:
-      # Count of brain task IDs referenced in prompt
-      # Normalized: 0 → 0.0, 1 → 0.3, 2+ → 0.6
-      weight: 0.025
-```
+  <category name="context">
+    <signal name="prior_session_failures" weight="0.025">
+      <extract>Count of prior FAILED nodes in this session (lead-side).</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.4"/>
+      <bin range="2+" value="0.8"/>
+    </signal>
+    <signal name="conversation_depth" weight="0.025">
+      <extract>Number of prior user turns this session (lead-side).</extract>
+      <bin range="<=2" value="0.0"/>
+      <bin range="3-6" value="0.3"/>
+      <bin range="7+" value="0.6"/>
+    </signal>
+    <signal name="brain_task_references" weight="0.025">
+      <extract>Count of brain task IDs referenced in prompt.</extract>
+      <bin range="0" value="0.0"/>
+      <bin range="1" value="0.3"/>
+      <bin range="2+" value="0.6"/>
+    </signal>
+  </category>
+</signals>
 
 Sum of weights = 1.0. The remaining 0.025 is reserved as headroom for tuning.
 
@@ -122,23 +166,34 @@ Clamp to `[0.0, 1.0]` before tier mapping.
 
 ## Tier Mapping
 
-| Score range | Tier |
-|---|---|
-| `0.0 ≤ score < 0.3` | T1 |
-| `0.3 ≤ score < 0.6` | T2 |
-| `0.6 ≤ score ≤ 1.0` | T3 |
+<tier-mapping>
+  <tier name="T1" range="0.0 ≤ score < 0.3"/>
+  <tier name="T2" range="0.3 ≤ score < 0.6"/>
+  <tier name="T3" range="0.6 ≤ score ≤ 1.0"/>
+</tier-mapping>
 
 ## Conflict Resolution
 
-When an override gate fires, its tier wins over the scorer — except when the
-scored tier exceeds the override by 2+ tiers. In that case, prefer the
-**higher** tier (the prompt is more dangerous than the scope marker
-admitted). Examples:
-
-- `quick: refactor auth across 12 files` → `scope:quick` says T1, score
-  computes T3 → take T3.
-- `thorough: rename one variable` → `scope:thorough` says T3, score computes
-  T1 → 2-tier gap → take T3 (prefer higher tier).
-
-This rule keeps scope markers honest while still letting deliberate
-escalation by the user (`thorough`) survive a low score.
+<conflict-resolution>
+  <rule>
+    When an override gate fires, its tier wins over the scorer — except when
+    the scored tier exceeds the override by 2+ tiers. In that case, prefer the
+    **higher** tier (the prompt is more dangerous than the scope marker admitted).
+  </rule>
+  <example>
+    <prompt>`quick: refactor auth across 12 files`</prompt>
+    <override>scope:quick → T1</override>
+    <score>computes T3</score>
+    <decision>take T3 (2-tier gap)</decision>
+  </example>
+  <example>
+    <prompt>`thorough: rename one variable`</prompt>
+    <override>scope:thorough → T3</override>
+    <score>computes T1</score>
+    <decision>take T3 (prefer higher tier; deliberate escalation survives)</decision>
+  </example>
+  <rationale>
+    Keeps scope markers honest while letting deliberate escalation by the user
+    (`thorough`) survive a low score.
+  </rationale>
+</conflict-resolution>

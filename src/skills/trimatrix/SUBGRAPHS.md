@@ -92,40 +92,47 @@ will receive a new `auto-*` ID.
 
 ### Completion policies
 
-Determines when a subgraph transitions to `completed`.
-
-| Policy          | Behavior                                                                                | Example                                                                            |
-| --------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `ALL` (default) | Every member node must reach DONE, MERGED, or PR_CREATED                                | Standard drone partition — all files must be integrated                            |
-| `ANY`           | The first member node to reach a terminal-OK state completes the subgraph               | Competitive analysis — whichever approach validates first wins                     |
-| `GATED`         | Every node listed in `gates` must reach terminal-OK; non-gate nodes may be in any state | A subgraph with a mandatory review node; optional exploratory nodes may be skipped |
-
-`GATED` requires `gates` to be non-empty. Gate entries must be members of the
-subgraph's `nodeIds`.
+<completion-policies evaluation-order="after-failure">
+  <policy name="ALL" default="true">
+    <when>Every member node must reach DONE, MERGED, or PR_CREATED.</when>
+    <example>Standard drone partition — all files must be integrated.</example>
+  </policy>
+  <policy name="ANY">
+    <when>The first member node to reach a terminal-OK state completes the subgraph.</when>
+    <example>Competitive analysis — whichever approach validates first wins.</example>
+  </policy>
+  <policy name="GATED">
+    <when>Every node listed in `gates` must reach terminal-OK; non-gate nodes may be in any state.</when>
+    <example>A subgraph with a mandatory review node; optional exploratory nodes may be skipped.</example>
+    <constraint>`gates` must be non-empty. Gate entries must be members of the subgraph's `nodeIds`.</constraint>
+  </policy>
+</completion-policies>
 
 ### Failure policies
 
-Determines when a subgraph transitions to `failed`. Failure policy is evaluated
-before completion policy.
-
-| Policy                | Behavior                                                         | Example                                                         |
-| --------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- |
-| `FAIL_FAST` (default) | Any failed node fails the subgraph immediately                   | Standard partition — one broken file fails the whole partition  |
-| `CONTINUE`            | Subgraph fails only when every member node has failed            | Best-effort migration — partial success is acceptable           |
-| `BEST_EFFORT`         | Gate failures fail the subgraph; non-gate failures are tolerated | Core-path nodes are gates; experimental nodes may fail silently |
-
-`BEST_EFFORT` **requires non-empty `gates`**. `add_subgraph` rejects a
-`BEST_EFFORT` spec without gates.
+<failure-policies evaluation-order="before-completion">
+  <policy name="FAIL_FAST" default="true">
+    <when>Any failed node fails the subgraph immediately.</when>
+    <example>Standard partition — one broken file fails the whole partition.</example>
+  </policy>
+  <policy name="CONTINUE">
+    <when>Subgraph fails only when every member node has failed.</when>
+    <example>Best-effort migration — partial success is acceptable.</example>
+  </policy>
+  <policy name="BEST_EFFORT">
+    <when>Gate failures fail the subgraph; non-gate failures are tolerated.</when>
+    <example>Core-path nodes are gates; experimental nodes may fail silently.</example>
+    <constraint>**Requires non-empty `gates`**. `add_subgraph` rejects a `BEST_EFFORT` spec without gates.</constraint>
+  </policy>
+</failure-policies>
 
 ### Policy interaction example
 
-A subgraph with `completionPolicy: GATED`, `failurePolicy: BEST_EFFORT`, and
-`gates: ["critical-node"]`:
-
-- If `critical-node` fails → subgraph `failed`.
-- If a non-gate node fails → subgraph continues; failure is tolerated.
-- If `critical-node` reaches DONE and all other nodes are settled (OK or
-  tolerated-failed) → subgraph `completed`.
+<example name="GATED + BEST_EFFORT" gates='["critical-node"]'>
+  <case input="critical-node fails">subgraph → `failed`</case>
+  <case input="a non-gate node fails">subgraph continues; failure is tolerated</case>
+  <case input="critical-node reaches DONE and all other nodes settled (OK or tolerated-failed)">subgraph → `completed`</case>
+</example>
 
 ---
 
@@ -163,33 +170,44 @@ then, use external gates to make the dependency explicit and visible in
 
 ## Immutability
 
-Explicit subgraphs are append-only within a session. There is no
-`remove_subgraph` or `update_subgraph` tool.
-
-**Rationale:** Mutation invariants are easier to reason about when the
-structural primitive is append-only. A subgraph's coordination contracts,
-policies, and node membership are declared once and stable for the life of the
-session. This makes checkpoint replay deterministic and adjunct prompts
-self-contained.
-
-**To revise:** Cancel the session and start over, or use `refine` to modify the
-node graph and declare new subgraphs on top of the updated structure. Derived
-subgraphs will be recomputed against the new node set.
+<immutability-contract>
+  <rule>Explicit subgraphs are append-only within a session.</rule>
+  <forbidden-operations>
+    <op>`remove_subgraph` (no such tool exists)</op>
+    <op>`update_subgraph` (no such tool exists)</op>
+  </forbidden-operations>
+  <rationale>
+    Mutation invariants are easier to reason about when the structural
+    primitive is append-only. Coordination contracts, policies, and node
+    membership are declared once and stable for the life of the session.
+    This keeps checkpoint replay deterministic and adjunct prompts
+    self-contained.
+  </rationale>
+  <to-revise>
+    <option>Cancel the session and start over.</option>
+    <option>Use `refine` to modify the node graph and declare new subgraphs on top of the updated structure. Derived subgraphs are recomputed against the new node set.</option>
+  </to-revise>
+</immutability-contract>
 
 ---
 
 ## Resume Contract
 
-Explicit subgraphs survive checkpoint serialize→deserialize unchanged. The
-`subgraph_added` event on the checkpoint carries the full subgraph payload, so
-event-log replay (planned for UNM-1b7.3) can reconstruct `cp.subgraphs` without
-re-calling `add_subgraph`.
-
-Derived subgraphs are recomputed on restore by calling `compute_subgraphs`
-against the restored graph. Their `auto-*` IDs are stable as long as the
-member-node set has not changed between checkpoint and restore — which is
-guaranteed because node additions are also event-sourced.
-
-The state-machine transition is idempotent: re-adding a subgraph with an
-existing ID is a no-op on replay and does not double-append entries to
-`cp.subgraphs`.
+<resume-contract>
+  <invariant name="explicit-survives-roundtrip">
+    Explicit subgraphs survive checkpoint serialize→deserialize unchanged.
+    The `subgraph_added` event carries the full subgraph payload, so
+    event-log replay (planned for UNM-1b7.3) can reconstruct `cp.subgraphs`
+    without re-calling `add_subgraph`.
+  </invariant>
+  <invariant name="derived-stable-under-recompute">
+    Derived subgraphs are recomputed on restore via `compute_subgraphs`.
+    Their `auto-*` IDs are stable as long as the member-node set has not
+    changed between checkpoint and restore — which is guaranteed because
+    node additions are also event-sourced.
+  </invariant>
+  <invariant name="state-machine-idempotency">
+    Re-adding a subgraph with an existing ID is a no-op on replay and does
+    not double-append entries to `cp.subgraphs`.
+  </invariant>
+</resume-contract>
