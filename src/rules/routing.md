@@ -77,28 +77,30 @@ skips scoring entirely.
        UserPromptSubmit hook sets `formation_hint` from the same regexes;
        both paths converge on the same skill.
 
-       Formation routing BYPASSES the scorer — `formation_hint` is an
-       override-gate-equivalent signal, not a scored signal. It does NOT
-       appear in the <signals> block below; the scoring weight sum
-       remains 0.975 unaffected. -->
-  <!-- DRIFT WARNING: each <alias word="..."> entry below MUST stay in
+    Formation routing BYPASSES the scorer — `formation_hint` is an
+    override-gate-equivalent signal, not a scored signal. It does NOT
+    appear in the <signals> block below; the scoring weight sum
+    remains 0.975 unaffected. -->
+
+<!-- DRIFT WARNING: each <alias word="..."> entry below MUST stay in
        sync with the matching FORMATION_*_RE in
        src/hooks/claude/route-classify.py. The hook regex set is the
        authoritative implementation; this file is the documented surface
        users read. Divergence between the two is a latent routing bug. -->
-  <alias
+
+<alias
     word="compliance matrix,compliance check,compliance review,sentinel,sentinel review,sentinel pass,sentinel gate,quality gate,quality check,pre-merge audit,PR review,code review,validate,verify,evaluate,assess,second opinion,sanity check,is this safe,look for bugs"
     formation="/compliance-sphere"
     intent="REVIEW"/>
-  <alias
+<alias
     word="vinculum,vinculum review,vinculum analysis,analyze,analysis,investigate,investigation,deep dive,trace,trace through,map,map out,where is,where are,locate,understand,explore,scout,relay,designate"
     formation="/recon-sphere"
     intent="INVESTIGATE"/>
-  <alias
+<alias
     word="borg cube,build team,agent team,agent teams,parallel implementation,parallel build,tackle this in parallel,tackle this epic in parallel,epic team,implementation team,decompose and build"
     formation="/fabrication-cube"
     intent="IMPLEMENT"/>
-  <ambiguous
+<ambiguous
     word="borg sphere"
     note="size descriptor, not formation-specific. Resolve via scope signals: research → /recon-sphere; review → /compliance-sphere; build → /fabrication-cube. Fire ambiguity gate if no signal disambiguates."/>
 </formation-aliases>

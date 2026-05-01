@@ -1,11 +1,10 @@
 # Investigate Mode
 
-> **Implementation backbone for `/recon-sphere`.** The named-formation skill
-> at `src/skills/recon-sphere/SKILL.md` owns tier selection,
-> `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement, and the role
-> catalog. This mode owns the dispatch mechanics — sub-mode selection
-> (Deep / Independent / Collaborative), team creation, scoping flow,
-> synthesis.
+> **Implementation backbone for `/recon-sphere`.** The named-formation skill at
+> `src/skills/recon-sphere/SKILL.md` owns tier selection,
+> `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement, and the role catalog.
+> This mode owns the dispatch mechanics — sub-mode selection (Deep / Independent
+> / Collaborative), team creation, scoping flow, synthesis.
 
 ## When Triggered
 

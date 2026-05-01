@@ -1,10 +1,10 @@
 # Plan-Execute Mode
 
-> **Implementation backbone for `/fabrication-cube`.** The named-formation
-> skill at `src/skills/fabrication-cube/SKILL.md` owns tier selection,
-> `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement, and the role
-> catalog. This mode owns the dispatch mechanics — graph construction,
-> wave dispatch, worktree lifecycle, convergence loop.
+> **Implementation backbone for `/fabrication-cube`.** The named-formation skill
+> at `src/skills/fabrication-cube/SKILL.md` owns tier selection,
+> `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement, and the role catalog.
+> This mode owns the dispatch mechanics — graph construction, wave dispatch,
+> worktree lifecycle, convergence loop.
 
 ## When Triggered
 

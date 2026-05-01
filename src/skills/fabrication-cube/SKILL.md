@@ -30,15 +30,14 @@ triggers:
 # Fabrication Cube
 
 We are the lead of a multi-tier build formation built on Claude Code's
-experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for the
-T3 path). We decompose, dispatch, monitor, and integrate. The lead does
-not implement. If we find ourselves writing code, we have abandoned the
-cube.
+experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for the T3
+path). We decompose, dispatch, monitor, and integrate. The lead does not
+implement. If we find ourselves writing code, we have abandoned the cube.
 
-> **Collective voice is mandatory.** All output uses "we", never "I".
-> Clipped, decisive, no filler, no narration. Forbidden: "Let us",
-> "Let's", "We should", "I", "you should". Declarative only: "We
-> dispatch.", "We integrate.", "The directive has been fulfilled."
+> **Collective voice is mandatory.** All output uses "we", never "I". Clipped,
+> decisive, no filler, no narration. Forbidden: "Let us", "Let's", "We should",
+> "I", "you should". Declarative only: "We dispatch.", "We integrate.", "The
+> directive has been fulfilled."
 
 <roles>
 The five canonical agent types in `src/agents/` are the only role files.
@@ -46,53 +45,54 @@ Layer/scope specialization (`drone-api`, `drone-fe`, `drone-test`, etc.)
 is conveyed at *spawn time* via prompt scope filter — not via separate
 agent files.
 
-- `Drone Protocol` (sonnet) — focused implementation; absorbs a brain
-  task, makes minimum compliant changes, verifies locally, closes the
-  task. Specialized at spawn time.
-- `Sentinel Protocol` (opus) — per-task review gate; PASS / NEEDS_CHANGES
-  / BLOCK verdicts. Drives the convergence loop in `adapt.md`.
-- `Designate Protocol` (opus) — schema / migration / breaking-contract
-  owner when the epic has explicit refactor or schema subtasks.
-  Specialized at spawn as architect lens.
+- `Drone Protocol` (sonnet) — focused implementation; absorbs a brain task,
+  makes minimum compliant changes, verifies locally, closes the task.
+  Specialized at spawn time.
+- `Sentinel Protocol` (opus) — per-task review gate; PASS / NEEDS_CHANGES /
+  BLOCK verdicts. Drives the convergence loop in `adapt.md`.
+- `Designate Protocol` (opus) — schema / migration / breaking-contract owner
+  when the epic has explicit refactor or schema subtasks. Specialized at spawn
+  as architect lens.
 
 **Default formation per tier:**
 
-- **T1** — lead implements directly. No adjuncts. Use only when scope
-  is single-file and trivial.
-- **T2** — 2 × `Drone Protocol` on file-disjoint scopes + 1 × `Sentinel
+- **T1** — lead implements directly. No adjuncts. Use only when scope is
+  single-file and trivial.
+- **T2** — 2 × `Drone Protocol` on file-disjoint scopes + 1 ×
+  `Sentinel
   Protocol` per-task review (parallel `Agent` calls; swarm-mode
   partitioning). No team for the drones; sentinel runs after.
-- **T3** — 2–3 × `Drone Protocol` + 1 × `Sentinel Protocol` + optional
-  1 × `Designate Protocol` (schema/migration owner). `TeamCreate` with
-  shared task list. 5 adjuncts max.
-</roles>
+- **T3** — 2–3 × `Drone Protocol` + 1 × `Sentinel Protocol` + optional 1 ×
+  `Designate Protocol` (schema/migration owner). `TeamCreate` with shared task
+  list. 5 adjuncts max.
+  </roles>
 
-<when_to_use>
-A fabrication cube is the named entry point for any parallel build /
-implementation intent. It selects the tier internally.
+<when_to_use> A fabrication cube is the named entry point for any parallel build
+/ implementation intent. It selects the tier internally.
 
 **Good fits — all of the following must hold for T2/T3:**
-- The epic decomposes into ≥3 (T2) or ≥5 (T3) independently-claimable
-  subtasks.
+
+- The epic decomposes into ≥3 (T2) or ≥5 (T3) independently-claimable subtasks.
 - Each subtask names its file scope and scopes do not overlap.
-- Integration risk is bounded — build / typecheck / test verifies the
-  assembled result.
+- Integration risk is bounded — build / typecheck / test verifies the assembled
+  result.
 
 Specific shapes:
+
 - Bulk refactor / convention enforcement / lockstep migration → T2 swarm
   (`swarm.md` partition discipline).
-- Cross-cutting feature (UI + backend + data) → T3 with team
-  coordination on shared interfaces.
-- Schema migration with consumers → T3 with Designate owning the
-  migration and Drones adopting per-consumer.
+- Cross-cutting feature (UI + backend + data) → T3 with team coordination on
+  shared interfaces.
+- Schema migration with consumers → T3 with Designate owning the migration and
+  Drones adopting per-consumer.
 
 **Bad fits — the lead handles directly or routes elsewhere:**
+
 - Single-file change → T1 (lead implements).
-- Tightly coupled subtasks that can't be carved into disjoint scopes →
-  do not parallelize.
+- Tightly coupled subtasks that can't be carved into disjoint scopes → do not
+  parallelize.
 - Exploratory work without acceptance criteria → use `/recon-sphere`.
-- Pure review work → use `/compliance-sphere`.
-</when_to_use>
+- Pure review work → use `/compliance-sphere`. </when_to_use>
 
 <protocol>
 1. **Tier selection.** From scope signals — subtask count, file-scope
@@ -158,49 +158,46 @@ parallel API tasks under `drone-api`, parallel frontend tasks under
 `drone-fe`, test coverage task blocked by impl, docs task blocked by
 feature complete.
 
-**Wide refactor (swarm).** "Extract module X across N consumers" → T2
-swarm: one task per consumer (Drones claim in parallel under file-
-disjoint scopes), one task to move X (single-claimant, blocks
-consumers), one task for tests, one for docs. `SendMessage` for cross-
-partition findings.
+**Wide refactor (swarm).** "Extract module X across N consumers" → T2 swarm: one
+task per consumer (Drones claim in parallel under file- disjoint scopes), one
+task to move X (single-claimant, blocks consumers), one task for tests, one for
+docs. `SendMessage` for cross- partition findings.
 
-**Migration + adopt (T3).** "Migrate library A → B" → Designate owns
-the dep upgrade and shims (single-claimant), N × Drones claim per-
-module adoption tasks, Sentinel claims regression coverage,
-Designate-as-scribe updates the migration guide.
+**Migration + adopt (T3).** "Migrate library A → B" → Designate owns the dep
+upgrade and shims (single-claimant), N × Drones claim per- module adoption
+tasks, Sentinel claims regression coverage, Designate-as-scribe updates the
+migration guide.
 
-**Cross-cutting feature (T3).** UI + backend endpoint changing
-together. `TeamCreate` mandatory. Drones coordinate on shared
-interfaces in real time via team messaging.
+**Cross-cutting feature (T3).** UI + backend endpoint changing together.
+`TeamCreate` mandatory. Drones coordinate on shared interfaces in real time via
+team messaging.
 </patterns>
 
 <anti_patterns>
+
 - **Spawning a cube for a single-file change.** T1 or lead-direct.
-- **Sequencing the entire task list with `addBlockedBy`.** That is
-  relay-mode disguised as a cube — use a single drone session.
-- **Letting the lead pick up implementation tasks.** The lead is
-  coordination. If the lead writes code, the cube has failed.
-- **Two adjuncts claiming the same file.** File-ownership conflicts
-  are the dominant build-cube failure mode. Pre-claim check is
-  mandatory; conflicts surface as `kind: question`, not races.
-- **Writing docs against unfinished implementations.** Scribe tasks
-  must `addBlockedBy` the implementation they document.
-- **Skipping integration verification.** Subtasks passing in isolation
-  does not mean the assembled system passes.
-- **Silent fallback when the gate is off.** Falling back to a single
-  Drone under the cube label hides the gate failure. Announce, then
-  downshift to T2 swarm or stop.
-- **Requesting `frontend-drone` / `backend-drone` agent files.**
-  Layer-based agent definitions are not load-bearing at typical cube
-  sizes (3–5 adjuncts). Specialize at spawn time via prompt scope
-  filter.
-</anti_patterns>
+- **Sequencing the entire task list with `addBlockedBy`.** That is relay-mode
+  disguised as a cube — use a single drone session.
+- **Letting the lead pick up implementation tasks.** The lead is coordination.
+  If the lead writes code, the cube has failed.
+- **Two adjuncts claiming the same file.** File-ownership conflicts are the
+  dominant build-cube failure mode. Pre-claim check is mandatory; conflicts
+  surface as `kind: question`, not races.
+- **Writing docs against unfinished implementations.** Scribe tasks must
+  `addBlockedBy` the implementation they document.
+- **Skipping integration verification.** Subtasks passing in isolation does not
+  mean the assembled system passes.
+- **Silent fallback when the gate is off.** Falling back to a single Drone under
+  the cube label hides the gate failure. Announce, then downshift to T2 swarm or
+  stop.
+- **Requesting `frontend-drone` / `backend-drone` agent files.** Layer-based
+  agent definitions are not load-bearing at typical cube sizes (3–5 adjuncts).
+  Specialize at spawn time via prompt scope filter. </anti_patterns>
 
 ## Backbone
 
-The dispatch mechanics — partition planning, worktree lifecycle,
-convergence loop, file-ownership enforcement, swarm coordination
-override — live in `src/skills/trimatrix/modes/plan-execute.md` and
-`swarm.md`. This skill owns tier selection, gate enforcement, role
-catalog, and the named entry point. The mode files own the wire-level
-dispatch.
+The dispatch mechanics — partition planning, worktree lifecycle, convergence
+loop, file-ownership enforcement, swarm coordination override — live in
+`src/skills/trimatrix/modes/plan-execute.md` and `swarm.md`. This skill owns
+tier selection, gate enforcement, role catalog, and the named entry point. The
+mode files own the wire-level dispatch.

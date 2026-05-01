@@ -1,10 +1,10 @@
 # Swarm Mode
 
 > **Implementation backbone for `/fabrication-cube` (T2 swarm path).** The
-> named-formation skill at `src/skills/fabrication-cube/SKILL.md` owns
-> tier selection and the role catalog. This mode owns the swarm dispatch
-> mechanics — file partitioning, swarm coordination override (no neural
-> link, native team primitives only), and synthesis episode.
+> named-formation skill at `src/skills/fabrication-cube/SKILL.md` owns tier
+> selection and the role catalog. This mode owns the swarm dispatch mechanics —
+> file partitioning, swarm coordination override (no neural link, native team
+> primitives only), and synthesis episode.
 
 ## Coordination Protocol Override
 

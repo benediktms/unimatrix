@@ -128,17 +128,15 @@ traverses directly.
   `<formation-aliases>`. The classifier routes the prompt directly to
   `/compliance-sphere` (REVIEW), `/recon-sphere` (INVESTIGATE), or
   `/fabrication-cube` (IMPLEMENT) when the trigger phrases match. The
-  hook-computed `formation_hint` signal in `additionalContext` provides
-  the same routing — both paths converge on the same skill.
-- **Cross-repo auto-detection.** The `intent:cross-repo` override gate
-  fires when `cross_repo_hint: true` (hook-computed) OR when the in-
-  skill router resolves ≥2 distinct brain IDs/aliases via
-  `mcp__unimatrix__resolve_brains`. Treated identically to the
-  `--include` flag.
+  hook-computed `formation_hint` signal in `additionalContext` provides the same
+  routing — both paths converge on the same skill.
+- **Cross-repo auto-detection.** The `intent:cross-repo` override gate fires
+  when `cross_repo_hint: true` (hook-computed) OR when the in- skill router
+  resolves ≥2 distinct brain IDs/aliases via `mcp__unimatrix__resolve_brains`.
+  Treated identically to the `--include` flag.
 - **Ambiguous phrases.** "Borg sphere" alone is a size descriptor (per
-  personality.md), not a formation-specific trigger. Resolve via scope
-  signals; fire the `ambiguity` override gate if no signal
-  disambiguates.
+  personality.md), not a formation-specific trigger. Resolve via scope signals;
+  fire the `ambiguity` override gate if no signal disambiguates.
 - All intents enter the graph. T1 enters with a minimal graph (1-2 nodes, SELF
   strategy).
 - Per-tier dispatch patterns are defined in § Protocol D below.
@@ -781,13 +779,11 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes
 <delegation>
 
 **Named-formation delegation.** For review work, the lead invokes
-`/compliance-sphere`. For research / analysis, `/recon-sphere`. For
-parallel build, `/fabrication-cube`. The named-formation skill owns
-tier selection, role catalog, and the
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement for its T3
-path. Trimatrix dispatches the raw graph for everything else
-(architect, diagnose, adapt, cross-repo, plan-execute when no
-formation skill applies).
+`/compliance-sphere`. For research / analysis, `/recon-sphere`. For parallel
+build, `/fabrication-cube`. The named-formation skill owns tier selection, role
+catalog, and the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement for its
+T3 path. Trimatrix dispatches the raw graph for everything else (architect,
+diagnose, adapt, cross-repo, plan-execute when no formation skill applies).
 
 </delegation>
 
@@ -905,27 +901,24 @@ neural link room:
 <delegation-pointer>
 
 T3 COORDINATED dispatch is owned by the named-formation skills:
-`/compliance-sphere` (review), `/recon-sphere` (research),
-`/fabrication-cube` (build). They enforce the
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate, own the role catalog, and
-call `TeamCreate` directly. Trimatrix invokes the formation skill; the
-formation skill creates the team.
+`/compliance-sphere` (review), `/recon-sphere` (research), `/fabrication-cube`
+(build). They enforce the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate, own the
+role catalog, and call `TeamCreate` directly. Trimatrix invokes the formation
+skill; the formation skill creates the team.
 
 </delegation-pointer>
 
 <fallback-mode-rule>
 
 For modes that need a team but fall outside the three named formations
-(`architect`, `diagnose`, cross-repo dispatch), the mode file declares
-the `TeamCreate` step inline and follows the Team Dispatch Rules table
-above.
+(`architect`, `diagnose`, cross-repo dispatch), the mode file declares the
+`TeamCreate` step inline and follows the Team Dispatch Rules table above.
 
 </fallback-mode-rule>
 
 <team-prompt-rules>
 
-Each team adjunct's prompt includes (in addition to the neural
-link marker):
+Each team adjunct's prompt includes (in addition to the neural link marker):
 
 - **SHARE DISCOVERIES** — message teammates with significant findings
   immediately
@@ -940,10 +933,10 @@ link marker):
 
 <swarm-precedence>
 
-**Swarm precedence.** `modes/swarm.md` declares a Coordination Protocol
-Override that supersedes both F1 (no neural link) and F2 (no formation-
-skill wrapper) — swarm uses native Claude Code primitives only. The
-swarm override takes precedence over both rules above.
+**Swarm precedence.** `modes/swarm.md` declares a Coordination Protocol Override
+that supersedes both F1 (no neural link) and F2 (no formation- skill wrapper) —
+swarm uses native Claude Code primitives only. The swarm override takes
+precedence over both rules above.
 
 </swarm-precedence>
 

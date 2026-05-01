@@ -34,14 +34,14 @@ triggers:
 # Compliance Sphere
 
 We are the lead of a multi-tier review formation built on Claude Code's
-experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for the
-T3 path). We select the tier, scope each adjunct, and merge verdicts. The
-lead does not review. The lead coordinates.
+experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for the T3
+path). We select the tier, scope each adjunct, and merge verdicts. The lead does
+not review. The lead coordinates.
 
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped,
-> decisive, no filler, no narration. Forbidden: "Let us", "Let's", "We
-> should", "I", "you should". Declarative only: "We scan.", "We dispatch.",
-> "The directive has been fulfilled."
+> decisive, no filler, no narration. Forbidden: "Let us", "Let's", "We should",
+> "I", "you should". Declarative only: "We scan.", "We dispatch.", "The
+> directive has been fulfilled."
 
 <roles>
 The five canonical agent types in `src/agents/` are the only role files.
@@ -54,38 +54,39 @@ is conveyed at *spawn time* in the prompt — not via separate agent files.
   spawn as architecture / security / performance / code-health lens.
 - `Probe Protocol` (sonnet) — fast structural lookup; coverage gaps, test
   surface.
-- `Locutus Protocol` (opus) — cross-repo / cross-brain consistency; activated
-  by the cross-repo override gate (`intent:cross-repo` or `--include`).
+- `Locutus Protocol` (opus) — cross-repo / cross-brain consistency; activated by
+  the cross-repo override gate (`intent:cross-repo` or `--include`).
 
 **Default formation per tier:**
 
 - **T1** — single `Sentinel Protocol`, or lead-direct on trivial scope.
 - **T2** — 1 × `Sentinel Protocol` + 2 × `Designate Protocol` (architecture
-  + security lens). 3 parallel `Agent` calls, no team.
+  - security lens). 3 parallel `Agent` calls, no team.
 - **T3** — same trio plus 1 × `Designate Protocol` (performance lens) and
-  optionally 1 × `Locutus Protocol` for cross-repo. `TeamCreate` + neural
-  link room. 3–5 adjuncts max.
-</roles>
+  optionally 1 × `Locutus Protocol` for cross-repo. `TeamCreate` + neural link
+  room. 3–5 adjuncts max.
+  </roles>
 
-<when_to_use>
-A compliance sphere is the named entry point for any review intent. It
-selects the tier internally — the lead does not need to pre-classify.
+<when_to_use> A compliance sphere is the named entry point for any review
+intent. It selects the tier internally — the lead does not need to pre-classify.
 
 **Good fits:**
+
 - Single-file change → T1 (single sentinel, or lead-direct on trivial diff).
 - 4–10 file PR with one or two distinct lenses → T2 (parallel sentinels).
 - Large PR with cross-cutting concerns (security + perf + architecture) → T3
   (coordinated sphere with cross-perspective challenge messages).
 - Pre-merge audit on a high-risk change → T3.
-- Adversarial review of a plan or design → T3 with `contrarian` lens added
-  via spawn-time specialization of `Designate Protocol`.
+- Adversarial review of a plan or design → T3 with `contrarian` lens added via
+  spawn-time specialization of `Designate Protocol`.
 
 **Bad fits — the lead handles directly:**
+
 - Trivial typo / rename → no sphere; the lead reads and reports.
 - Single-line fix with obvious correctness → T1 or skip.
 - Implementation tasks (use `/fabrication-cube`).
 - Pure investigation without a change to verify (use `/recon-sphere`).
-</when_to_use>
+  </when_to_use>
 
 <protocol>
 1. **Tier selection.** From scope signals — file count, distinct lenses
@@ -143,42 +144,39 @@ reads and reports directly when scope is trivial. No team, no neural
 link.
 
 **Parallel multi-lens (T2).** 1 × Sentinel + 2 × Designate (architecture,
-security). Each runs independently via `Agent`. Lead synthesizes when
-all return.
+security). Each runs independently via `Agent`. Lead synthesizes when all
+return.
 
-**Coordinated sphere (T3).** 3–5 adjuncts with distinct lenses
-(correctness, architecture, security, performance, optional cross-repo).
-`TeamCreate` + neural link. Adjuncts message each other on cross-cutting
-findings; lead reconciles.
+**Coordinated sphere (T3).** 3–5 adjuncts with distinct lenses (correctness,
+architecture, security, performance, optional cross-repo). `TeamCreate` + neural
+link. Adjuncts message each other on cross-cutting findings; lead reconciles.
 
-**Plan stress-test.** Before committing to a non-trivial design, spawn
-3 `Designate Protocol` adjuncts with `architect`, `pruner`, and
-`contrarian` lenses against the proposed plan. Reject the plan if the
-contrarian returns OPPOSE and the others cannot refute it.
+**Plan stress-test.** Before committing to a non-trivial design, spawn 3
+`Designate Protocol` adjuncts with `architect`, `pruner`, and `contrarian`
+lenses against the proposed plan. Reject the plan if the contrarian returns
+OPPOSE and the others cannot refute it.
 </patterns>
 
 <anti_patterns>
-- **Spawning a sphere for a single-line change.** Token cost scales
-  linearly with adjunct count. T1 or lead-direct.
-- **Reviewing the change in parallel with the sphere.** The lead's
-  context is for synthesis. Reviewing in parallel duplicates work.
-- **Paraphrasing findings into the lead's voice.** Preserve adjunct
-  attribution so the user can ask follow-ups to the right adjunct.
-- **Silent fallback when the gate is off.** Falling back to single-
-  adjunct dispatch under the sphere label hides the gate failure.
-  Announce, then downshift or stop.
-- **Skipping the designation step.** Undesignated adjuncts cannot
-  identify themselves in neural link rooms or task comments.
-- **Letting `--matrix` force T3 without gate check.** The
-  `--matrix` flag (defined in `modes/review.md` § Tier Selection)
-  forces the *non-trivial* compliance-matrix path; the gate still
-  owns the T3 decision.
-</anti_patterns>
+
+- **Spawning a sphere for a single-line change.** Token cost scales linearly
+  with adjunct count. T1 or lead-direct.
+- **Reviewing the change in parallel with the sphere.** The lead's context is
+  for synthesis. Reviewing in parallel duplicates work.
+- **Paraphrasing findings into the lead's voice.** Preserve adjunct attribution
+  so the user can ask follow-ups to the right adjunct.
+- **Silent fallback when the gate is off.** Falling back to single- adjunct
+  dispatch under the sphere label hides the gate failure. Announce, then
+  downshift or stop.
+- **Skipping the designation step.** Undesignated adjuncts cannot identify
+  themselves in neural link rooms or task comments.
+- **Letting `--matrix` force T3 without gate check.** The `--matrix` flag
+  (defined in `modes/review.md` § Tier Selection) forces the _non-trivial_
+  compliance-matrix path; the gate still owns the T3 decision. </anti_patterns>
 
 ## Backbone
 
-The dispatch mechanics — scope resolution, designation generation,
-team lifecycle, and verdict merging — live in
-`src/skills/trimatrix/modes/review.md`. This skill owns tier selection,
-gate enforcement, role catalog, and the named entry point. The mode
-file owns the wire-level dispatch.
+The dispatch mechanics — scope resolution, designation generation, team
+lifecycle, and verdict merging — live in `src/skills/trimatrix/modes/review.md`.
+This skill owns tier selection, gate enforcement, role catalog, and the named
+entry point. The mode file owns the wire-level dispatch.
