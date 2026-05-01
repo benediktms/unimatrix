@@ -77,6 +77,14 @@ After init, every classified prompt enters the graph:
   <step n="2" tool="mcp__unimatrix__add_edge">
     Add edges (`MERGE_GATE`, `STACKED`, `DEPENDS_ON`).
   </step>
+  <escape-hatch tools="mcp__unimatrix__remove_node, mcp__unimatrix__remove_edge">
+    If the graph is mis-shaped (wrong edge direction, redundant node,
+    mis-typed dependency), call `remove_node` / `remove_edge` before
+    `compute_waves`. Allowed only in `initializing` and `refining` states;
+    `remove_node` cascade-removes incident edges atomically and rejects
+    nodes whose status is anything other than PENDING. Use this instead
+    of cancelling and rebuilding the session.
+  </escape-hatch>
   <step n="3" tool="mcp__unimatrix__add_subgraph" optional="true">
     <when>Partitions are known up-front and stable across runs (T2/T3 with user-declared file partitions or coordination contracts).</when>
     <effect>Slug becomes the stable subgraph ID; survives checkpoint serialization unchanged. Preferred over auto-derived subgraphs when applicable.</effect>

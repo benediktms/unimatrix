@@ -4,6 +4,12 @@
  * Each entry is written as a single NDJSON line to
  * ~/.brain/trimatrix-events/<sessionId>.ndjson. The file is the source of
  * truth; the checkpoint snapshot is a rebuildable projection.
+ *
+ * TODO(unm-bcd): graph-construction events (`node_added`, `edge_added`,
+ * `node_removed`, `edge_removed`) are intentionally absent today — graph
+ * state is reconstructed from the checkpoint snapshot, not from event
+ * replay. When unm-bcd lands, all four events must be added together so
+ * `validateCheckpointAgainstLog` can fold a complete add+remove history.
  */
 
 import { appendFile, mkdir, readFile } from "node:fs/promises";

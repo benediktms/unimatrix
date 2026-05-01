@@ -805,6 +805,95 @@ export function addEdge(
 }
 
 /**
+ * Remove a node and cascade-remove every incident edge atomically.
+ *
+ * Fails loudly when:
+ * - The node does not exist.
+ * - The node has been dispatched (status is anything other than PENDING).
+ *
+ * `refining` is accepted for symmetry with `addNode`/`addEdge` but the
+ * status guard above already covers the relevant cases — a node that is
+ * ACTIVE/PR_CREATED/MERGED/DONE/FAILED rejects regardless of mode.
+ */
+export function removeNode(
+  graph: Graph,
+  nodeId: string,
+  _refining = false,
+): MutationResult<Graph> {
+  const node = graph.nodes[nodeId];
+  if (node === undefined) {
+    return {
+      ok: false,
+      error: `Cannot remove node "${nodeId}" — node does not exist`,
+    };
+  }
+
+  if (node.status !== NodeStatus.PENDING) {
+    return {
+      ok: false,
+      error:
+        `Cannot remove node "${nodeId}" — status is ${node.status} (only PENDING nodes may be removed)`,
+    };
+  }
+
+  const { [nodeId]: _removed, ...remainingNodes } = graph.nodes;
+
+  return {
+    ok: true,
+    value: {
+      ...graph,
+      nodes: remainingNodes,
+      edges: graph.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
+    },
+  };
+}
+
+/**
+ * Remove a single directed edge identified by (from, to, type).
+ *
+ * Idempotent: when no matching edge exists the graph is returned unchanged
+ * with `ok: true`. Mirrors the design of `add_edge`'s no-op overwrite path.
+ *
+ * In `refining` mode, rejects when either endpoint is active or completed —
+ * symmetric with `addEdge`'s refinement guard.
+ */
+export function removeEdge(
+  graph: Graph,
+  edge: Edge,
+  refining = false,
+): MutationResult<Graph> {
+  if (refining) {
+    const fromNode = graph.nodes[edge.from];
+    const toNode = graph.nodes[edge.to];
+    if (fromNode && ACTIVE_OR_COMPLETED_STATUSES.includes(fromNode.status)) {
+      return {
+        ok: false,
+        error:
+          `Cannot remove edge from "${edge.from}" — that node is ${fromNode.status} (active or completed)`,
+      };
+    }
+    if (toNode && ACTIVE_OR_COMPLETED_STATUSES.includes(toNode.status)) {
+      return {
+        ok: false,
+        error:
+          `Cannot remove edge to "${edge.to}" — that node is ${toNode.status} (active or completed)`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...graph,
+      edges: graph.edges.filter(
+        (e) =>
+          !(e.from === edge.from && e.to === edge.to && e.type === edge.type),
+      ),
+    },
+  };
+}
+
+/**
  * Compute waves for a graph that is being refined mid-execution.
  *
  * Rules:

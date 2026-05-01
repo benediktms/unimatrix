@@ -2,8 +2,8 @@
  * Tests for the trimatrix graph engine (graph.ts).
  *
  * Covers: validate, computeWaves, nextWave, completeNode, failNode,
- * clearGate, waveStatus, activateNodes, addNode, addEdge,
- * computeWavesFromRefinement.
+ * clearGate, waveStatus, activateNodes, addNode, addEdge, removeNode,
+ * removeEdge, computeWavesFromRefinement.
  */
 
 import { assertEquals, assertThrows } from "@std/assert";
@@ -24,6 +24,8 @@ import {
   nextWave,
   parallelNodesInWave,
   recomputeReadiness,
+  removeEdge,
+  removeNode,
   serializeSubgraphBrief,
   subgraphOutcome,
   unsatisfiedDependencies,
@@ -762,6 +764,165 @@ Deno.test("addEdge: refining allows edge to PENDING node", () => {
   );
   assertEquals(result.ok, true);
   assertEquals(result.value!.edges.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// removeNode
+// ---------------------------------------------------------------------------
+
+Deno.test("removeNode: removes a PENDING node from the graph", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.PENDING }),
+    makeNode({ id: "B", status: NodeStatus.PENDING }),
+  ]);
+  const result = removeNode(g, "A");
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.nodes["A"], undefined);
+  assertEquals(result.value!.nodes["B"].id, "B");
+});
+
+Deno.test("removeNode: cascade-removes incident edges (both directions)", () => {
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A" }),
+      B: makeNode({ id: "B" }),
+      C: makeNode({ id: "C" }),
+    },
+    edges: [
+      { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+      { from: "B", to: "C", type: EdgeType.DEPENDS_ON },
+      { from: "A", to: "C", type: EdgeType.DEPENDS_ON },
+    ],
+  };
+  const result = removeNode(g, "B");
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 1);
+  assertEquals(result.value!.edges[0].from, "A");
+  assertEquals(result.value!.edges[0].to, "C");
+});
+
+Deno.test("removeNode: rejects unknown nodeId", () => {
+  const g = makeGraph([makeNode({ id: "A" })]);
+  const result = removeNode(g, "ghost");
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("does not exist"), true);
+});
+
+Deno.test("removeNode: rejects ACTIVE node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: NodeStatus.ACTIVE })]);
+  const result = removeNode(g, "A");
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("ACTIVE"), true);
+});
+
+Deno.test("removeNode: rejects MERGED node", () => {
+  const g = makeGraph([makeNode({ id: "A", status: NodeStatus.MERGED })]);
+  const result = removeNode(g, "A");
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("MERGED"), true);
+});
+
+Deno.test("removeNode: refining rejects non-PENDING node (same as non-refining)", () => {
+  const g = makeGraph([makeNode({ id: "A", status: NodeStatus.DONE })]);
+  const result = removeNode(g, "A", true);
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("DONE"), true);
+});
+
+// ---------------------------------------------------------------------------
+// removeEdge
+// ---------------------------------------------------------------------------
+
+Deno.test("removeEdge: removes a matching edge", () => {
+  const g: Graph = {
+    nodes: { A: makeNode({ id: "A" }), B: makeNode({ id: "B" }) },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeEdge(g, {
+    from: "A",
+    to: "B",
+    type: EdgeType.DEPENDS_ON,
+  });
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 0);
+});
+
+Deno.test("removeEdge: idempotent — no match is a no-op", () => {
+  const g: Graph = {
+    nodes: { A: makeNode({ id: "A" }), B: makeNode({ id: "B" }) },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeEdge(g, {
+    from: "A",
+    to: "B",
+    type: EdgeType.MERGE_GATE,
+  });
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 1);
+});
+
+Deno.test("removeEdge: refining rejects edge incident to ACTIVE endpoint", () => {
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A", status: NodeStatus.PENDING }),
+      B: makeNode({ id: "B", status: NodeStatus.ACTIVE }),
+    },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeEdge(
+    g,
+    { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+    true,
+  );
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("ACTIVE"), true);
+});
+
+Deno.test("removeEdge: refining allows edge between PENDING endpoints", () => {
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A", status: NodeStatus.PENDING }),
+      B: makeNode({ id: "B", status: NodeStatus.PENDING }),
+    },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeEdge(
+    g,
+    { from: "A", to: "B", type: EdgeType.DEPENDS_ON },
+    true,
+  );
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.edges.length, 0);
+});
+
+Deno.test("removeNode + removeEdge round-trip: add → remove → add again", () => {
+  let g: Graph = {
+    nodes: { A: makeNode({ id: "A" }), B: makeNode({ id: "B" }) },
+    edges: [],
+  };
+  // Wrong direction
+  let r = addEdge(g, { from: "B", to: "A", type: EdgeType.DEPENDS_ON });
+  assertEquals(r.ok, true);
+  g = r.value!;
+  assertEquals(g.edges.length, 1);
+
+  // Correct it
+  const rRemove = removeEdge(g, {
+    from: "B",
+    to: "A",
+    type: EdgeType.DEPENDS_ON,
+  });
+  assertEquals(rRemove.ok, true);
+  g = rRemove.value!;
+  assertEquals(g.edges.length, 0);
+
+  // Add the right edge
+  r = addEdge(g, { from: "A", to: "B", type: EdgeType.DEPENDS_ON });
+  assertEquals(r.ok, true);
+  g = r.value!;
+  assertEquals(g.edges.length, 1);
+  assertEquals(g.edges[0].from, "A");
+  assertEquals(g.edges[0].to, "B");
 });
 
 // ---------------------------------------------------------------------------

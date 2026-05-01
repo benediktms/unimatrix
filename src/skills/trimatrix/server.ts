@@ -58,6 +58,8 @@ import {
   nextFrontierBatch,
   nextWave,
   parallelNodesInWave,
+  removeEdge,
+  removeNode,
   serializeSubgraphBrief,
   SUBGRAPH_SLUG_RE,
   subgraphOutcomeWithBlockers,
@@ -757,6 +759,119 @@ server.tool(
           text: JSON.stringify({ ok: true, from: params.from, to: params.to }),
         },
       ],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: remove_node
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "remove_node",
+  "Remove a node and cascade-remove every incident edge. Allowed only in initializing or refining state. Fails loudly if the node has been dispatched (status ≠ PENDING). Use to recover from graph-construction mistakes (wrong direction, duplicate, mis-typed) before compute_waves.",
+  {
+    id: z.string().describe("Node ID to remove"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
+      throw new Error(
+        `remove_node requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
+    const result = removeNode(
+      cp.graph,
+      params.id,
+      cp.machineState === MachineState.REFINING,
+    );
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    const removedEdges = cp.graph.edges.length - result.value!.edges.length;
+
+    checkpoint = {
+      ...cp,
+      graph: result.value!,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          id: params.id,
+          cascadedEdges: removedEdges,
+        }),
+      }],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: remove_edge
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "remove_edge",
+  "Remove a directed edge identified by (from, to, type). Idempotent: no-op when no matching edge exists. Allowed only in initializing or refining state. In refining mode, rejects removal when either endpoint is active or completed.",
+  {
+    from: z.string().describe("Source node ID of the edge to remove"),
+    to: z.string().describe("Target node ID of the edge to remove"),
+    type: z.nativeEnum(EdgeType).describe("Edge type"),
+  },
+  (params) => {
+    const cp = requireCheckpoint();
+
+    if (
+      cp.machineState !== MachineState.INITIALIZING &&
+      cp.machineState !== MachineState.REFINING
+    ) {
+      throw new Error(
+        `remove_edge requires initializing or refining state, got ${cp.machineState}`,
+      );
+    }
+
+    const edge = {
+      from: params.from,
+      to: params.to,
+      type: params.type,
+    };
+
+    const before = cp.graph.edges.length;
+
+    const result = removeEdge(
+      cp.graph,
+      edge,
+      cp.machineState === MachineState.REFINING,
+    );
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    const removed = before - result.value!.edges.length;
+
+    checkpoint = {
+      ...cp,
+      graph: result.value!,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          from: params.from,
+          to: params.to,
+          removed: removed > 0,
+        }),
+      }],
     };
   },
 );
