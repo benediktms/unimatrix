@@ -578,6 +578,15 @@ server.tool(
     }).optional().describe(
       "JSON Schema for the elicitation form. Only for ELICIT_GATE nodes. Defaults to approval schema if omitted.",
     ),
+    requirements: z.object({
+      repos: z.array(z.string()).optional(),
+      tools: z.array(z.string()).optional(),
+      canWrite: z.boolean().optional(),
+      humanPresent: z.boolean().optional(),
+      labels: z.array(z.string()).optional(),
+    }).optional().describe(
+      "Capability requirements for this node. When dispatch_wave is called with capabilities, every required token must be satisfied by the dispatcher or the node is held back from activation.",
+    ),
   },
   async (params) => {
     const cp = requireCheckpoint();
@@ -661,6 +670,9 @@ server.tool(
         : {}),
       ...(params.elicitSchema !== undefined
         ? { elicitSchema: params.elicitSchema }
+        : {}),
+      ...(params.requirements !== undefined
+        ? { requirements: params.requirements }
         : {}),
       status: NodeStatus.PENDING,
       executor: params.executor ?? Executor.LEAD,
