@@ -2731,10 +2731,13 @@ server.tool(
 
 server.tool(
   "cancel",
-  "Cancel the current trimatrix execution. Transitions to cancelled state. Requires user confirmation.",
+  "Cancel the current trimatrix execution. Transitions to cancelled state. By default, requires interactive user confirmation via elicitation. Pass `approve: true` to bypass the elicitation entirely — required for headless callers (CI, subagents) and for clients where the elicitation form's inner approve checkbox cannot be reliably ticked.",
   {
     reason: z.string().optional().describe(
       "Human-readable cancellation reason",
+    ),
+    approve: z.boolean().optional().describe(
+      "If true, bypass the interactive elicitForm approval prompt and cancel immediately. Use for headless callers (CI, subagents) or to recover when the elicit form's inner `approve` checkbox cannot be ticked (the action accepts but content.approve defaults to false). Mirrors the `compute_waves({ approve: true })` bypass.",
     ),
   },
   async (params) => {
@@ -2742,68 +2745,77 @@ server.tool(
     const check = canTransition(cp, { type: "cancel", reason: params.reason });
     if (!check.allowed) throw new Error(`Cannot cancel: ${check.reason}`);
 
-    // Elicit confirmation — cancellation is irreversible
-    const nodeCount = Object.keys(cp.graph.nodes).length;
-    const activeNodes = Object.values(cp.graph.nodes).filter(
-      (n) => n.status === NodeStatus.ACTIVE,
-    );
-    const elicitMessage = `Cancel trimatrix execution?\n\n` +
-      `State: ${cp.machineState} | Nodes: ${nodeCount} | Active: ${activeNodes.length}\n` +
-      (params.reason ? `Reason: ${params.reason}\n` : "") +
-      `\nThis action is irreversible.`;
+    // Headless / explicit-confirmation bypass: caller passed `approve: true`,
+    // so skip elicitation entirely. Mirrors the compute_waves bypass shipped
+    // for unm-735.15. Required for CI, subagents, and clients where the
+    // approval-schema's inner `approve` checkbox cannot be reliably ticked
+    // — submitting the form unticked yields "Cancellation not confirmed",
+    // a UX trap the bypass avoids.
+    if (params.approve !== true) {
+      // Elicit confirmation — cancellation is irreversible
+      const nodeCount = Object.keys(cp.graph.nodes).length;
+      const activeNodes = Object.values(cp.graph.nodes).filter(
+        (n) => n.status === NodeStatus.ACTIVE,
+      );
+      const elicitMessage = `Cancel trimatrix execution?\n\n` +
+        `State: ${cp.machineState} | Nodes: ${nodeCount} | Active: ${activeNodes.length}\n` +
+        (params.reason ? `Reason: ${params.reason}\n` : "") +
+        `\nThis action is irreversible.`;
 
-    const elicitResult = await elicitForm(
-      elicitMessage,
-      approvalSchema({
-        approveTitle: "Confirm cancellation?",
-        modificationsTitle: "Cancellation reason (optional)",
-      }),
-    );
+      const elicitResult = await elicitForm(
+        elicitMessage,
+        approvalSchema({
+          approveTitle: "Confirm cancellation?",
+          modificationsTitle: "Cancellation reason (optional)",
+        }),
+      );
 
-    // Cancellation is user-initiated — optimistic degradation: proceed if client lacks capability
-    const proceedWithoutApproval = elicitResult.action === "decline" &&
-      !server.server.getClientCapabilities()?.elicitation;
+      // Cancellation is user-initiated — optimistic degradation: proceed if client lacks capability
+      const proceedWithoutApproval = elicitResult.action === "decline" &&
+        !server.server.getClientCapabilities()?.elicitation;
 
-    if (!proceedWithoutApproval) {
-      if (
-        elicitResult.action === "decline" || elicitResult.action === "cancel"
-      ) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                reason: "Cancellation rejected by user.",
-                machineState: cp.machineState,
-              }),
-            },
-          ],
-        };
-      }
+      if (!proceedWithoutApproval) {
+        if (
+          elicitResult.action === "decline" || elicitResult.action === "cancel"
+        ) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason: "Cancellation rejected by user.",
+                  machineState: cp.machineState,
+                }),
+              },
+            ],
+          };
+        }
 
-      if (elicitResult.action === "accept" && !elicitResult.content.approve) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                reason: "Cancellation not confirmed.",
-                machineState: cp.machineState,
-              }),
-            },
-          ],
-        };
-      }
+        if (elicitResult.action === "accept" && !elicitResult.content.approve) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  reason:
+                    "Cancellation not confirmed. The elicitation form was submitted but its inner approve checkbox was not ticked. Retry with `cancel({ approve: true })` to bypass the elicitation, or re-submit the form with the approve checkbox checked.",
+                  machineState: cp.machineState,
+                }),
+              },
+            ],
+          };
+        }
 
-      // If user provided a reason via the form, use it as override
-      if (
-        elicitResult.action === "accept" &&
-        typeof elicitResult.content.modifications === "string" &&
-        elicitResult.content.modifications.length > 0
-      ) {
-        params.reason = elicitResult.content.modifications;
+        // If user provided a reason via the form, use it as override
+        if (
+          elicitResult.action === "accept" &&
+          typeof elicitResult.content.modifications === "string" &&
+          elicitResult.content.modifications.length > 0
+        ) {
+          params.reason = elicitResult.content.modifications;
+        }
       }
     }
 
