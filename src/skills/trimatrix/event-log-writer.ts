@@ -36,9 +36,20 @@ function eventLogPath(sessionId: string): string {
 export class EventLogWriter {
   private readonly path: string;
   private dirReady = false;
+  private _failures = 0;
 
   constructor(sessionId: string) {
     this.path = eventLogPath(sessionId);
+  }
+
+  /**
+   * Count of silent append failures observed in this writer's lifetime.
+   * Surfaced via `mcp__unimatrix__status` so callers can detect divergence
+   * between the in-memory checkpoint and the on-disk log without waiting
+   * for `validateCheckpointAgainstLog` to flag a length mismatch.
+   */
+  get failures(): number {
+    return this._failures;
   }
 
   /** Append one event log entry as a NDJSON line. Best-effort. */
@@ -50,6 +61,7 @@ export class EventLogWriter {
       }
       await appendFile(this.path, JSON.stringify(entry) + "\n", "utf-8");
     } catch (err) {
+      this._failures++;
       console.error("[trimatrix/event-log] append failed:", err);
     }
   }

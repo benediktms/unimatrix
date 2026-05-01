@@ -789,24 +789,32 @@ Deno.test("dispatch_wave capability check: rejects nodes whose requirements miss
 });
 
 // ---------------------------------------------------------------------------
-// Tests: refine + cancel lease invalidation (UNM-1b7.6)
+// Tests: refine + cancel lease invalidation (UNM-1b7.6, UNM-1b7 N2/M1 cleanup)
+//
+// These tests exercise the production transition() code path in state.ts
+// directly. A regression in the bump logic causes failure here (unlike the
+// prior tautological tests which hand-rolled the bump and could not detect
+// production drift).
 // ---------------------------------------------------------------------------
 
-Deno.test("fence: refine bumps leaseVersion on all nodes — adjunct's prior WorkPacket is stale", () => {
+Deno.test("transition.refine: bumps leaseVersion on PENDING/ACTIVE — prior fence becomes stale", () => {
   const graph = makeGraph([makeNode("n1")]);
   const { graph: dispatched, workPackets } = simulateDispatch(graph, ["n1"]);
+  const cp = makeCp(dispatched, { machineState: MachineState.DISPATCHING });
   const packet = workPackets[0];
 
-  // Simulate refine: bump leaseVersion on all nodes (mirrors state.ts case "refine")
-  const refinedNodes: Record<string, Node> = {};
-  for (const [nId, node] of Object.entries(dispatched.nodes)) {
-    refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
-  }
-  const refinedGraph = { ...dispatched, nodes: refinedNodes };
+  const refined = transition(cp, { type: "refine" });
 
-  // Adjunct tries to complete with original WorkPacket — must fail
+  assertEquals(refined.machineState, MachineState.REFINING);
+  assertEquals(
+    refined.graph.nodes["n1"]?.leaseVersion,
+    packet.leaseVersion + 1,
+  );
+
+  // simulateFenceCheck against the post-refine state confirms staleness — this
+  // is the production guarantee callers rely on for safe refinement.
   const err = simulateFenceCheck(
-    refinedGraph,
+    refined.graph,
     "n1",
     packet.attemptId,
     packet.leaseVersion,
@@ -815,46 +823,76 @@ Deno.test("fence: refine bumps leaseVersion on all nodes — adjunct's prior Wor
   assertEquals(err!.includes("Stale lease"), true);
 });
 
-Deno.test("fence: cancel bumps leaseVersion on PENDING and ACTIVE nodes only", () => {
+Deno.test("transition.refine: leaves terminal nodes untouched (mirror-cancel policy, UNM-1b7 N2)", () => {
+  const done = makeNode("d", { status: NodeStatus.DONE, leaseVersion: 1 });
+  const merged = makeNode("m", { status: NodeStatus.MERGED, leaseVersion: 1 });
+  const failed = makeNode("f", { status: NodeStatus.FAILED, leaseVersion: 1 });
+  const pr = makeNode("p", {
+    status: NodeStatus.PR_CREATED,
+    leaseVersion: 1,
+  });
+  const pending = makeNode("pending", {
+    status: NodeStatus.PENDING,
+    leaseVersion: 1,
+  });
+  const active = makeNode("active", {
+    status: NodeStatus.ACTIVE,
+    leaseVersion: 1,
+  });
+  const cp = makeCp(makeGraph([done, merged, failed, pr, pending, active]), {
+    machineState: MachineState.DISPATCHING,
+  });
+
+  const refined = transition(cp, { type: "refine" });
+
+  assertEquals(refined.graph.nodes["d"]?.leaseVersion, 1);
+  assertEquals(refined.graph.nodes["m"]?.leaseVersion, 1);
+  assertEquals(refined.graph.nodes["f"]?.leaseVersion, 1);
+  assertEquals(refined.graph.nodes["p"]?.leaseVersion, 1);
+  assertEquals(refined.graph.nodes["pending"]?.leaseVersion, 2);
+  assertEquals(refined.graph.nodes["active"]?.leaseVersion, 2);
+});
+
+Deno.test("transition.cancel: bumps leaseVersion on PENDING/ACTIVE only — terminal nodes preserved", () => {
   const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
-
-  // n1 dispatched (ACTIVE), n2 stays PENDING
   const { graph: dispatched, workPackets } = simulateDispatch(graph, ["n1"]);
+  const cp = makeCp(dispatched, { machineState: MachineState.DISPATCHING });
   const n1Packet = workPackets[0];
-  const n2LeaseVersionBefore = dispatched.nodes["n2"]?.leaseVersion ?? 0;
+  const n2LeaseBefore = dispatched.nodes["n2"]?.leaseVersion ?? 0;
 
-  // Simulate cancel: bump PENDING and ACTIVE nodes (mirrors state.ts case "cancel")
-  const cancelledNodes: Record<string, Node> = {};
-  for (const [nId, node] of Object.entries(dispatched.nodes)) {
-    if (
-      node.status === NodeStatus.PENDING ||
-      node.status === NodeStatus.ACTIVE
-    ) {
-      cancelledNodes[nId] = {
-        ...node,
-        leaseVersion: (node.leaseVersion ?? 0) + 1,
-      };
-    } else {
-      cancelledNodes[nId] = node;
-    }
-  }
-  const cancelledGraph = { ...dispatched, nodes: cancelledNodes };
+  const cancelled = transition(cp, {
+    type: "cancel",
+    reason: "test cancellation",
+  });
 
-  // n1's WorkPacket is now stale
-  const err = simulateFenceCheck(
-    cancelledGraph,
+  assertEquals(cancelled.machineState, MachineState.CANCELLED);
+
+  // n1's prior fence is now stale.
+  const n1Err = simulateFenceCheck(
+    cancelled.graph,
     "n1",
     n1Packet.attemptId,
     n1Packet.leaseVersion,
   );
-  assertEquals(err !== null, true);
-  assertEquals(err!.includes("Stale lease"), true);
+  assertEquals(n1Err !== null, true);
+  assertEquals(n1Err!.includes("Stale lease"), true);
 
-  // n2's leaseVersion was bumped too
+  // n2 (PENDING) was bumped — cancel invalidates all in-flight fences.
   assertEquals(
-    (cancelledGraph.nodes["n2"]?.leaseVersion ?? 0) > n2LeaseVersionBefore,
+    (cancelled.graph.nodes["n2"]?.leaseVersion ?? 0) > n2LeaseBefore,
     true,
   );
+});
+
+Deno.test("transition.cancel: terminal node leaseVersion untouched", () => {
+  const done = makeNode("d", { status: NodeStatus.DONE, leaseVersion: 7 });
+  const cp = makeCp(makeGraph([done]), {
+    machineState: MachineState.DISPATCHING,
+  });
+
+  const cancelled = transition(cp, { type: "cancel", reason: "test" });
+
+  assertEquals(cancelled.graph.nodes["d"]?.leaseVersion, 7);
 });
 
 // ---------------------------------------------------------------------------

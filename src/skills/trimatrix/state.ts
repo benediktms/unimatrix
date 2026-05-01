@@ -25,11 +25,7 @@ import {
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
 } from "./types.ts";
-import {
-  computeWaves,
-  GRAPH_ALGORITHM_VERSION,
-  recomputeReadiness,
-} from "./graph.ts";
+import { computeWaves, recomputeReadiness } from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -108,7 +104,6 @@ export function createCheckpoint(
     subgraphs: [],
     episodeIds: [],
     eventLog: [],
-    algorithmVersion: GRAPH_ALGORITHM_VERSION,
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
@@ -456,15 +451,23 @@ export function transition(checkpoint: Checkpoint, event: Event): Checkpoint {
 
     case "refine": {
       // Lease-fence invalidation lives in the transition (not the server tool)
-      // so event-log replay reproduces the bump. Every node's `leaseVersion`
-      // is incremented by 1, invalidating any in-flight WorkPackets — the
-      // contract is global re-fencing on refinement, conservative-safe.
+      // so event-log replay reproduces the bump. Only PENDING / ACTIVE nodes
+      // carry in-flight WorkPackets worth invalidating; terminal nodes
+      // (DONE / MERGED / FAILED / PR_CREATED) cannot be written and are left
+      // untouched. Mirrors the `cancel` policy below for consistency.
       const refinedNodes: Record<string, Node> = {};
       for (const [nId, node] of Object.entries(checkpoint.graph.nodes)) {
-        refinedNodes[nId] = {
-          ...node,
-          leaseVersion: (node.leaseVersion ?? 0) + 1,
-        };
+        if (
+          node.status === NodeStatus.PENDING ||
+          node.status === NodeStatus.ACTIVE
+        ) {
+          refinedNodes[nId] = {
+            ...node,
+            leaseVersion: (node.leaseVersion ?? 0) + 1,
+          };
+        } else {
+          refinedNodes[nId] = node;
+        }
       }
       return {
         ...checkpoint,
@@ -965,6 +968,14 @@ export function validateCheckpointAgainstLog(
   try {
     // Replay using the same initial checkpoint (repos + graph must match) so
     // we compare structural state only, not the entire object graph.
+    //
+    // ASSUMPTION (pinned by `unm-1b7` review N1): we reuse `checkpoint.graph`
+    // and `checkpoint.waves` as the initial state because no event currently
+    // mutates graph topology mid-stream — events only mutate node fields
+    // (status, leaseVersion, attemptId, lastReviewVerdict, etc.). If a future
+    // event adds, removes, or reshapes nodes/edges/waves, this initial state
+    // would be wrong and the validator would surface false negatives. Update
+    // this construction (and the comparison loop below) when that day comes.
     const initial: Checkpoint = {
       version: checkpoint.version,
       machineState: MachineState.INITIALIZING,

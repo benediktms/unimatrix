@@ -1,5 +1,11 @@
 /**
  * Tests for EventLogWriter — append-only file-based event log.
+ *
+ * Each test runs under a HOME override pointing to a fresh `Deno.makeTempDir`,
+ * so the writer never touches the developer's real `~/.brain/`. The wider
+ * `--allow-env --allow-read --allow-write` permission grant in
+ * `deno.json :: test:trimatrix` is bounded by this scoping — writes only land
+ * inside the tmp directory and the tmp directory is removed in `finally`.
  */
 
 import { assertEquals } from "@std/assert";
@@ -20,17 +26,35 @@ function makeEntry(seq: number, eventType: string): EventLogEntry {
   };
 }
 
-async function cleanupWriter(writer: EventLogWriter): Promise<void> {
+/**
+ * Run `fn` with HOME pointing at a fresh tempdir; restore HOME and clean up
+ * the tempdir afterwards. Keeps writer-test side-effects out of `~/.brain/`.
+ */
+async function withTmpHome(
+  fn: (writer: EventLogWriter) => Promise<void>,
+): Promise<void> {
+  const origHome = Deno.env.get("HOME");
+  const tmpDir = await Deno.makeTempDir({ prefix: "unm-evt-log-test-" });
+  Deno.env.set("HOME", tmpDir);
+  const writer = new EventLogWriter(makeTempSessionId());
   try {
-    await rm(writer.filePath, { force: true });
-  } catch {
-    // best-effort
+    await fn(writer);
+  } finally {
+    if (origHome !== undefined) {
+      Deno.env.set("HOME", origHome);
+    } else {
+      Deno.env.delete("HOME");
+    }
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
   }
 }
 
 Deno.test("EventLogWriter: append and readAll round-trips entries", async () => {
-  const writer = new EventLogWriter(makeTempSessionId());
-  try {
+  await withTmpHome(async (writer) => {
     const e1 = makeEntry(1, "plan_submitted");
     const e2 = makeEntry(2, "plan_finalized");
     await writer.append(e1);
@@ -42,15 +66,14 @@ Deno.test("EventLogWriter: append and readAll round-trips entries", async () => 
     assertEquals(entries[0].event.type, "plan_submitted");
     assertEquals(entries[1].seq, 2);
     assertEquals(entries[1].event.type, "plan_finalized");
-  } finally {
-    await cleanupWriter(writer);
-  }
+  });
 });
 
 Deno.test("EventLogWriter: readAll on nonexistent file returns empty array", async () => {
-  const writer = new EventLogWriter(makeTempSessionId());
-  const entries = await writer.readAll();
-  assertEquals(entries, []);
+  await withTmpHome(async (writer) => {
+    const entries = await writer.readAll();
+    assertEquals(entries, []);
+  });
 });
 
 Deno.test("EventLogWriter: filePath is stable for same sessionId", () => {
@@ -62,8 +85,7 @@ Deno.test("EventLogWriter: filePath is stable for same sessionId", () => {
 });
 
 Deno.test("EventLogWriter: multiple appends preserve order on disk", async () => {
-  const writer = new EventLogWriter(makeTempSessionId());
-  try {
+  await withTmpHome(async (writer) => {
     for (let i = 1; i <= 5; i++) {
       await writer.append(makeEntry(i, `event_${i}`));
     }
@@ -72,7 +94,10 @@ Deno.test("EventLogWriter: multiple appends preserve order on disk", async () =>
     for (let i = 0; i < 5; i++) {
       assertEquals(entries[i].seq, i + 1);
     }
-  } finally {
-    await cleanupWriter(writer);
-  }
+  });
+});
+
+Deno.test("EventLogWriter: failures starts at zero", () => {
+  const writer = new EventLogWriter(makeTempSessionId());
+  assertEquals(writer.failures, 0);
 });

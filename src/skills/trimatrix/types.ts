@@ -641,12 +641,6 @@ export interface Checkpoint {
    * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
    */
   eventLog?: EventLogEntry[];
-  /**
-   * Algorithm version string for cached deterministic events (e.g. frontier
-   * computation, subgraph partitioning). When the version changes, cached
-   * results are invalidated and recomputed. Format: "<major>.<minor>".
-   */
-  algorithmVersion?: string;
 }
 
 // ---------------------------------------------------------------------------

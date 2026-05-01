@@ -1565,7 +1565,7 @@ server.tool(
 
 server.tool(
   "dispatch_wave",
-  "Activate all nodes in the specified wave and record it as the current wave. Continuous-frontier extension (UNM-1b7.5): also activates any PENDING+READY nodes from later waves whose dependencies have already cleared — ELICIT_GATE nodes in later waves are excluded to preserve gate-halted semantics. Cross-wave activations appear in `crossWaveActivated[]` in the response. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch).",
+  "Activate all nodes in the specified wave and record it as the current wave. Continuous-frontier extension (UNM-1b7.5): also activates any PENDING+READY nodes from later waves whose dependencies have already cleared — ELICIT_GATE nodes in later waves are excluded to preserve gate-halted semantics. Cross-wave activations appear in `crossWaveActivated[]` in the response. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch). Response shape: `activatedNodes[]` lists target-wave activations only; `workPackets[]` includes BOTH target-wave and cross-wave fences — so `workPackets.length >= activatedNodes.length` whenever `crossWaveActivated[]` is non-empty. Iterate `workPackets` (not `activatedNodes`) to enumerate every fence the dispatcher minted.",
   {
     waveId: z.coerce.number().int().describe("Wave index to dispatch"),
     capabilities: z.object({
@@ -1763,6 +1763,10 @@ server.tool(
           (crossNode.iterationCount ?? 0) >= (crossNode.maxIterations ?? 3)
         ) continue;
         // External-blocker consultation
+        // TODO(unm-d56): batch this — currently O(N) brain round-trips per
+        // dispatch_wave when the cross-wave frontier is deep. The target-wave
+        // loop above has the same shape; see brain task `unm-d56` for a
+        // batched-fetch design.
         if (crossNode.taskId) {
           const { unresolvedCount, blockers } = await getExternalBlockers(
             crossNode.taskId,
@@ -2153,15 +2157,14 @@ server.tool(
   async (params) => {
     const cp = requireCheckpoint();
 
-    // Guard: BLOCKED gate nodes cannot be failed directly — clear or cancel the wave
+    // Guard: BLOCKED ELICIT_GATE nodes cannot be failed directly — clear or
+    // cancel the wave. Post-unm-1b7.8 migration, NodeStatus.BLOCKED is
+    // ELICIT_GATE-only; the prior MERGE_GATE branch of this guard could
+    // never fire and was removed in unm-9ff.
     const failTarget = cp.graph.nodes[params.nodeId];
     if (
-      failTarget?.status === NodeStatus.BLOCKED && (
-        failTarget.type === NodeType.ELICIT_GATE ||
-        cp.graph.edges.some((e) =>
-          e.to === params.nodeId && e.type === EdgeType.MERGE_GATE
-        )
-      )
+      failTarget?.status === NodeStatus.BLOCKED &&
+      failTarget.type === NodeType.ELICIT_GATE
     ) {
       throw new Error(
         `Node "${params.nodeId}" is BLOCKED by a gate — use clear_gate or cancel instead of fail_node`,
@@ -2988,11 +2991,6 @@ server.tool(
             ok: true,
             frontier,
             batches,
-            // algorithmVersion: callers compare this against a cached value to
-            // detect when the frontier algorithm changed and cached results must
-            // be discarded. Sourced from Checkpoint.algorithmVersion, set to
-            // GRAPH_ALGORITHM_VERSION at session init.
-            algorithmVersion: cp.algorithmVersion,
             advisoryNote:
               "Frontier is advisory. dispatch_wave is the authoritative activation point and may reject nodes the frontier listed (stale fence, fresh external blocker, capability mismatch).",
           }),
@@ -3093,6 +3091,17 @@ server.tool(
                     prompt: cp.graph.nodes[nId]?.elicitPrompt,
                     schema: cp.graph.nodes[nId]?.elicitSchema,
                   })),
+              }
+              : {}),
+            // Event-log writer diagnostics: surfaces silent append failures so
+            // callers can detect divergence between in-memory checkpoint and
+            // on-disk log without waiting for validateCheckpointAgainstLog.
+            ...(effectDeps.logWriter !== undefined
+              ? {
+                eventLog: {
+                  path: effectDeps.logWriter.filePath,
+                  failures: effectDeps.logWriter.failures,
+                },
               }
               : {}),
           }),
