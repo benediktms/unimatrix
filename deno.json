@@ -7,7 +7,7 @@
     "zod": "npm:zod/v3"
   },
   "tasks": {
-    "test:trimatrix": "deno test --allow-env --allow-read --allow-write src/skills/trimatrix/",
+    "test:trimatrix": "deno test --allow-env --allow-read --allow-write --allow-run=echo,brain src/skills/trimatrix/",
     "lint:trimatrix": "deno lint src/skills/trimatrix/",
     "fmt:trimatrix": "deno fmt src/skills/trimatrix/",
     "check:trimatrix": "deno check src/skills/trimatrix/server.ts",

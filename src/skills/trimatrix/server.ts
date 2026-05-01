@@ -6,7 +6,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve as resolvePath } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -3502,7 +3502,7 @@ const STATE_DIR = "/tmp";
 const BRAIN_CLI = "brain";
 
 /** Run a command with optional stdin data, returning stdout. */
-function execWithStdin(
+export function execWithStdin(
   cmd: string,
   args: string[],
   stdinData?: string,
@@ -3515,6 +3515,14 @@ function execWithStdin(
       timeout,
       ...(cwd ? { cwd } : {}),
     });
+
+    const cleanup = () => {
+      proc.stdout?.removeAllListeners();
+      proc.stderr?.removeAllListeners();
+      proc.removeAllListeners();
+      proc.unref();
+    };
+
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => {
@@ -3523,10 +3531,22 @@ function execWithStdin(
     proc.stderr.on("data", (d) => {
       stderr += String(d);
     });
-    proc.on("error", reject);
+    proc.on("error", (err) => {
+      try {
+        reject(err);
+      } finally {
+        cleanup();
+      }
+    });
     proc.on("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`${cmd} exited ${code}: ${stderr}`));
+      // Snapshot listener counts before cleanup so test hooks can observe them.
+      __forTesting._onProcClose?.(proc);
+      try {
+        if (code === 0) resolve(stdout);
+        else reject(new Error(`${cmd} exited ${code}: ${stderr}`));
+      } finally {
+        cleanup();
+      }
     });
     if (stdinData) {
       proc.stdin.write(stdinData);
@@ -3534,6 +3554,15 @@ function execWithStdin(
     proc.stdin.end();
   });
 }
+
+/**
+ * Test-only hooks. Never set in production paths.
+ * _onProcClose is called with the ChildProcess immediately before cleanup()
+ * runs, allowing tests to assert pre-cleanup listener counts.
+ */
+export const __forTesting: {
+  _onProcClose?: (proc: ReturnType<typeof spawn>) => void;
+} = {};
 
 /** Real BrainExec wired to execWithStdin / execFileAsync. */
 const brainExec: BrainExec = {
@@ -3645,15 +3674,31 @@ async function queryBrainBlockedTasks(): Promise<BrainTask[]> {
   }
 }
 
-async function readJsonFile(
+/** Reads a runtime state JSON file then deletes it, preventing /tmp accumulation. */
+export async function consumeRuntimeStateFile(
   path: string,
 ): Promise<Record<string, unknown> | null> {
+  let data: string;
   try {
-    const data = await readFile(path, "utf-8");
-    return JSON.parse(data);
+    data = await readFile(path, "utf-8");
   } catch {
     return null;
   }
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    // Corrupt file — treat as missing, same as read failure.
+  } finally {
+    await unlink(path).catch((err) => {
+      // Best-effort cleanup; log for diagnosability but never block the caller.
+      console.debug(
+        `[unimatrix] consumeRuntimeStateFile: unlink failed for ${path}:`,
+        err,
+      );
+    });
+  }
+  return parsed;
 }
 
 function formatTaskTable(
@@ -4052,14 +4097,16 @@ server.tool(
       sessionLabel: checkpoint.sessionLabel ?? undefined,
     };
 
-    // Always query brain tasks
+    // TODO(unm-b96.4): memoize 3× concurrent brain tasks list per checkpoint
     const [tasksInProgress, tasksOpen, tasksBlocked] = await Promise.all([
       queryBrainTasks("in_progress"),
       queryBrainTasks("open"),
       queryBrainBlockedTasks(),
     ]);
 
-    // Runtime state files — optional enrichment keyed by runtime_state_key
+    // Runtime state files — consumed (read + deleted) to prevent /tmp accumulation.
+    // NOTE: unimatrix-routing-*.json is intentionally excluded — it is per-session
+    // and hook-owned; routing-file cleanup is deferred to a separate follow-up task.
     const runtimeKey = params.runtime_state_key ?? params.claude_session_id;
     let agentsState: Record<string, unknown> | null = null;
     let costsState: Record<string, unknown> | null = null;
@@ -4067,9 +4114,13 @@ server.tool(
 
     if (runtimeKey) {
       [agentsState, costsState, compactionsState] = await Promise.all([
-        readJsonFile(join(STATE_DIR, `unimatrix-agents-${runtimeKey}.json`)),
-        readJsonFile(join(STATE_DIR, `unimatrix-costs-${runtimeKey}.json`)),
-        readJsonFile(
+        consumeRuntimeStateFile(
+          join(STATE_DIR, `unimatrix-agents-${runtimeKey}.json`),
+        ),
+        consumeRuntimeStateFile(
+          join(STATE_DIR, `unimatrix-costs-${runtimeKey}.json`),
+        ),
+        consumeRuntimeStateFile(
           join(STATE_DIR, `unimatrix-compactions-${runtimeKey}.json`),
         ),
       ]);
