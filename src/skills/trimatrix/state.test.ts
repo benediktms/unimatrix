@@ -2716,3 +2716,123 @@ Deno.test("validateCheckpointAgainstLog: out-of-order seq is invalid", () => {
   const result = validateCheckpointAgainstLog(cp, badLog);
   assertEquals(result.valid, false);
 });
+
+// ---------------------------------------------------------------------------
+// SKILL.md structural anti-regression assertions (unm-6b8)
+//
+// These tests guard the universal-entry plan-mode contract: the saga MUST
+// halt at PLAN_REVIEW until the user approves via ExitPlanMode. The defect
+// (unm-6b8) was prompt drift — auto-graph-entry Step 5 chained finalize_plan
+// directly after compute_waves, bypassing the Plan Approval Gate. These
+// assertions catch the regression class structurally.
+// ---------------------------------------------------------------------------
+
+const SKILL_MD_PATH = new URL("./SKILL.md", import.meta.url);
+const skillMd = await Deno.readTextFile(SKILL_MD_PATH);
+
+function extractStep(source: string, n: number): string {
+  const open = new RegExp(`<step\\s+n="${n}"[^>]*>`, "i");
+  const m = source.match(open);
+  if (!m) throw new Error(`Step n="${n}" not found in SKILL.md`);
+  const start = m.index! + m[0].length;
+  const end = source.indexOf("</step>", start);
+  if (end < 0) throw new Error(`Step n="${n}" closing tag not found`);
+  return source.slice(start, end);
+}
+
+Deno.test("SKILL.md: auto-graph-entry Step 5 must not invoke finalize_plan as a direct tool", () => {
+  const step5 = extractStep(skillMd, 5);
+  const directInvocation = /tool="mcp__unimatrix__finalize_plan"/i.test(step5);
+  assertEquals(
+    directInvocation,
+    false,
+    "Step 5 must delegate to the Plan Approval Gate, not call finalize_plan directly",
+  );
+});
+
+Deno.test("SKILL.md: auto-graph-entry Step 5 must reference the Plan Approval Gate", () => {
+  const step5 = extractStep(skillMd, 5);
+  assertEquals(
+    /Plan Approval Gate|Step 9/.test(step5),
+    true,
+    "Step 5 must reference the Plan Approval Gate (Step 9)",
+  );
+});
+
+Deno.test("SKILL.md: auto-graph-entry Step 0 calls EnterPlanMode with idempotence on existing plan mode", () => {
+  const step0 = extractStep(skillMd, 0);
+  assertEquals(
+    /EnterPlanMode/.test(step0),
+    true,
+    "Step 0 must name EnterPlanMode (canonical plan-mode entry)",
+  );
+  assertEquals(
+    /already in plan mode|permission_mode/i.test(step0),
+    true,
+    "Step 0 must gate on whether session is already in plan mode (idempotence check)",
+  );
+});
+
+Deno.test("SKILL.md: Plan Approval Gate (Step 9) names ExitPlanMode + materialize_plan + finalize_plan", () => {
+  // Step 9 is markdown (not <step>), so we slice between its heading and the next.
+  const startIdx = skillMd.indexOf("9. **Plan Approval Gate");
+  assertEquals(startIdx >= 0, true, "Step 9 heading not found");
+  const endIdx = skillMd.indexOf("\n10.", startIdx);
+  assertEquals(endIdx > startIdx, true, "Step 10 heading not found after Step 9");
+  const step9 = skillMd.slice(startIdx, endIdx);
+  for (const tool of ["ExitPlanMode", "materialize_plan", "finalize_plan"]) {
+    assertEquals(
+      step9.includes(tool),
+      true,
+      `Step 9 must name ${tool}`,
+    );
+  }
+});
+
+Deno.test("SKILL.md: Plan Approval Gate preserves the four permissionDecision values", () => {
+  const startIdx = skillMd.indexOf("9. **Plan Approval Gate");
+  const endIdx = skillMd.indexOf("\n10.", startIdx);
+  const step9 = skillMd.slice(startIdx, endIdx);
+  for (const decision of ["allow", "deny", "ask", "defer"]) {
+    assertEquals(
+      step9.includes(decision),
+      true,
+      `Step 9 must preserve permissionDecision: "${decision}"`,
+    );
+  }
+});
+
+Deno.test("SKILL.md: Plan Approval Gate allow-branch invokes finalize_plan, rename_session, save_checkpoint, TodoWrite", () => {
+  const startIdx = skillMd.indexOf("9. **Plan Approval Gate");
+  const endIdx = skillMd.indexOf("\n10.", startIdx);
+  const step9 = skillMd.slice(startIdx, endIdx);
+  for (const tool of [
+    "finalize_plan",
+    "rename_session",
+    "save_checkpoint",
+    "TodoWrite",
+  ]) {
+    assertEquals(
+      step9.includes(tool),
+      true,
+      `Step 9 allow-branch must invoke ${tool}`,
+    );
+  }
+});
+
+Deno.test("SKILL.md: Plan Approval Gate deny-branch invokes revise_plan and never describes deny as entering refining state (unm-6b8)", () => {
+  const startIdx = skillMd.indexOf("9. **Plan Approval Gate");
+  const endIdx = skillMd.indexOf("\n10.", startIdx);
+  const step9 = skillMd.slice(startIdx, endIdx);
+  assertEquals(
+    step9.includes("revise_plan"),
+    true,
+    "Step 9 deny-branch must invoke revise_plan",
+  );
+  // refine is illegal from PLAN_REVIEW; deny must NOT be described as entering refining.
+  assertEquals(
+    /deny[\s\S]{0,160}refining/i.test(step9),
+    false,
+    "Step 9 deny-branch must not describe deny as entering refining state",
+  );
+});

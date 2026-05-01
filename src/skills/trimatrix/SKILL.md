@@ -73,6 +73,12 @@ Patterns.
 </procedure>
 
 <auto-graph-entry>
+  <step n="0" gate="plan-mode-entry" tool="EnterPlanMode">
+    If the session is not already in plan mode (set by
+    `--permission-mode plan`, `Shift+Tab`, or "enter plan mode"), call
+    `EnterPlanMode` to transition into canonical plan mode. Skip if
+    already in plan mode to avoid a redundant approval prompt.
+  </step>
   <step n="1" tool="mcp__unimatrix__add_node">
     Add nodes with appropriate `executor` (`LEAD` or `ADJUNCT`).
   </step>
@@ -98,10 +104,17 @@ Patterns.
     NOT auto-derive subgraphs — derivation runs at `finalize_plan`. On a
     refinement pass (`refining`) `compute_waves` does auto-derive.
   </step>
-  <step n="5" tool="mcp__unimatrix__finalize_plan">
-    Approve the wave plan and transition `plan_review` → `dispatching`.
-    Auto-derives subgraphs for any nodes not already claimed by an
-    explicit subgraph.
+  <step n="5" gate="plan-approval">
+    Do NOT call `mcp__unimatrix__finalize_plan` directly. `compute_waves`
+    transitioned to `plan_review`; the saga MUST halt until user approval.
+
+    Enter the **Plan Approval Gate** at § Step 9 below. The gate owns
+    `finalize_plan` and the deny path (`revise_plan` → `initializing`,
+    re-build, re-`compute_waves`, re-enter gate). Resume at step 6 only
+    after `allow`.
+  </step>
+  <step n="6">
+    Dispatch per subgraph: `LEAD` nodes executed directly; `ADJUNCT` subgraphs dispatched as agents.
     <ids>
       <id form="sg-lead">Reserved for the lead subgraph.</id>
       <id form="auto-&lt;8-char-hash&gt;">Stable derived adjunct subgraph ID.</id>
@@ -109,9 +122,6 @@ Patterns.
     <inspect tool="mcp__unimatrix__list_subgraphs">
       Inspect the derived/explicit partition before dispatch.
     </inspect>
-  </step>
-  <step n="6">
-    Dispatch per subgraph: `LEAD` nodes executed directly; `ADJUNCT` subgraphs dispatched as agents.
   </step>
 </auto-graph-entry>
 
@@ -991,25 +1001,30 @@ For modes that create brain tasks:
       outline.
    3. Call `ExitPlanMode` with the concatenated plan as input. Claude Code
       presents it natively and prompts the user for approval.
-   4. On user approval (default: `permissionDecision: "allow"`):
+   4. On user approval (default: `permissionDecision: "allow"`), in this order:
+      - Call `mcp__unimatrix__finalize_plan` (transitions `plan_review` →
+        `dispatching`; auto-derives subgraphs for any nodes not claimed by an
+        explicit subgraph).
       - Apply the session label via `mcp__unimatrix__rename_session`.
       - Call `mcp__unimatrix__save_checkpoint` with the `runtime_state_key`.
+      - Call `TodoWrite` with one todo per wave, `status: pending`, mirroring
+        the wave plan. Skip silently if unavailable.
       - Proceed to Step 10 (initial checkpoint persistence) and Step 11
         (subgraph briefs).
-   5. On user rejection (`permissionDecision: "deny"`): enter `refining` state
-      via `mcp__unimatrix__refine`. Solicit revision, re-plan, re-present via
-      `ExitPlanMode`.
-   6. Note: `EnterPlanMode` is invoked at session start by the user / harness.
-      The lead does NOT call `EnterPlanMode` itself; it only calls
-      `ExitPlanMode` to exit and present.
+   5. On user rejection (`permissionDecision: "deny"`): call
+      `mcp__unimatrix__revise_plan` to transition `plan_review` →
+      `initializing`. Solicit revision, adjust the graph, re-run `compute_waves`
+      (back to `plan_review`), and re-present via `ExitPlanMode`.
+   6. Note: `EnterPlanMode` is invoked at `auto-graph-entry` Step 0 (skipped if
+      already in plan mode). `ExitPlanMode` is the canonical exit and triggers
+      `PreToolUse(ExitPlanMode)` — see hook patterns below.
 
-   The three outcome semantics map as follows:
+   The outcome semantics map as follows:
 
-   | Outcome | `permissionDecision`                                  | Lead action                                         |
-   | ------- | ----------------------------------------------------- | --------------------------------------------------- |
-   | Accept  | `allow`                                               | rename session, save checkpoint, proceed to Step 10 |
-   | Revise  | `defer` (hook defers to user; user provides feedback) | incorporate feedback, re-plan, re-present           |
-   | Decline | `deny`                                                | enter `refining` state, await further instructions  |
+   | Outcome | `permissionDecision` | Lead action                                                                          |
+   | ------- | -------------------- | ------------------------------------------------------------------------------------ |
+   | Accept  | `allow`              | `finalize_plan`, `rename_session`, `save_checkpoint`, `TodoWrite`, proceed to Step 10 |
+   | Decline | `deny`               | `revise_plan` (→ `initializing`), adjust graph, re-`compute_waves`, re-enter gate    |
 
    **Custom approval automation** — the `PreToolUse(ExitPlanMode)` hook fires
    before the plan is presented. Users can automate approval decisions based on
@@ -1047,7 +1062,8 @@ For modes that create brain tasks:
 
    The hook script checks the plan body for files matching `secrets/` or `auth/`
    and emits `permissionDecision: "deny"` with a `permissionDecisionReason`. The
-   lead receives the denial, enters `refining` state, and must re-plan.
+   lead receives the denial, calls `revise_plan` to return to `initializing`, and
+   must re-plan.
 
    **Pattern C: Archive every plan to brain records**
 

@@ -92,8 +92,8 @@ for cross-repo, stacked for intra-repo).
 
 4a. init with repo metadata 4b. add_node for each planned node 4c. add_edge for
 each dependency 4d. validate — abort if invalid 4e. compute_waves — transitions
-to plan_review, returns wave plan; finalize_plan transitions to dispatching
-after user review
+to plan_review, returns wave plan; the Plan Approval Gate (SKILL.md § Step 9)
+calls finalize_plan after `ExitPlanMode` approval, transitioning to dispatching
 
 ### Step 4f: Session Naming Gate
 

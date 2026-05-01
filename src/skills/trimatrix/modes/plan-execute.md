@@ -133,6 +133,10 @@ parallelism algorithmically.
 
 ### Step 3b: Plan Approval and Session Naming Gate
 
+Plan approval itself is performed by the universal Plan Approval Gate
+(SKILL.md § Step 9) via `ExitPlanMode`. This step covers session-name
+confirmation and follow-up after the gate has returned `allow`.
+
 Present the dispatch plan and a proposed session name (concise, lowercase,
 hyphenated — e.g., "auth-middleware-refactor"). Elicit via `AskUserQuestion`
 with three options:

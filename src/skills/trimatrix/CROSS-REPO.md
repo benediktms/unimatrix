@@ -70,8 +70,11 @@ stateDiagram-v2
 
 - **`initializing`** — Graph created, no waves computed yet. Call
   `compute_waves` to transition to plan review.
-- **`plan_review`** — Wave plan computed and ready for user review. Call
-  `finalize_plan` to begin dispatch, or `revise_plan` to iterate on the plan.
+- **`plan_review`** — Wave plan computed and ready for user review. The Plan
+  Approval Gate (SKILL.md § Step 9) calls `finalize_plan` on user approval via
+  `ExitPlanMode`; on rejection, `revise_plan` transitions back to
+  `initializing` for graph adjustment, then `compute_waves` returns to
+  `plan_review` for re-review.
 - **`dispatching`** — Waves are executing. drones are active or completed.
   Machine loops through `next_wave()`, dispatches, monitors nodes.
 - **`gate_halted`** — A wave with `hasMergeGate: true` completed. External PRs
