@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
+import process from "node:process";
 import { consumeRuntimeStateFile, execWithStdin } from "./server.ts";
 
 // ---------------------------------------------------------------------------
@@ -51,11 +52,17 @@ Deno.test("consumeRuntimeStateFile: second session does not see prior session's 
 
   // Both files are now gone; a second invocation of A must return null
   const resA2 = await consumeRuntimeStateFile(pathA);
-  assertEquals(resA2, null, "session A file must not persist into a second run");
+  assertEquals(
+    resA2,
+    null,
+    "session A file must not persist into a second run",
+  );
 });
 
 Deno.test("consumeRuntimeStateFile: returns null for nonexistent file", async () => {
-  const result = await consumeRuntimeStateFile("/tmp/unimatrix-does-not-exist-999.json");
+  const result = await consumeRuntimeStateFile(
+    "/tmp/unimatrix-does-not-exist-999.json",
+  );
   assertEquals(result, null);
 });
 
@@ -86,16 +93,18 @@ Deno.test({
     const warnHandler = (w: { name: string }) => {
       if (w.name === "MaxListenersExceededWarning") warningFired = true;
     };
-    // deno-lint-ignore no-explicit-any
-    (process as any).on("warning", warnHandler);
+    process.on("warning", warnHandler);
 
     // Run 50 more to flush any deferred warnings
     for (let i = 0; i < 50; i++) {
       await execWithStdin("echo", ["ok"]);
     }
 
-    // deno-lint-ignore no-explicit-any
-    (process as any).off("warning", warnHandler);
-    assertEquals(warningFired, false, "MaxListenersExceededWarning must not fire");
+    process.off("warning", warnHandler);
+    assertEquals(
+      warningFired,
+      false,
+      "MaxListenersExceededWarning must not fire",
+    );
   },
 });

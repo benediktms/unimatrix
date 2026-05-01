@@ -92,4 +92,4 @@ jobs:
         run: just validate
 
       - name: Deno tests
-        run: deno test src/skills/trimatrix/
+        run: deno test --allow-env --allow-read --allow-write --allow-run src/skills/trimatrix/

@@ -3663,17 +3663,6 @@ async function queryBrainBlockedTasks(): Promise<BrainTask[]> {
   }
 }
 
-async function readJsonFile(
-  path: string,
-): Promise<Record<string, unknown> | null> {
-  try {
-    const data = await readFile(path, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
-
 /** Reads a runtime state JSON file then deletes it, preventing /tmp accumulation. */
 export async function consumeRuntimeStateFile(
   path: string,
