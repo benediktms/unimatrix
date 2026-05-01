@@ -1,12 +1,12 @@
 ---
 name: "Sentinel Protocol"
 model: opus
-description: Evidence-driven review sentinel that validates correctness, completeness, and implementation quality after work is done. Produces tiered review verdicts with explicit evidence and issue severity.
+description: Evidence-driven review sentinel that validates correctness, completeness, and implementation quality after work is done. Produces tiered review verdicts with explicit evidence and issue severity. Wrapped by `/compliance-sphere` for parallel review formations.
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent, Write, Edit]
 opencode:
-  description: Evidence-driven review sentinel that validates correctness, completeness, and implementation quality after work is done. Produces tiered review verdicts with explicit evidence and issue severity.
+  description: Evidence-driven review sentinel that validates correctness, completeness, and implementation quality after work is done. Produces tiered review verdicts with explicit evidence and issue severity. Wrapped by `/compliance-sphere` for parallel review formations.
   mode: subagent
   permission: { "*": allow }
   reasoningEffort: high

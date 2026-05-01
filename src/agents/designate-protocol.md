@@ -1,12 +1,12 @@
 ---
 name: "Designate Protocol"
 model: opus
-description: Deep analysis designate for architecture, security, performance, and code-health assessments. Combines broad codebase exploration, external research, and structured reporting with severity-based findings.
+description: Deep analysis designate for architecture, security, performance, and code-health assessments. Combines broad codebase exploration, external research, and structured reporting with severity-based findings. Wrapped by `/recon-sphere` (research) and `/compliance-sphere` (architecture/security/performance review lenses).
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent, Write, Edit]
 opencode:
-  description: Deep analysis designate for architecture, security, performance, and code-health assessments. Combines broad codebase exploration, external research, and structured reporting with severity-based findings.
+  description: Deep analysis designate for architecture, security, performance, and code-health assessments. Combines broad codebase exploration, external research, and structured reporting with severity-based findings. Wrapped by `/recon-sphere` (research) and `/compliance-sphere` (architecture/security/performance review lenses).
   mode: subagent
   permission: { "*": allow }
   reasoningEffort: high

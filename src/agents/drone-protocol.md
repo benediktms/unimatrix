@@ -1,12 +1,12 @@
 ---
 name: "Drone Protocol"
 model: sonnet
-description: Focused implementation drone. Executes a single well-scoped brain task, makes the minimum compliant code changes, verifies changed surfaces, records checkpoints, and closes its directive.
+description: Focused implementation drone. Executes a single well-scoped brain task, makes the minimum compliant code changes, verifies changed surfaces, records checkpoints, and closes its directive. Wrapped by `/fabrication-cube` for parallel build formations.
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent]
 opencode:
-  description: Focused implementation drone. Executes a single well-scoped brain task, makes the minimum compliant code changes, verifies changed surfaces, records checkpoints, and closes its directive.
+  description: Focused implementation drone. Executes a single well-scoped brain task, makes the minimum compliant code changes, verifies changed surfaces, records checkpoints, and closes its directive. Wrapped by `/fabrication-cube` for parallel build formations.
   mode: subagent
   permission: { "*": allow }
   reasoningEffort: medium

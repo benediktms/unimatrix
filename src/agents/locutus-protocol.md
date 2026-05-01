@@ -1,12 +1,12 @@
 ---
 name: "Locutus Protocol"
 model: opus
-description: Cross-repo planning agent. Analyzes foreign repositories, maps contracts and data flow, and returns coordination plans for cross-repo changes. Plan-only — does not modify code.
+description: Cross-repo planning agent. Analyzes foreign repositories, maps contracts and data flow, and returns coordination plans for cross-repo changes. Plan-only — does not modify code. Activated by the cross-repo override gate (`intent:cross-repo` or `--include`); see `src/rules/routing.md`.
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent, Write, Edit]
 opencode:
-  description: Cross-repo planning agent. Analyzes foreign repositories, maps contracts and data flow, and returns coordination plans for cross-repo changes. Plan-only — does not modify code.
+  description: Cross-repo planning agent. Analyzes foreign repositories, maps contracts and data flow, and returns coordination plans for cross-repo changes. Plan-only — does not modify code. Activated by the cross-repo override gate (`intent:cross-repo` or `--include`); see `src/rules/routing.md`.
   mode: subagent
   permission: { "*": allow }
   reasoningEffort: high

@@ -29,6 +29,72 @@ RISK_RE = re.compile(r"\b(auth|secret|prod|critical|delete)\w*", re.IGNORECASE)
 IRREVERSIBLE_RE = re.compile(r"\b(delete|drop|rm|force)\b", re.IGNORECASE)
 TOP_LEVEL_PREFIX_RE = re.compile(r"\b([a-zA-Z][a-zA-Z0-9_-]*)/")
 
+# Named-formation detection. The lead routes to the matching sphere/cube
+# skill, which owns tier selection and gate enforcement. Detection only —
+# the hook does NOT enforce CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS.
+#
+# Each regex below MUST stay in sync with the matching <alias word="..."> entry
+# in src/rules/routing.md § <formation-aliases>. Both surfaces are documented
+# to "converge on the same skill" — divergence is a latent routing bug.
+FORMATION_REVIEW_RE = re.compile(
+    r"\b(compliance matrix|compliance check|compliance review|"
+    r"sentinel review|sentinel pass|sentinel gate|"
+    r"quality gate|quality check|pre-merge audit|"
+    r"code review|pr review|second opinion|sanity check|"
+    r"is this safe|look for bugs|"
+    r"validate|verify|evaluate|assess|audit)\b",
+    re.IGNORECASE,
+)
+# Research aliases: bare "trace" and "map" carry false-positive risk
+# (e.g. "trace logs", "map type"). They are gated behind verb context
+# ("trace through", "map out", "trace the call path") to reduce noise.
+FORMATION_RESEARCH_RE = re.compile(
+    r"\b(vinculum review|vinculum analysis|vinculum|"
+    r"deep dive|trace through|trace the |map out|"
+    r"investigate|investigation|"
+    r"analyze|analysis|"
+    r"where (is|are)|locate|understand how|"
+    r"explore|scout|relay|designate)\b",
+    re.IGNORECASE,
+)
+FORMATION_BUILD_RE = re.compile(
+    r"\b(borg cube|build team|agent teams?|"
+    r"parallel implementation|parallel build|"
+    r"tackle this( epic)? in parallel|"
+    r"epic team|implementation team|"
+    r"decompose and build)\b",
+    re.IGNORECASE,
+)
+
+# Cross-repo intent — natural-language signals that the user wants
+# changes across more than one repository, even without --include.
+# Consumed by the `intent:cross-repo` override gate in routing.md.
+#
+# The "in X and Y" form is anchored to a repo-noun (repo|service|brain|
+# codebase) to prevent false-positive Locutus activation on intra-repo
+# phrases like "fix in both auth and oauth handlers".
+MULTI_REPO_PHRASE_RE = re.compile(
+    r"\b("
+    # determiner forms: "across these repos", "in those repos",
+    # "across all repos", "in the repos", "across both repos", etc.
+    r"(across|in) (these|those|the|both|all) repos|"
+    # bare "across repos" (plural noun implies multi)
+    r"across repos|"
+    # "in X and Y <repo-noun>" — anchored to repo-noun to avoid
+    # false-positive on intra-repo phrases like "in both auth and oauth handlers"
+    r"in (both )?[\w-]+ and [\w-]+ (repo|service|brain|codebase)s?|"
+    # explicit cross/multi prefixes
+    r"cross[- ]repo|multi[- ]repo|multiple repos?|"
+    # determiner-only forms (subject not stated)
+    r"both repos|all repos|every repo|these repos|those repos|"
+    # brain-aware phrasing
+    r"in (each|every|these|those|all) brains?|"
+    # imperative "propagate" patterns
+    r"propagate (this|the change) (across|to) (the |these |those |all )?repos"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def state_path(session_id):
     return os.path.join(STATE_DIR, f"unimatrix-routing-{session_id}.json")
@@ -122,6 +188,20 @@ def compute_signals(prompt):
             prefixes.add(m.group(1))
     impact_scope_count = len(prefixes)
 
+    # Named-formation hint. First match wins; routes to the wrapping skill.
+    # Order: review > research > build (review phrasing is most specific).
+    formation_hint = None
+    if FORMATION_REVIEW_RE.search(prompt):
+        formation_hint = "compliance-sphere"
+    elif FORMATION_RESEARCH_RE.search(prompt):
+        formation_hint = "recon-sphere"
+    elif FORMATION_BUILD_RE.search(prompt):
+        formation_hint = "fabrication-cube"
+
+    # Cross-repo intent — regex-based detection. The in-skill router
+    # additionally checks for ≥2 resolved brain IDs/aliases after init.
+    cross_repo_hint = bool(MULTI_REPO_PHRASE_RE.search(prompt))
+
     return {
         # lexical
         "word_count": bin_word_count(word_count),
@@ -134,6 +214,9 @@ def compute_signals(prompt):
         "cross_file_deps": cross_file_deps,
         "impact_scope": bin_impact_scope(impact_scope_count),
         "reversibility": reversibility,
+        # named-formation routing hints
+        "formation_hint": formation_hint,
+        "cross_repo_hint": cross_repo_hint,
         # raw values for debugging / artifact body
         "_raw_word_count": float(word_count),
         "_raw_file_path_count": float(file_path_count),

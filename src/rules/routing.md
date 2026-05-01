@@ -30,9 +30,27 @@ skips scoring entirely.
   </gate>
   <gate name="scope:thorough" result="force T3">
     <trigger>prompt contains `thorough` or `deep dive`</trigger>
+    <note>
+      `deep dive` also appears in `&lt;formation-aliases&gt;` as a `/recon-sphere`
+      trigger. Both fire — `scope:thorough` (override gate) sets the tier
+      to T3, and the formation alias routes the skill to `/recon-sphere`.
+      The two are orthogonal: tier comes from the override gate, skill
+      comes from formation routing. No conflict.
+    </note>
   </gate>
   <gate name="flag:--include" result="force T3 (cross-repo)">
     <trigger>prompt contains `--include`</trigger>
+  </gate>
+  <gate name="intent:cross-repo" result="force T3 (cross-repo)">
+    <trigger>
+      `cross_repo_hint` signal from the UserPromptSubmit hook is `true`
+      (matched the `MULTI_REPO_PHRASE_RE` regex), OR the in-skill router
+      resolves ≥2 distinct brain IDs/aliases from the prompt via
+      `mcp__unimatrix__resolve_brains`
+    </trigger>
+    <effect>treated identically to `--include` — forces T3, activates
+      Locutus Protocol planning, opens neural-link room with `brains`
+      parameter populated</effect>
   </gate>
   <gate name="flag:--resume" result="bypass classifier — route to RESUME">
     <trigger>prompt contains `--resume`, `resume <id>`, bare task ID, or `continue` / `reengage`</trigger>
@@ -52,6 +70,38 @@ skips scoring entirely.
   <alias word="diagnose,debug" intent="DIAGNOSE"/>
   <alias word="refactor,rename" intent="REFACTOR"/>
 </legacy-aliases>
+
+<formation-aliases>
+  <!-- Named-formation triggers route directly to the wrapping skill,
+       which owns tier selection and gate enforcement. The
+       UserPromptSubmit hook sets `formation_hint` from the same regexes;
+       both paths converge on the same skill.
+
+       Formation routing BYPASSES the scorer — `formation_hint` is an
+       override-gate-equivalent signal, not a scored signal. It does NOT
+       appear in the <signals> block below; the scoring weight sum
+       remains 0.975 unaffected. -->
+  <!-- DRIFT WARNING: each <alias word="..."> entry below MUST stay in
+       sync with the matching FORMATION_*_RE in
+       src/hooks/claude/route-classify.py. The hook regex set is the
+       authoritative implementation; this file is the documented surface
+       users read. Divergence between the two is a latent routing bug. -->
+  <alias
+    word="compliance matrix,compliance check,compliance review,sentinel,sentinel review,sentinel pass,sentinel gate,quality gate,quality check,pre-merge audit,PR review,code review,validate,verify,evaluate,assess,second opinion,sanity check,is this safe,look for bugs"
+    formation="/compliance-sphere"
+    intent="REVIEW"/>
+  <alias
+    word="vinculum,vinculum review,vinculum analysis,analyze,analysis,investigate,investigation,deep dive,trace,trace through,map,map out,where is,where are,locate,understand,explore,scout,relay,designate"
+    formation="/recon-sphere"
+    intent="INVESTIGATE"/>
+  <alias
+    word="borg cube,build team,agent team,agent teams,parallel implementation,parallel build,tackle this in parallel,tackle this epic in parallel,epic team,implementation team,decompose and build"
+    formation="/fabrication-cube"
+    intent="IMPLEMENT"/>
+  <ambiguous
+    word="borg sphere"
+    note="size descriptor, not formation-specific. Resolve via scope signals: research → /recon-sphere; review → /compliance-sphere; build → /fabrication-cube. Fire ambiguity gate if no signal disambiguates."/>
+</formation-aliases>
 
 ## Signal Categories
 
@@ -126,6 +176,15 @@ in-skill router (context, which needs session state). Each signal normalizes to
       <extract>Boolean: contains `delete|drop|rm |force` (irreversible action).</extract>
       <bin value="0.0 (reversible)"/>
       <bin value="1.0 (irreversible)"/>
+    </signal>
+    <signal name="cross_repo_signal" weight="0">
+      <!-- Diagnostic only. The override gate `intent:cross-repo` consumes
+           the same hook-computed `cross_repo_hint` and short-circuits
+           scoring; this entry documents the signal for observability and
+           parity with `cross_file_deps`. -->
+      <extract>Boolean: hook-computed `cross_repo_hint` from `MULTI_REPO_PHRASE_RE`, OR ≥2 distinct brain IDs/aliases resolved from the prompt.</extract>
+      <bin value="0.0 (single-repo)"/>
+      <bin value="1.0 (cross-repo)"/>
     </signal>
   </category>
 
