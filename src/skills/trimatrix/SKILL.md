@@ -230,6 +230,25 @@ up mid-loop on the failing node, not from scratch."
 > (`mcp__brain__tasks_apply_event` `status_changed`); restart Claude Code or
 > `restore_checkpoint` to recover.
 
+> **Known issue (cancel UX trap, mirrors unm-735.15):** The `cancel` MCP tool
+> gates on an elicitation form whose inner `approve` boolean defaults to false.
+> Submitting the form intending to confirm hits the `Cancellation not confirmed`
+> rejection because the form-submit action is distinct from the inner checkbox
+> state — observed live during the unm-e01 smoke test (2026-05-01).
+>
+> **Fix shipped:** `cancel({ approve: true })` bypasses the elicitation
+> entirely. Use in headless contexts (CI, subagents) or whenever the form's
+> inner approve checkbox cannot be reliably ticked:
+>
+> ```
+> mcp__unimatrix__cancel({ approve: true, reason: "<rationale>" })
+> ```
+>
+> Under bypass the `reason` parameter is taken verbatim — the form-driven reason
+> override (modifications field) is not consulted. The bypass response surfaces
+> `bypassedElicitation: true` so observability tooling can distinguish the two
+> paths.
+
 #### Path B: Task-Based Resume (resume <task-id>)
 
 1. Extract the epic or task ID from the prompt.

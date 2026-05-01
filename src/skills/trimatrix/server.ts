@@ -2737,7 +2737,7 @@ server.tool(
       "Human-readable cancellation reason",
     ),
     approve: z.boolean().optional().describe(
-      "If true, bypass the interactive elicitForm approval prompt and cancel immediately. Use for headless callers (CI, subagents) or to recover when the elicit form's inner `approve` checkbox cannot be ticked (the action accepts but content.approve defaults to false). Mirrors the `compute_waves({ approve: true })` bypass.",
+      "If true, bypass the interactive elicitForm approval prompt and cancel immediately. Use for headless callers (CI, subagents) or to recover when the elicit form's inner `approve` checkbox cannot be ticked (the action accepts but content.approve defaults to false). Mirrors the `compute_waves({ approve: true })` bypass. Under bypass the `reason` parameter is taken verbatim — the form-driven reason override (modifications field) is not consulted. Response includes `bypassedElicitation: true` so callers can distinguish the two paths.",
     ),
   },
   async (params) => {
@@ -2751,7 +2751,8 @@ server.tool(
     // approval-schema's inner `approve` checkbox cannot be reliably ticked
     // — submitting the form unticked yields "Cancellation not confirmed",
     // a UX trap the bypass avoids.
-    if (params.approve !== true) {
+    const bypassedElicitation = params.approve === true;
+    if (!bypassedElicitation) {
       // Elicit confirmation — cancellation is irreversible
       const nodeCount = Object.keys(cp.graph.nodes).length;
       const activeNodes = Object.values(cp.graph.nodes).filter(
@@ -2838,6 +2839,7 @@ server.tool(
             machineState: checkpoint.machineState,
             cancellationReason: checkpoint.cancellationReason,
             cancelledAt: checkpoint.cancelledAt,
+            ...(bypassedElicitation ? { bypassedElicitation: true } : {}),
           }),
         },
       ],
