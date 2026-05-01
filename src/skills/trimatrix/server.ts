@@ -785,6 +785,13 @@ server.tool(
       );
     }
 
+    // Snapshot incident edges BEFORE mutation so we can record them for
+    // refinement audit. Cascade removal in graph.ts strips them, but the
+    // history record needs the (from, to, type) triples.
+    const cascadedIncidentEdges = cp.graph.edges
+      .filter((e) => e.from === params.id || e.to === params.id)
+      .map((e) => ({ from: e.from, to: e.to, type: e.type }));
+
     const result = removeNode(
       cp.graph,
       params.id,
@@ -800,6 +807,14 @@ server.tool(
       ...cp,
       graph: result.value!,
       updatedAt: new Date().toISOString(),
+      ...(cp.machineState === MachineState.REFINING
+        ? {
+          pendingRemovedEdges: [
+            ...(cp.pendingRemovedEdges ?? []),
+            ...cascadedIncidentEdges,
+          ],
+        }
+        : {}),
     };
     return {
       content: [{
@@ -861,6 +876,14 @@ server.tool(
       ...cp,
       graph: result.value!,
       updatedAt: new Date().toISOString(),
+      ...(removed > 0 && cp.machineState === MachineState.REFINING
+        ? {
+          pendingRemovedEdges: [
+            ...(cp.pendingRemovedEdges ?? []),
+            { from: params.from, to: params.to, type: params.type },
+          ],
+        }
+        : {}),
     };
     return {
       content: [{
@@ -993,6 +1016,21 @@ server.tool(
         .filter((e) => addedNodes.includes(e.from) || addedNodes.includes(e.to))
         .map((e) => ({ from: e.from, to: e.to, type: e.type }));
 
+      // Removed nodes: nodes in pre-refinement waves but absent from current
+      // graph. The complement of addedNodes' direction.
+      const removedNodes = Array.from(existingNodeIds).filter(
+        (id) => cp.graph.nodes[id] === undefined,
+      );
+
+      // Removed edges: drained from the transient accumulator populated by
+      // `remove_node` / `remove_edge` handlers. Edges aren't tracked in
+      // waves so this accumulator is the only durable record.
+      const removedEdges = (cp.pendingRemovedEdges ?? []).map((e) => ({
+        from: e.from,
+        to: e.to,
+        type: e.type,
+      }));
+
       // Repos referenced by pre-refinement wave nodes (existing scope)
       const preRefinementRepoNames = new Set(
         cp.waves.flatMap((w) =>
@@ -1037,6 +1075,8 @@ server.tool(
           addedNodes,
           addedEdges,
           addedRepos,
+          ...(removedNodes.length > 0 ? { removedNodes } : {}),
+          ...(removedEdges.length > 0 ? { removedEdges } : {}),
           ...(params.notes !== undefined ? { notes: params.notes } : {}),
         };
 
@@ -1045,6 +1085,7 @@ server.tool(
             ...cp,
             waves: mergedWaves,
             refinementHistory: [...cp.refinementHistory, refinementRecord],
+            pendingRemovedEdges: undefined,
           },
           { type: "refinement_approved" },
         );
@@ -1128,6 +1169,8 @@ server.tool(
         addedNodes,
         addedEdges,
         addedRepos,
+        ...(removedNodes.length > 0 ? { removedNodes } : {}),
+        ...(removedEdges.length > 0 ? { removedEdges } : {}),
       };
 
       const refinementResult = await transitionWithEffects(
@@ -1135,6 +1178,7 @@ server.tool(
           ...cp,
           waves: mergedWaves,
           refinementHistory: [...cp.refinementHistory, refinementRecord],
+          pendingRemovedEdges: undefined,
         },
         { type: "refinement_approved" },
       );

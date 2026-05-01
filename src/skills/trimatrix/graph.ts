@@ -807,18 +807,26 @@ export function addEdge(
 /**
  * Remove a node and cascade-remove every incident edge atomically.
  *
+ * Also clears any `stackedOn` reference on remaining nodes that pointed at
+ * the removed node, so the resulting graph never carries dangling stack
+ * pointers. Without this cascade, `validate()` would later flag the
+ * orphaned reference as an error even though the removal was the user's
+ * intent.
+ *
  * Fails loudly when:
  * - The node does not exist.
  * - The node has been dispatched (status is anything other than PENDING).
  *
- * `refining` is accepted for symmetry with `addNode`/`addEdge` but the
- * status guard above already covers the relevant cases — a node that is
- * ACTIVE/PR_CREATED/MERGED/DONE/FAILED rejects regardless of mode.
+ * In `refining` mode, also rejects when any incident edge endpoint
+ * (other than the removed node itself) is active or completed — this
+ * mirrors `removeEdge`'s REFINING guard so the cascade cannot be used to
+ * silently bypass that guard. The PENDING-only status check above already
+ * covers the removed node itself; this guard covers its neighbours.
  */
 export function removeNode(
   graph: Graph,
   nodeId: string,
-  _refining = false,
+  refining = false,
 ): MutationResult<Graph> {
   const node = graph.nodes[nodeId];
   if (node === undefined) {
@@ -836,13 +844,42 @@ export function removeNode(
     };
   }
 
+  if (refining) {
+    for (const edge of graph.edges) {
+      if (edge.from !== nodeId && edge.to !== nodeId) continue;
+      const neighbourId = edge.from === nodeId ? edge.to : edge.from;
+      const neighbour = graph.nodes[neighbourId];
+      if (
+        neighbour && ACTIVE_OR_COMPLETED_STATUSES.includes(neighbour.status)
+      ) {
+        return {
+          ok: false,
+          error:
+            `Cannot remove node "${nodeId}" during refinement — incident edge ${edge.from}→${edge.to} (${edge.type}) touches "${neighbourId}" which is ${neighbour.status} (active or completed). Reset the neighbour first or remove via add/remove_edge sequence.`,
+        };
+      }
+    }
+  }
+
   const { [nodeId]: _removed, ...remainingNodes } = graph.nodes;
+
+  // Clear stackedOn references that pointed to the removed node so the
+  // resulting graph never carries orphan stack pointers.
+  const cleanedNodes: Record<string, Node> = {};
+  for (const [id, n] of Object.entries(remainingNodes)) {
+    if (n.stackedOn === nodeId) {
+      const { stackedOn: _omit, ...rest } = n;
+      cleanedNodes[id] = rest as Node;
+    } else {
+      cleanedNodes[id] = n;
+    }
+  }
 
   return {
     ok: true,
     value: {
       ...graph,
-      nodes: remainingNodes,
+      nodes: cleanedNodes,
       edges: graph.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
     },
   };
@@ -854,8 +891,11 @@ export function removeNode(
  * Idempotent: when no matching edge exists the graph is returned unchanged
  * with `ok: true`. Mirrors the design of `add_edge`'s no-op overwrite path.
  *
- * In `refining` mode, rejects when either endpoint is active or completed —
- * symmetric with `addEdge`'s refinement guard.
+ * In `refining` mode, rejects when EITHER endpoint is active or completed.
+ * This is intentionally stricter than `addEdge`, which only guards `to` —
+ * removing an outgoing edge from an ACTIVE node could change its
+ * downstream readiness mid-flight, so the symmetric guard here protects
+ * both directions.
  */
 export function removeEdge(
   graph: Graph,

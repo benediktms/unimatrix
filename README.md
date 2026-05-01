@@ -128,12 +128,13 @@ the appropriate execution mode.
 ### Trimatrix MCP Server
 
 The graph engine runs as an MCP server (`bin/unimatrix`), compiled from
-TypeScript source in `src/skills/trimatrix/`. It exposes 30 tools for graph
+TypeScript source in `src/skills/trimatrix/`. It exposes 32 tools for graph
 lifecycle, node management, wave dispatch, checkpoint persistence, and agent
 designation generation.
 
-Key tools: `init`, `add_node`, `add_edge`, `compute_waves`, `dispatch_wave`,
-`complete_node`, `save_checkpoint`, `restore_checkpoint`, `designate`, `status`.
+Key tools: `init`, `add_node`, `add_edge`, `remove_node`, `remove_edge`,
+`compute_waves`, `dispatch_wave`, `complete_node`, `save_checkpoint`,
+`restore_checkpoint`, `designate`, `status`.
 
 The server is auto-compiled during installation via `just compile` (Deno compile
 → `bin/unimatrix`).

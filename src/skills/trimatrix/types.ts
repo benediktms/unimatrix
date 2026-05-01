@@ -614,6 +614,20 @@ export interface Checkpoint {
     addedEdges: Array<{ from: string; to: string; type: EdgeType }>;
     /** Repository names added during this refinement. */
     addedRepos: string[];
+    /**
+     * Node IDs removed during this refinement.
+     * Computed as: nodes in pre-refinement waves but absent from current graph.
+     * Empty for refinements made entirely of additions.
+     */
+    removedNodes?: string[];
+    /**
+     * Edges removed during this refinement, including cascade-removals from
+     * `removeNode`. Populated incrementally by `remove_node` / `remove_edge`
+     * MCP handlers via the transient `pendingRemovedEdges` accumulator on
+     * the checkpoint, then folded into the cycle record at compute_waves
+     * refinement time.
+     */
+    removedEdges?: Array<{ from: string; to: string; type: EdgeType }>;
   }>;
   /** Brain session ID of the Claude session that owns this execution, if tracked. */
   sessionId?: string;
@@ -641,6 +655,18 @@ export interface Checkpoint {
    * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
    */
   eventLog?: EventLogEntry[];
+  /**
+   * Transient accumulator of edges removed during the current refinement
+   * cycle. Populated by `remove_node` (cascade removals) and `remove_edge`
+   * MCP handlers in REFINING state. Consumed and cleared at the next
+   * `compute_waves` refinement, where the contents are folded into the
+   * resulting `refinementHistory` cycle's `removedEdges` field.
+   *
+   * Edges aren't enumerated in `waves`, so unlike `removedNodes` they
+   * cannot be recovered by a retroactive diff — this accumulator is the
+   * only durable record of which edges left the graph during refinement.
+   */
+  pendingRemovedEdges?: Array<{ from: string; to: string; type: EdgeType }>;
 }
 
 // ---------------------------------------------------------------------------

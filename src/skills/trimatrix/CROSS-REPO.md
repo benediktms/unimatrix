@@ -622,6 +622,8 @@ checkpoint except `init` and `restore_checkpoint`.
 | `add_repo`                 | Add repo to existing checkpoint. No-op if already present.                                                     |
 | `add_node`                 | Add node to graph (id, repo, type, label, worktreeBranch, stackedOn?).                                         |
 | `add_edge`                 | Add directed edge: `from`, `to`, `type` (MERGE_GATE \| STACKED \| DEPENDS_ON).                                 |
+| `remove_node`              | Remove a node and cascade-remove every incident edge. INITIALIZING \| REFINING only. Rejects non-PENDING.      |
+| `remove_edge`              | Remove a directed edge by `(from, to, type)`. Idempotent on no-match. INITIALIZING \| REFINING only.           |
 | `validate`                 | Check graph integrity: edge refs, stackedOn refs, cycle detection (Kahn).                                      |
 | `compute_waves`            | Compute topological waves, transition to `plan_review`. Validate first.                                        |
 | `finalize_plan`            | Transition from `plan_review` to `dispatching` after user review.                                              |

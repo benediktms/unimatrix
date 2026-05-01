@@ -895,34 +895,108 @@ Deno.test("removeEdge: refining allows edge between PENDING endpoints", () => {
   assertEquals(result.value!.edges.length, 0);
 });
 
-Deno.test("removeNode + removeEdge round-trip: add → remove → add again", () => {
+Deno.test("removeNode + removeEdge round-trip: add → remove → add again → compute_waves topology", () => {
+  // Build a graph with INVERTED edges: verify-* nodes appear to depend on
+  // each other instead of on impl. compute_waves on this would put verify
+  // first and impl last — the inverse of intent (the unm-e01 trigger).
   let g: Graph = {
-    nodes: { A: makeNode({ id: "A" }), B: makeNode({ id: "B" }) },
+    nodes: {
+      impl: makeNode({ id: "impl" }),
+      "verify-test": makeNode({ id: "verify-test" }),
+      "verify-lint": makeNode({ id: "verify-lint" }),
+    },
     edges: [],
   };
-  // Wrong direction
-  let r = addEdge(g, { from: "B", to: "A", type: EdgeType.DEPENDS_ON });
-  assertEquals(r.ok, true);
-  g = r.value!;
-  assertEquals(g.edges.length, 1);
 
-  // Correct it
-  const rRemove = removeEdge(g, {
-    from: "B",
-    to: "A",
-    type: EdgeType.DEPENDS_ON,
-  });
-  assertEquals(rRemove.ok, true);
-  g = rRemove.value!;
+  // Wrong direction: verify-* → impl (treats verify as prerequisite of impl)
+  for (const v of ["verify-test", "verify-lint"]) {
+    const r = addEdge(g, { from: v, to: "impl", type: EdgeType.DEPENDS_ON });
+    assertEquals(r.ok, true);
+    g = r.value!;
+  }
+  assertEquals(g.edges.length, 2);
+
+  // Recover: remove the wrong edges
+  for (const v of ["verify-test", "verify-lint"]) {
+    const r = removeEdge(g, {
+      from: v,
+      to: "impl",
+      type: EdgeType.DEPENDS_ON,
+    });
+    assertEquals(r.ok, true);
+    g = r.value!;
+  }
   assertEquals(g.edges.length, 0);
 
-  // Add the right edge
-  r = addEdge(g, { from: "A", to: "B", type: EdgeType.DEPENDS_ON });
-  assertEquals(r.ok, true);
-  g = r.value!;
-  assertEquals(g.edges.length, 1);
-  assertEquals(g.edges[0].from, "A");
-  assertEquals(g.edges[0].to, "B");
+  // Add the correct edges: impl → verify-* (impl as prerequisite)
+  for (const v of ["verify-test", "verify-lint"]) {
+    const r = addEdge(g, { from: "impl", to: v, type: EdgeType.DEPENDS_ON });
+    assertEquals(r.ok, true);
+    g = r.value!;
+  }
+  assertEquals(g.edges.length, 2);
+
+  // compute_waves verifies the corrected topology
+  const waves = computeWaves(g);
+  assertEquals(waves.length, 2);
+  assertEquals(waves[0].nodes, ["impl"]);
+  assertEquals(
+    new Set(waves[1].nodes),
+    new Set(["verify-test", "verify-lint"]),
+  );
+});
+
+Deno.test("removeNode: cascade-clears stackedOn references on remaining nodes", () => {
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A", status: NodeStatus.PENDING }),
+      B: makeNode({ id: "B", stackedOn: "A", status: NodeStatus.PENDING }),
+      C: makeNode({ id: "C", stackedOn: "A", status: NodeStatus.PENDING }),
+      D: makeNode({ id: "D", stackedOn: "B", status: NodeStatus.PENDING }),
+    },
+    edges: [],
+  };
+  const result = removeNode(g, "A");
+  assertEquals(result.ok, true);
+  // B and C lose their stackedOn refs; D's reference to B is preserved.
+  assertEquals(result.value!.nodes["B"].stackedOn, undefined);
+  assertEquals(result.value!.nodes["C"].stackedOn, undefined);
+  assertEquals(result.value!.nodes["D"].stackedOn, "B");
+  // validate() must not flag dangling stackedOn after removal.
+  const validation = validate(result.value!);
+  assertEquals(validation.valid, true);
+  assertEquals(validation.errors, []);
+});
+
+Deno.test("removeNode: refining rejects when incident edge touches ACTIVE neighbour", () => {
+  // PENDING A with edge A → ACTIVE B. removeNode(A) in REFINING must reject
+  // (the cascade would silently sever an edge incident to an active node,
+  // which removeEdge would itself reject).
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A", status: NodeStatus.PENDING }),
+      B: makeNode({ id: "B", status: NodeStatus.ACTIVE }),
+    },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeNode(g, "A", true);
+  assertEquals(result.ok, false);
+  assertEquals(result.error!.includes("ACTIVE"), true);
+  assertEquals(result.error!.includes("active or completed"), true);
+});
+
+Deno.test("removeNode: refining allows removal when all incident neighbours are PENDING", () => {
+  const g: Graph = {
+    nodes: {
+      A: makeNode({ id: "A", status: NodeStatus.PENDING }),
+      B: makeNode({ id: "B", status: NodeStatus.PENDING }),
+    },
+    edges: [{ from: "A", to: "B", type: EdgeType.DEPENDS_ON }],
+  };
+  const result = removeNode(g, "A", true);
+  assertEquals(result.ok, true);
+  assertEquals(result.value!.nodes["A"], undefined);
+  assertEquals(result.value!.edges.length, 0);
 });
 
 // ---------------------------------------------------------------------------

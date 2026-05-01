@@ -26,10 +26,10 @@ brain-ref]] [--dry-run]
 This mode uses the trimatrix MCP state machine. See CROSS-REPO.md for the
 complete reference.
 
-Key tools: init, add_repo, add_node, add_edge, validate, compute_waves,
-dispatch_wave, complete_node, fail_node, clear_gate, next_wave, status,
-save_checkpoint, restore_checkpoint, cancel, archive, list_sessions, designate,
-resolve_brains.
+Key tools: init, add_repo, add_node, add_edge, remove_node, remove_edge,
+validate, compute_waves, dispatch_wave, complete_node, fail_node, clear_gate,
+next_wave, status, save_checkpoint, restore_checkpoint, cancel, archive,
+list_sessions, designate, resolve_brains.
 
 ## State Machine
 
@@ -69,8 +69,9 @@ Otherwise (direct `/trimatrix cross-repo --resume`):
 3. Call status to determine machineState
 4. Merge repo context (checkpoint repos + --resume ref + --include refs)
 5. Refinement check: if new repos added or user provides new instructions →
-   enter refinement mode (refine → add_repo/add_node/add_edge → compute_waves →
-   approval)
+   enter refinement mode (refine → add_repo / add_node / add_edge / remove_node
+   / remove_edge → compute_waves → approval). Use the remove counterparts to
+   retract a mis-shaped node or edge added during refinement before approval.
 6. Route by state:
    - dispatching → Step 6
    - gate_halted → Step 8
