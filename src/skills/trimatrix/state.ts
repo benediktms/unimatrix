@@ -25,7 +25,11 @@ import {
   SubgraphCompletionPolicy,
   SubgraphFailurePolicy,
 } from "./types.ts";
-import { computeWaves, recomputeReadiness } from "./graph.ts";
+import {
+  computeWaves,
+  GRAPH_ALGORITHM_VERSION,
+  recomputeReadiness,
+} from "./graph.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -104,6 +108,7 @@ export function createCheckpoint(
     subgraphs: [],
     episodeIds: [],
     eventLog: [],
+    algorithmVersion: GRAPH_ALGORITHM_VERSION,
     ...(opts?.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     ...(opts?.sessionLabel !== undefined
       ? { sessionLabel: opts.sessionLabel }
@@ -910,4 +915,103 @@ export function pendingGates(checkpoint: Checkpoint): string[] {
   return wave.nodes.filter(
     (nId) => checkpoint.graph.nodes[nId]?.status === NodeStatus.BLOCKED,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint-vs-log validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate that a materialized checkpoint is consistent with an external event
+ * log (e.g. the file-based NDJSON log). Replays the log against the same
+ * initial checkpoint and compares machine state, node statuses, and event
+ * count. Timestamps are excluded from comparison because replay always uses
+ * the current clock.
+ *
+ * Returns `{ valid: true }` when consistent, or
+ * `{ valid: false, reason: "..." }` on divergence. Never throws.
+ */
+export function validateCheckpointAgainstLog(
+  checkpoint: Checkpoint,
+  logEntries: EventLogEntry[],
+): { valid: boolean; reason?: string } {
+  if (logEntries.length === 0) {
+    // Empty log is only consistent with a freshly initialized checkpoint.
+    if (
+      checkpoint.machineState === MachineState.INITIALIZING &&
+      Object.keys(checkpoint.graph.nodes).length === 0
+    ) {
+      return { valid: true };
+    }
+    return {
+      valid: false,
+      reason:
+        `Log is empty but checkpoint is in state "${checkpoint.machineState}" with ${
+          Object.keys(checkpoint.graph.nodes).length
+        } nodes`,
+    };
+  }
+
+  // Seq count must match the embedded event log length (when present).
+  const embeddedCount = checkpoint.eventLog?.length ?? logEntries.length;
+  if (logEntries.length !== embeddedCount) {
+    return {
+      valid: false,
+      reason:
+        `Log length mismatch: file has ${logEntries.length} entries, checkpoint.eventLog has ${embeddedCount}`,
+    };
+  }
+
+  try {
+    // Replay using the same initial checkpoint (repos + graph must match) so
+    // we compare structural state only, not the entire object graph.
+    const initial: Checkpoint = {
+      version: checkpoint.version,
+      machineState: MachineState.INITIALIZING,
+      graph: checkpoint.graph,
+      waves: checkpoint.waves,
+      currentWaveId: null,
+      repos: checkpoint.repos,
+      waveHistory: [],
+      refinementHistory: [],
+      createdAt: checkpoint.createdAt,
+      updatedAt: checkpoint.createdAt,
+      subgraphs: [],
+      episodeIds: [],
+      eventLog: [],
+    };
+    const replayed = replay(logEntries, initial);
+
+    if (replayed.machineState !== checkpoint.machineState) {
+      return {
+        valid: false,
+        reason:
+          `machineState mismatch: log replays to "${replayed.machineState}", checkpoint has "${checkpoint.machineState}"`,
+      };
+    }
+
+    for (const [id, node] of Object.entries(checkpoint.graph.nodes)) {
+      const replayedNode = replayed.graph.nodes[id];
+      if (!replayedNode) {
+        return {
+          valid: false,
+          reason: `Node "${id}" present in checkpoint but absent after replay`,
+        };
+      }
+      if (replayedNode.status !== node.status) {
+        return {
+          valid: false,
+          reason:
+            `Node "${id}" status mismatch: log replays to "${replayedNode.status}", checkpoint has "${node.status}"`,
+        };
+      }
+    }
+
+    return { valid: true };
+  } catch (err) {
+    return {
+      valid: false,
+      reason: `Replay failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }

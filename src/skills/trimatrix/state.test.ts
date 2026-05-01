@@ -20,6 +20,7 @@ import {
   replay,
   serialize,
   transition,
+  validateCheckpointAgainstLog,
 } from "./state.ts";
 import {
   EdgeType,
@@ -2662,4 +2663,56 @@ Deno.test("transition: node_reset on BLOCKED node throws (LOW-A2)", () => {
     Error,
     "expected FAILED",
   );
+});
+
+// ---------------------------------------------------------------------------
+// validateCheckpointAgainstLog tests (UNM-1b7.3)
+// ---------------------------------------------------------------------------
+
+Deno.test("validateCheckpointAgainstLog: empty log consistent with fresh initializing checkpoint", () => {
+  const cp = createCheckpoint([], { nodes: {}, edges: [] });
+  const result = validateCheckpointAgainstLog(cp, []);
+  assertEquals(result.valid, true);
+});
+
+Deno.test("validateCheckpointAgainstLog: empty log inconsistent with non-empty checkpoint", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const cp = createCheckpoint([], graph);
+  const cp2 = transition(cp, { type: "plan_submitted" });
+  const result = validateCheckpointAgainstLog(cp2, []);
+  assertEquals(result.valid, false);
+});
+
+Deno.test("validateCheckpointAgainstLog: log matching checkpoint is valid", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  const result = validateCheckpointAgainstLog(cp, cp.eventLog!);
+  assertEquals(result.valid, true);
+});
+
+Deno.test("validateCheckpointAgainstLog: log length mismatch is invalid", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  // Provide only first log entry — length mismatch
+  const result = validateCheckpointAgainstLog(cp, [cp.eventLog![0]]);
+  assertEquals(result.valid, false);
+  assertEquals(result.reason?.includes("mismatch"), true);
+});
+
+Deno.test("validateCheckpointAgainstLog: out-of-order seq is invalid", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  let cp = createCheckpoint([], graph);
+  cp = appendEvent(cp, { type: "plan_submitted" });
+  cp = appendEvent(cp, { type: "plan_finalized" });
+  // Swap seq numbers to create a gap
+  const badLog = [
+    { ...cp.eventLog![0], seq: 2 },
+    { ...cp.eventLog![1], seq: 1 },
+  ];
+  const result = validateCheckpointAgainstLog(cp, badLog);
+  assertEquals(result.valid, false);
 });

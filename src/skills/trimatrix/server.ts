@@ -74,6 +74,7 @@ import {
   pendingGates,
   serialize,
   transition,
+  validateCheckpointAgainstLog,
 } from "./state.ts";
 import {
   buildExternalBlockerResponse,
@@ -84,6 +85,7 @@ import {
   syncGraphDepsToBrain as syncGraphDepsToBrainCore,
 } from "./brain-sync.ts";
 import type { BrainExec, ExternalBlockerSnapshot } from "./brain-sync.ts";
+import { EventLogWriter } from "./event-log-writer.ts";
 import { createEffectRunner } from "./side-effect-runner.ts";
 import { materializePlan } from "./materialize.ts";
 import { buildSagaReport, renderSagaReport } from "./saga_report.ts";
@@ -404,6 +406,9 @@ server.tool(
       subgraphStrategy: params.subgraphStrategy,
       routingTrace,
     });
+
+    // Activate the file-based event log writer for this session.
+    effectDeps.logWriter = new EventLogWriter(sessionId);
 
     // Search for prior episodes to inform planning (best-effort)
     const priorEpisodes = await searchPriorEpisodes(
@@ -3286,10 +3291,13 @@ const brainExec: BrainExec = {
 };
 
 // ---------------------------------------------------------------------------
-// Side-effect runner (wired to brainExec)
+// Side-effect runner (wired to brainExec + mutable event log writer)
 // ---------------------------------------------------------------------------
 
-const transitionWithEffects = createEffectRunner({ brainExec });
+// Mutable deps object — logWriter is set when a session initializes so all
+// subsequent transitionWithEffects calls write to the file-based event log.
+const effectDeps = { brainExec, logWriter: undefined as EventLogWriter | undefined };
+const transitionWithEffects = createEffectRunner(effectDeps);
 
 /**
  * Persist the current checkpoint to brain snapshots (best-effort).
@@ -3879,7 +3887,7 @@ server.tool(
   {
     checkpoint: z.string().describe("JSON string of a serialized checkpoint"),
   },
-  (params) => {
+  async (params) => {
     const cp = deserialize(params.checkpoint);
     const validStates = Object.values(MachineState) as string[];
     if (!validStates.includes(cp.machineState)) {
@@ -3900,6 +3908,25 @@ server.tool(
         }`,
       );
     }
+
+    // Validate checkpoint against the file-based event log when available.
+    // Best-effort — validation failure is logged but never blocks restore.
+    let logValidation: { valid: boolean; reason?: string } = { valid: true };
+    if (cp.sessionId) {
+      const writer = new EventLogWriter(cp.sessionId);
+      const logEntries = await writer.readAll();
+      if (logEntries.length > 0) {
+        logValidation = validateCheckpointAgainstLog(cp, logEntries);
+        if (!logValidation.valid) {
+          console.error(
+            `[trimatrix/restore] event log validation failed: ${logValidation.reason}`,
+          );
+        }
+      }
+      // Re-activate the log writer so subsequent transitions continue appending.
+      effectDeps.logWriter = writer;
+    }
+
     checkpoint = cp;
     return {
       content: [
@@ -3910,6 +3937,7 @@ server.tool(
             machineState: checkpoint.machineState,
             nodeCount: Object.keys(checkpoint.graph.nodes).length,
             waveCount: checkpoint.waves.length,
+            logValidation,
           }),
         },
       ],

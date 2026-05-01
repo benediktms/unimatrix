@@ -31,6 +31,18 @@ import {
 } from "./types.ts";
 
 // ---------------------------------------------------------------------------
+// Algorithm version
+// ---------------------------------------------------------------------------
+
+/**
+ * Monotonically increasing version string for cached deterministic
+ * computations (wave layout, subgraph partitioning, frontier computation).
+ * Bump when the algorithm changes to invalidate cached results stored in
+ * Checkpoint.algorithmVersion comparisons.
+ */
+export const GRAPH_ALGORITHM_VERSION = "1.0";
+
+// ---------------------------------------------------------------------------
 // Refinement mutation result
 // ---------------------------------------------------------------------------
 

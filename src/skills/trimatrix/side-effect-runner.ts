@@ -12,6 +12,7 @@ import {
   syncTaskStatus,
   writeEpisode,
 } from "./brain-sync.ts";
+import type { EventLogWriter } from "./event-log-writer.ts";
 import {
   SIDE_EFFECT_POLICY,
   SideEffectAction,
@@ -33,6 +34,8 @@ interface EffectContext {
 
 interface EffectDeps {
   brainExec: BrainExec;
+  /** Optional file-based event log writer (wired in after session init). */
+  logWriter?: EventLogWriter;
 }
 
 export interface TransitionResult {
@@ -186,11 +189,16 @@ export function createEffectRunner(
     event: Event,
   ): Promise<TransitionResult> {
     // Use `appendEvent` instead of bare `transition` so every server-side
-    // mutation lands in the event log. This is the wiring contract for
-    // UNM-1b7.3 — without it, replay-on-crash is theoretical because the
-    // log never gets written. `appendEvent` itself calls `transition`
+    // mutation lands in the event log. `appendEvent` itself calls `transition`
     // internally; the seq + log-entry plumbing happens inside.
     const after = appendEvent(checkpoint, event);
+
+    // Persist the new log entry to the file-based append-only log (best-effort).
+    // The entry is the last element appended by `appendEvent`.
+    if (deps.logWriter && after.eventLog && after.eventLog.length > 0) {
+      const entry = after.eventLog[after.eventLog.length - 1];
+      await deps.logWriter.append(entry);
+    }
 
     const specs = SIDE_EFFECT_POLICY[event.type];
     if (!specs || specs.length === 0) {
