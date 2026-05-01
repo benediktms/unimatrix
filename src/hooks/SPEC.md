@@ -6,17 +6,72 @@ produce equivalent outputs.
 
 ## State Storage
 
-All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
+All state-tracking hooks persist state in
+`/tmp/unimatrix-{kind}-{session_id}.json`.
 
-- Atomic writes (write to temp file, rename)
+- Atomic writes (write to temp file, `os.rename` to final path)
 - JSON format, human-readable
 - Session-scoped (isolated per session)
 
+## Hook Inventory
+
+| Kind                   | Hook                   | Claude Code event        | OpenCode event             | State file                                |
+| ---------------------- | ---------------------- | ------------------------ | -------------------------- | ----------------------------------------- |
+| Routing classifier     | `route-classify.py`    | `UserPromptSubmit`       | _(in-skill router)_        | `unimatrix-routing-{session_id}.json`     |
+| Subagent cost tracking | `track-cost.py`        | `SubagentStop`           | `task.complete` (TBD)      | `unimatrix-costs-{session_id}.json`       |
+| Subagent activity      | `track-agents.py`      | `SubagentStart` / `Stop` | `task.start` / `complete`  | `unimatrix-agents-{session_id}.json`      |
+| Compaction count       | `track-compactions.py` | `PreCompact`             | _(N/A — no equivalent)_    | `unimatrix-compactions-{session_id}.json` |
+| Compaction warning     | `warn-compaction.py`   | `PostToolUse`            | `tool.execute.after` (TBD) | `unimatrix-tokens-{session_id}.json`      |
+
+> **OpenCode event names** are approximate — verify against the actual plugin
+> API before implementing.
+
+Git hooks (`pre-commit`, `post-commit`) are installed separately via
+`core.hooksPath` by `install.sh` and are not part of the platform event surface.
+
 ## Tier 1 — Critical Hooks
 
-### 1. track-cost
+### route-classify
 
-**Trigger**: After subagent/task completion (SubagentStop / task.complete)
+**Trigger**: After every user prompt (`UserPromptSubmit`)
+
+**Logic**:
+
+1. Read prompt JSON from stdin
+2. Compute deterministic lexical + structural signals via regex / string ops:
+   - `word_count`, `file_path_count`, `arch_keywords`, `debug_keywords`,
+     `risk_keywords`, `question_depth`
+   - `estimated_subtasks`, `cross_file_deps`, `impact_scope`, `reversibility`
+   - `formation_hint` — review / research / build (matches
+     `<formation-aliases>`)
+   - `cross_repo_hint` — multi-repo intent
+3. Write signals to `/tmp/unimatrix-routing-{session_id}.json`
+4. Emit signals as `additionalContext` so they appear inline in the conversation
+5. Swallow all exceptions — the prompt MUST always go through
+
+Signal definitions, weights, and tier thresholds live in
+[`src/rules/routing.md`](../rules/routing.md). The hook computes signals only;
+scoring and tier mapping happen in-skill.
+
+**State file** — `/tmp/unimatrix-routing-{session_id}.json`:
+
+```json
+{
+  "signals": {
+    "word_count": 12,
+    "file_path_count": 0,
+    "arch_keywords": 0,
+    "risk_keywords": 0,
+    "estimated_subtasks": 1,
+    "formation_hint": null,
+    "cross_repo_hint": false
+  }
+}
+```
+
+### track-cost
+
+**Trigger**: After subagent / task completion (`SubagentStop` / `task.complete`)
 
 **Logic**:
 
@@ -28,7 +83,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 4. Calculate cost:
    `(input * input_rate + output * output_rate + cache_read * cache_rate + cache_create * create_rate) / 1_000_000`
 5. Normalize agent type (strip designations: "Probe: Four of Four" → "Probe")
-6. Update state: total_subagent_cost_usd, per-agent cost, type_counts
+6. Update state: `total_subagent_cost_usd`, per-agent cost, `type_counts`
 
 **Pricing tiers** (per 1M tokens):
 
@@ -38,7 +93,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 | sonnet | $3.00  | $15.00 | $0.30      | $3.75        |
 | haiku  | $0.80  | $4.00  | $0.08      | $1.00        |
 
-**State file**: `/tmp/unimatrix-costs-{session_id}.json`
+**State file** — `/tmp/unimatrix-costs-{session_id}.json`:
 
 ```json
 {
@@ -50,9 +105,9 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 }
 ```
 
-### 2. warn-compaction
+### warn-compaction
 
-**Trigger**: After tool use (PostToolUse / tool.execute.after)
+**Trigger**: After tool use (`PostToolUse` / `tool.execute.after`)
 
 **Logic**:
 
@@ -61,16 +116,16 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 3. Check thresholds:
    - **Warning** (70% of context limit): inject advisory message
    - **Critical** (85% of context limit): inject urgent message
-4. Debounce: skip if < 0.5s since last check
-5. Only warn once per threshold level (state tracks warn_level: 0→1→2)
+4. Debounce: skip if `< 0.5s` since last check
+5. Only warn once per threshold level (state tracks `warn_level`: 0→1→2)
 
 **Config** (env vars):
 
-- `UNIMATRIX_WARN_PCT`: Warning threshold (default: 70)
-- `UNIMATRIX_CRIT_PCT`: Critical threshold (default: 85)
-- `UNIMATRIX_CONTEXT_LIMIT`: Context window size (default: 200000)
+- `UNIMATRIX_WARN_PCT` — warning threshold (default: 70)
+- `UNIMATRIX_CRIT_PCT` — critical threshold (default: 85)
+- `UNIMATRIX_CONTEXT_LIMIT` — context window size (default: 200000)
 
-**State file**: `/tmp/unimatrix-tokens-{session_id}.json`
+**State file** — `/tmp/unimatrix-tokens-{session_id}.json`:
 
 ```json
 {
@@ -82,17 +137,17 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 
 ## Tier 2 — Valuable Hooks
 
-### 4. track-agents
+### track-agents
 
-**Trigger**: Subagent/task start and stop
+**Trigger**: Subagent / task start and stop
 
 **Logic**:
 
-1. On start: record agent_id, type, started_at
-2. On stop: remove from active, accumulate total_subagent_seconds
+1. On start: record `agent_id`, type, `started_at`
+2. On stop: remove from active, accumulate `total_subagent_seconds`
 3. Normalize agent type names
 
-**State file**: `/tmp/unimatrix-agents-{session_id}.json`
+**State file** — `/tmp/unimatrix-agents-{session_id}.json`:
 
 ```json
 {
@@ -101,20 +156,51 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 }
 ```
 
-## Event Mapping
+### track-compactions
 
-| Hook            | Claude Code Event  | OpenCode Event            |
-| --------------- | ------------------ | ------------------------- |
-| track-cost      | SubagentStop       | task.complete (TBD)       |
-| warn-compaction | PostToolUse        | tool.execute.after (TBD)  |
-| track-agents    | SubagentStart/Stop | task.start/complete (TBD) |
+**Trigger**: Before context compaction (`PreCompact`)
 
-> **Note**: OpenCode event names are approximate — verify against actual plugin
-> API before implementing.
+**Logic**:
 
-    ║  YOUR CODE WILL BE           ║
-    ║  ASSIMILATED.                ║
-    ╚═══════════════════════════════╝
+1. Read `session_id` from stdin
+2. Load existing state (default `{ "compaction_count": 0 }`)
+3. Increment `compaction_count`
+4. Atomic write back to state file
 
+**State file** — `/tmp/unimatrix-compactions-{session_id}.json`:
+
+```json
+{
+  "compaction_count": 2
+}
 ```
-```
+
+## Implementation Discipline
+
+These rules apply to every hook script. They are derived from past failures —
+each one represents a real outage.
+
+- **Hooks must be executable.** Claude Code runs hooks as commands, not via
+  `python3`. New hook files require `chmod +x`. The shebang
+  `#!/usr/bin/env python3` selects the interpreter.
+- **`subprocess.run` — `input=` vs `stdin=`.** `subprocess.run()` raises
+  `ValueError` if both `input=` and `stdin=subprocess.PIPE` are passed. Use
+  `input=data` alone (it implies `stdin=PIPE`). Use `stdin=subprocess.DEVNULL`
+  only when there is no input data.
+- **Atomic writes only.** Write to a temp file, then `os.rename` to the final
+  state path. Never write the state file directly.
+- **Swallow exceptions.** Hooks must never break the host session. Catch and
+  log; do not re-raise.
+- **Brain CLI vs MCP.** Hooks call the `brain` CLI, not MCP tools. For
+  structured JSON:
+  `echo '{"jsonrpc":"2.0","method":"<method>","params":{…},"id":1}' | brain mcp`.
+
+## Cross-platform parity
+
+The OpenCode TypeScript plugin (`src/hooks/opencode/unimatrix-hooks.ts`)
+implements the same logic for the events listed in the inventory above. New
+hooks added to Claude Code must either:
+
+1. Have an OpenCode equivalent registered in the plugin, OR
+2. Document explicitly in this file that the hook is Claude Code-only (e.g.,
+   `track-compactions` — no `PreCompact` equivalent in OpenCode).

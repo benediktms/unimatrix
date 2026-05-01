@@ -12,24 +12,29 @@ generates platform-specific output in `dist/`:
 ```
 src/                          # Combined source (human-authored)
   agents/*.md                 # Agent definitions
-  skills/*/SKILL.md           # Skill definitions
-  rules/*.md                  # Routing and coordination rules
-  lead/AGENTS.md              # Lead session prompt template
+  skills/*/SKILL.md           # Skill definitions (trimatrix + named formations)
+  rules/*.md                  # Routing, personality, token-economy, error-taxonomy
   hooks/claude/               # Claude Code hooks (Python/Shell)
   hooks/opencode/             # OpenCode hooks (JS/TS plugins)
+  themes/*.json               # OpenCode TUI themes
+  tui/tui.json                # OpenCode TUI configuration
+  shared/                     # Platform-agnostic assets (statusline)
 
 dist/                         # Generated output (gitignored)
   claude-code/
     .claude/
       agents/*.md
-      skills/*/SKILL.md
+      skills/*/                # Each skill directory copied whole
       rules/*.md
       settings.json
   opencode/
     .opencode/
       agents/*.md
+      plugins/*.ts             # Compiled OpenCode hook plugins
     .claude/
-      skills/*/SKILL.md       # OpenCode reads .claude/skills/ natively
+      skills/*/                # OpenCode reads .claude/skills/ natively
+    themes/*.json
+    tui.json
 ```
 
 ---
@@ -294,15 +299,20 @@ task(subagent_type="sentinel-protocol", ...)
 
 ### 3.2 Complete Agent Mapping
 
-| Agent     | Protocol Name                 | Model  | Claude `permissionMode`           | Claude `disallowedTools` | OC `mode`                       | OC `permission` | OC `tools`                               | OC `steps` |
-| --------- | ----------------------------- | ------ | --------------------------------- | ------------------------ | ------------------------------- | --------------- | ---------------------------------------- | ---------- |
-| Queen     | `queen-coordination-protocol` | opus   | auto                              | —                        | _(n/a — `platforms: [claude]`)_ | —               | —                                        | —          |
-| BorgQueen | `queen-coordination-protocol` | opus   | _(n/a — `platforms: [opencode]`)_ | —                        | primary                         | `"*": allow`    | —                                        | 80         |
-| Drone     | `drone-protocol`              | sonnet | bypassPermissions                 | [Agent]                  | subagent                        | `"*": allow`    | `task: false`                            | 50         |
-| Sentinel  | `sentinel-protocol`           | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 20         |
-| Probe     | `probe-protocol`              | sonnet | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 25         |
-| Designate | `designate-protocol`          | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
-| Locutus   | `locutus-protocol`            | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent                        | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
+| Agent      | Protocol Name                 | Model  | Claude `permissionMode`           | Claude `disallowedTools` | OC `mode` | OC `permission` | OC `tools`                               | OC `steps` |
+| ---------- | ----------------------------- | ------ | --------------------------------- | ------------------------ | --------- | --------------- | ---------------------------------------- | ---------- |
+| Borg Queen | `queen-coordination-protocol` | opus   | _(n/a — `platforms: [opencode]`)_ | —                        | primary   | `"*": allow`    | —                                        | 80         |
+| Drone      | `drone-protocol`              | sonnet | bypassPermissions                 | [Agent]                  | subagent  | `"*": allow`    | `task: false`                            | 50         |
+| Sentinel   | `sentinel-protocol`           | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent  | `"*": allow`    | `task: false, write: false, edit: false` | 20         |
+| Probe      | `probe-protocol`              | sonnet | bypassPermissions                 | [Agent, Write, Edit]     | subagent  | `"*": allow`    | `task: false, write: false, edit: false` | 25         |
+| Designate  | `designate-protocol`          | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent  | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
+| Locutus    | `locutus-protocol`            | opus   | bypassPermissions                 | [Agent, Write, Edit]     | subagent  | `"*": allow`    | `task: false, write: false, edit: false` | 30         |
+
+> **Note**: Claude Code has no Queen agent. The lead session orchestrates
+> directly via the `/trimatrix` skill. Borg Queen is OpenCode-only because
+> OpenCode requires a primary agent file (`mode: primary`) — the
+> `queen-coordination-protocol.md` source uses `platforms: [opencode]` to
+> restrict it to that target.
 
 ### 3.3 Tool Name Mapping
 
@@ -330,43 +340,39 @@ task(subagent_type="sentinel-protocol", ...)
 ```
 src/
 ├── agents/                    # Combined agent definitions
-│   ├── queen-coordination-protocol.md
+│   ├── queen-coordination-protocol.md     # platforms: [opencode]
 │   ├── drone-protocol.md
 │   ├── sentinel-protocol.md
 │   ├── probe-protocol.md
 │   ├── designate-protocol.md
 │   └── locutus-protocol.md
 ├── skills/                    # Skill definitions (shared body + conditionals)
-│   ├── assemble/SKILL.md
-│   ├── adapt/SKILL.md
-│   ├── comply/SKILL.md
-│   ├── swarm/SKILL.md
-│   ├── recon/SKILL.md
-│   ├── diagnose/SKILL.md
-│   ├── status/SKILL.md
-│   ├── designate/SKILL.md
-│   ├── assimilate/SKILL.md
-│   ├── analyse/SKILL.md
-│   ├── reengage/SKILL.md
-│   ├── harvest/SKILL.md
-│   ├── bisect/SKILL.md
-│   ├── bookmark/SKILL.md
-│   └── resume/SKILL.md
-├── rules/                     # Routing and coordination rules
-│   ├── routing.md
-│   └── coordination.md
-├── lead/                      # Lead session prompt
-│   └── AGENTS.md              # Template with conditional sections
+│   ├── trimatrix/SKILL.md           # Unified orchestration supergraph
+│   ├── compliance-sphere/SKILL.md   # Multi-sentinel review formation
+│   ├── recon-sphere/SKILL.md        # Multi-agent investigation formation
+│   └── fabrication-cube/SKILL.md    # Parallel build formation
+├── rules/                     # Process rules
+│   ├── routing.md             #   Classifier signals, override gates, tier mapping
+│   ├── personality.md         #   Borg collective voice (source of truth)
+│   ├── token-economy.md       #   Token-efficient agent behavior
+│   └── error-taxonomy.md      #   Borg error designations
 ├── hooks/
 │   ├── claude/                # Python/Shell hooks (Claude Code)
+│   │   ├── route-classify.py  #   UserPromptSubmit — routing signals
 │   │   ├── track-cost.py
+│   │   ├── track-agents.py
+│   │   ├── track-compactions.py
 │   │   ├── warn-compaction.py
-│   │   └── ...
+│   │   ├── pre-commit
+│   │   └── post-commit
 │   ├── opencode/              # JS/TS plugins (OpenCode)
-│   │   └── ...
+│   │   └── unimatrix-hooks.ts
 │   └── SPEC.md                # Shared hook logic specification
+├── themes/                    # OpenCode TUI themes (5 Borg variants)
+├── tui/tui.json               # OpenCode TUI configuration
 └── shared/                    # Platform-agnostic assets
-    └── statusline.py          # Status line script
+    ├── statusline.py          # Claude Code status line
+    └── statusline.sh          # Shell status line helper
 ```
 
 ### 4.2 Build Output (`dist/`)
@@ -375,15 +381,23 @@ src/
 dist/
 ├── claude-code/
 │   └── .claude/
-│       ├── agents/*.md        # Claude-specific frontmatter + Claude body
-│       ├── skills/*/SKILL.md  # Skills with Claude-only sections
+│       ├── agents/*.md            # Claude-specific frontmatter + Claude body
+│       ├── skills/                # Each skill directory copied whole
+│       │   ├── trimatrix/         #   SKILL.md + modes/ + reference docs
+│       │   ├── compliance-sphere/
+│       │   ├── recon-sphere/
+│       │   └── fabrication-cube/
 │       ├── rules/*.md
-│       └── settings.json      # Hooks config
+│       └── settings.json          # Hooks config + spinner verbs + statusline
 └── opencode/
     ├── .opencode/
-    │   └── agents/*.md        # OpenCode-specific frontmatter + OC body
-    └── .claude/
-        └── skills/*/SKILL.md  # Skills with OC-only sections (OC reads this)
+    │   ├── agents/*.md            # OpenCode-specific frontmatter + OC body
+    │   └── plugins/*.ts           # Compiled OpenCode hook plugins
+    ├── .claude/
+    │   └── skills/                # OC reads .claude/skills/ natively
+    │       └── {trimatrix, compliance-sphere, recon-sphere, fabrication-cube}/
+    ├── themes/*.json              # 5 Borg-aesthetic TUI themes
+    └── tui.json
 ```
 
 ---
@@ -394,14 +408,21 @@ dist/
 # Generate for specific platform
 python3 build.py --target claude
 python3 build.py --target opencode
-python3 build.py --target all          # Both platforms (default)
+python3 build.py --target all                # Both platforms (default)
 
 # Validate source files without generating
 python3 build.py --validate
 
-# Watch mode for development
-python3 build.py --target all --watch
+# Remove dist/ directory
+python3 build.py --clean
+
+# Inject Borg personality into a registered brain's AGENTS.md
+python3 build.py --inject-tone <brain-name>  # Single brain
+python3 build.py --inject-tone               # All registered brains
 ```
+
+The same surface is exposed via `just`: `just build`, `just build-claude`,
+`just build-opencode`, `just validate`, `just clean`, `just inject <brain>`.
 
 ### 5.1 Validation Checks
 

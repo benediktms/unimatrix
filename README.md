@@ -128,16 +128,39 @@ the appropriate execution mode.
 ### Trimatrix MCP Server
 
 The graph engine runs as an MCP server (`bin/unimatrix`), compiled from
-TypeScript source in `src/skills/trimatrix/`. It exposes 32 tools for graph
-lifecycle, node management, wave dispatch, checkpoint persistence, and agent
-designation generation.
+TypeScript source in `src/skills/trimatrix/`. It exposes 41 tools for session
+lifecycle, graph construction, wave dispatch, plan materialization, checkpoint
+persistence, agent designation, brain/repo binding, and post-saga reporting.
 
-Key tools: `init`, `add_node`, `add_edge`, `remove_node`, `remove_edge`,
-`compute_waves`, `dispatch_wave`, `complete_node`, `save_checkpoint`,
-`restore_checkpoint`, `designate`, `status`.
+Tool surface, grouped by concern:
+
+| Concern                  | Tools                                                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Session lifecycle        | `init`, `status`, `cancel`, `archive`, `complete`, `rename_session`, `reflect_session`, `list_sessions`                    |
+| Graph construction       | `add_node`, `add_edge`, `remove_node`, `remove_edge`, `update_node`, `add_subgraph`, `compute_subgraphs`, `compute_waves`  |
+| Plan & refinement        | `materialize_plan`, `revise_plan`, `refine`, `finalize_plan`, `validate`                                                   |
+| Subgraph dispatch        | `list_subgraphs`, `get_subgraph`, `dispatch_wave`, `next_wave`, `next_frontier`                                            |
+| Node execution           | `complete_node`, `fail_node`, `reset_node`, `close_node`, `clear_gate`, `add_external_blocker`, `resolve_external_blocker` |
+| Checkpoints & reporting  | `save_checkpoint`, `restore_checkpoint`, `saga_report`                                                                     |
+| Designation & cross-repo | `designate`, `add_repo`, `brain_id`, `brain_link`, `resolve_brains`                                                        |
 
 The server is auto-compiled during installation via `just compile` (Deno compile
 → `bin/unimatrix`).
+
+### Named Formations
+
+Trimatrix routes work to specialized formation skills when the prompt matches
+their triggers (see `src/rules/routing.md` § `<formation-aliases>`):
+
+| Formation         | Skill                | Use case                                                        |
+| ----------------- | -------------------- | --------------------------------------------------------------- |
+| Compliance matrix | `/compliance-sphere` | Multi-sentinel review, audit, code review, second opinion       |
+| Vinculum          | `/recon-sphere`      | Multi-agent investigation, deep dive, trace, locate, analyze    |
+| Borg cube         | `/fabrication-cube`  | Parallel implementation, decompose-and-build, multi-agent build |
+
+Each formation skill owns its own tier selection and dispatches its own
+adjuncts. Trimatrix dispatches the raw graph for everything else (architect,
+diagnose, adapt, cross-repo, plan-execute when no formation skill applies).
 
 ## Build System
 
@@ -485,10 +508,17 @@ Brain's semantic memory enables knowledge persistence across sessions:
 
 ## Hooks
 
-Unimatrix hooks into platform event systems for automatic state management.
-Claude Code hooks are Python scripts in `src/hooks/claude/`. OpenCode hooks are
-TypeScript plugins in `src/hooks/opencode/`. Both implementations follow the
-shared logic defined in `src/hooks/SPEC.md`.
+Unimatrix hooks into platform event systems for automatic state management and
+deterministic prompt routing. Claude Code hooks are Python scripts in
+`src/hooks/claude/`. OpenCode hooks are TypeScript plugins in
+`src/hooks/opencode/`. Both implementations follow the shared logic defined in
+`src/hooks/SPEC.md`.
+
+### Routing
+
+| Hook                | Event            | Purpose                                                                                                                       |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `route-classify.py` | UserPromptSubmit | Precomputes lexical + structural routing signals for the trimatrix classifier; writes `/tmp/unimatrix-routing-{session}.json` |
 
 ### State Tracking
 
@@ -582,33 +612,43 @@ unimatrix/
 │   │   ├── designate-protocol.md             # Deep analyst
 │   │   └── locutus-protocol.md               # Cleanup worker
 │   ├── skills/                   # Slash command skills
-│   │   └── trimatrix/            # Unified orchestration supergraph
-│   │       ├── SKILL.md          #   Skill definition + intent classifier + protocols
-│   │       ├── CROSS-REPO.md     #   Cross-repo MCP tool reference
-│   │       ├── server.ts         #   MCP server (graph engine, checkpoints, designations)
-│   │       ├── graph.ts          #   Graph data structure + wave computation
-│   │       ├── state.ts          #   State machine + checkpoint management
-│   │       ├── types.ts          #   TypeScript type definitions
-│   │       ├── brain-sync.ts     #   Brain task synchronization
-│   │       ├── designate.ts      #   Borg designation generation
-│   │       ├── side-effect-runner.ts  # Side effect execution
-│   │       ├── side-effect-policy.ts  # Side effect policies
-│   │       ├── modes/            #   Execution mode definitions
-│   │       │   ├── plan-execute.md   # Multi-file implementation
-│   │       │   ├── investigate.md    # Codebase investigation
-│   │       │   ├── diagnose.md       # Adversarial bug diagnosis
-│   │       │   ├── architect.md      # Architecture evaluation
-│   │       │   ├── review.md         # Code review
-│   │       │   ├── adapt.md          # Iterative refinement
-│   │       │   ├── swarm.md          # Parallel bulk changes
-│   │       │   └── cross-repo.md     # Multi-repository execution
-│   │       └── *.test.ts         #   Test files
+│   │   ├── trimatrix/            # Unified orchestration supergraph
+│   │   │   ├── SKILL.md          #   Skill definition + intent classifier + protocols
+│   │   │   ├── CROSS-REPO.md     #   Cross-repo MCP tool reference
+│   │   │   ├── SUBGRAPHS.md      #   Subgraph partitioning reference
+│   │   │   ├── server.ts         #   MCP server (graph engine, checkpoints, designations)
+│   │   │   ├── graph.ts          #   Graph data structure + wave computation
+│   │   │   ├── state.ts          #   State machine + checkpoint management
+│   │   │   ├── types.ts          #   TypeScript type definitions
+│   │   │   ├── brain-sync.ts     #   Brain task synchronization
+│   │   │   ├── designate.ts      #   Borg designation generation
+│   │   │   ├── materialize.ts    #   Plan materialization (markdown render)
+│   │   │   ├── saga_report.ts    #   Post-saga aggregate report
+│   │   │   ├── triviality.ts     #   Review tier classifier (TRIVIAL / NON_TRIVIAL)
+│   │   │   ├── event-log-writer.ts    # Event log persistence
+│   │   │   ├── side-effect-runner.ts  # Side effect execution
+│   │   │   ├── side-effect-policy.ts  # Side effect policies
+│   │   │   ├── modes/            #   Execution mode definitions
+│   │   │   │   ├── plan-execute.md   # Multi-file implementation
+│   │   │   │   ├── investigate.md    # Codebase investigation
+│   │   │   │   ├── diagnose.md       # Adversarial bug diagnosis
+│   │   │   │   ├── architect.md      # Architecture evaluation
+│   │   │   │   ├── review.md         # Code review
+│   │   │   │   ├── adapt.md          # Iterative refinement
+│   │   │   │   ├── swarm.md          # Parallel bulk changes
+│   │   │   │   └── cross-repo.md     # Multi-repository execution
+│   │   │   └── *.test.ts         #   Test files
+│   │   ├── compliance-sphere/    # Multi-sentinel review formation (T1/T2/T3)
+│   │   ├── recon-sphere/         # Multi-agent investigation formation (T1/T2/T3)
+│   │   └── fabrication-cube/     # Parallel build formation (T1/T2/T3)
 │   ├── rules/                    # Process rules
 │   │   ├── personality.md        #   Borg collective personality guidelines (source of truth)
+│   │   ├── routing.md            #   Classifier signals, override gates, tier mapping
 │   │   ├── token-economy.md      #   Token-efficient agent behavior
 │   │   └── error-taxonomy.md     #   Borg error designations for failure reporting
 │   ├── hooks/                    # Platform-specific event hooks
 │   │   ├── claude/               #   Python/Shell hooks (Claude Code)
+│   │   │   ├── route-classify.py #     UserPromptSubmit — precomputes routing signals
 │   │   │   ├── warn-compaction.py
 │   │   │   ├── track-agents.py
 │   │   │   ├── track-cost.py
@@ -635,15 +675,14 @@ unimatrix/
 │   ├── claude-code/              #   Claude Code-specific output
 │   │   └── .claude/
 │   │       ├── agents/*.md
-│   │       ├── skills/trimatrix/SKILL.md
+│   │       ├── skills/{trimatrix,compliance-sphere,recon-sphere,fabrication-cube}/
 │   │       └── rules/*.md
 │   └── opencode/                 #   OpenCode-specific output
 │       ├── .opencode/
 │       │   └── agents/*.md
 │       ├── .claude/
-│       │   └── skills/trimatrix/SKILL.md
-│       ├── themes/
-│       │   └── unimatrix.json
+│       │   └── skills/{trimatrix,compliance-sphere,recon-sphere,fabrication-cube}/
+│       ├── themes/*.json
 │       └── tui.json
 ├── build.py                      # Build system — generates dist/ from src/
 ├── install.sh                    # Dual-platform symlink installer
