@@ -1,11 +1,13 @@
 # Hook Logic Specification
 
-Shared specification for unimatrix hooks across Claude Code (Python/Shell) and OpenCode (JS/TS plugins).
-Both implementations MUST follow the same logic and produce equivalent outputs.
+Shared specification for unimatrix hooks across Claude Code (Python/Shell) and
+OpenCode (JS/TS plugins). Both implementations MUST follow the same logic and
+produce equivalent outputs.
 
 ## State Storage
 
 All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
+
 - Atomic writes (write to temp file, rename)
 - JSON format, human-readable
 - Session-scoped (isolated per session)
@@ -17,21 +19,27 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 **Trigger**: After subagent/task completion (SubagentStop / task.complete)
 
 **Logic**:
-1. Read agent info (session_id, agent_id, agent_type, transcript_path or token_usage)
-2. Parse token usage: input_tokens, output_tokens, cache_read_tokens, cache_create_tokens
+
+1. Read agent info (session_id, agent_id, agent_type, transcript_path or
+   token_usage)
+2. Parse token usage: input_tokens, output_tokens, cache_read_tokens,
+   cache_create_tokens
 3. Detect model tier from model string → pricing tier
-4. Calculate cost: `(input * input_rate + output * output_rate + cache_read * cache_rate + cache_create * create_rate) / 1_000_000`
+4. Calculate cost:
+   `(input * input_rate + output * output_rate + cache_read * cache_rate + cache_create * create_rate) / 1_000_000`
 5. Normalize agent type (strip designations: "Probe: Four of Four" → "Probe")
 6. Update state: total_subagent_cost_usd, per-agent cost, type_counts
 
 **Pricing tiers** (per 1M tokens):
-| Tier | Input | Output | Cache Read | Cache Create |
-|------|-------|--------|------------|--------------|
-| opus | $15.00 | $75.00 | $1.50 | $18.75 |
-| sonnet | $3.00 | $15.00 | $0.30 | $3.75 |
-| haiku | $0.80 | $4.00 | $0.08 | $1.00 |
+
+| Tier   | Input  | Output | Cache Read | Cache Create |
+| ------ | ------ | ------ | ---------- | ------------ |
+| opus   | $15.00 | $75.00 | $1.50      | $18.75       |
+| sonnet | $3.00  | $15.00 | $0.30      | $3.75        |
+| haiku  | $0.80  | $4.00  | $0.08      | $1.00        |
 
 **State file**: `/tmp/unimatrix-costs-{session_id}.json`
+
 ```json
 {
   "total_subagent_cost_usd": 0.42,
@@ -47,6 +55,7 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 **Trigger**: After tool use (PostToolUse / tool.execute.after)
 
 **Logic**:
+
 1. Estimate tokens from tool output: `len(tool_result_chars) / 3.7`
 2. Accumulate in session state
 3. Check thresholds:
@@ -56,11 +65,13 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 5. Only warn once per threshold level (state tracks warn_level: 0→1→2)
 
 **Config** (env vars):
+
 - `UNIMATRIX_WARN_PCT`: Warning threshold (default: 70)
 - `UNIMATRIX_CRIT_PCT`: Critical threshold (default: 85)
 - `UNIMATRIX_CONTEXT_LIMIT`: Context window size (default: 200000)
 
 **State file**: `/tmp/unimatrix-tokens-{session_id}.json`
+
 ```json
 {
   "estimated_tokens": 145000,
@@ -76,11 +87,13 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 **Trigger**: Subagent/task start and stop
 
 **Logic**:
+
 1. On start: record agent_id, type, started_at
 2. On stop: remove from active, accumulate total_subagent_seconds
 3. Normalize agent type names
 
 **State file**: `/tmp/unimatrix-agents-{session_id}.json`
+
 ```json
 {
   "active": { "agent-id-1": { "type": "Drone", "started_at": 1709234567 } },
@@ -90,15 +103,18 @@ All hooks persist state in `/tmp/unimatrix-{hook}-{session_id}.json`.
 
 ## Event Mapping
 
-| Hook | Claude Code Event | OpenCode Event |
-|------|-------------------|----------------|
-| track-cost | SubagentStop | task.complete (TBD) |
-| warn-compaction | PostToolUse | tool.execute.after (TBD) |
-| track-agents | SubagentStart/Stop | task.start/complete (TBD) |
+| Hook            | Claude Code Event  | OpenCode Event            |
+| --------------- | ------------------ | ------------------------- |
+| track-cost      | SubagentStop       | task.complete (TBD)       |
+| warn-compaction | PostToolUse        | tool.execute.after (TBD)  |
+| track-agents    | SubagentStart/Stop | task.start/complete (TBD) |
 
-> **Note**: OpenCode event names are approximate — verify against actual plugin API before implementing.
+> **Note**: OpenCode event names are approximate — verify against actual plugin
+> API before implementing.
 
     ║  YOUR CODE WILL BE           ║
     ║  ASSIMILATED.                ║
     ╚═══════════════════════════════╝
+
+```
 ```

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (mise)
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Cache Deno modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: deno fmt --check
+        run: deno fmt --check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (mise)
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Cache Deno modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Setup Python venv
+        run: just venv
+
+      - name: deno lint
+        run: deno lint
+
+      - name: Type check (Deno)
+        run: just check-ts
+
+      - name: Python syntax check
+        run: just check-py
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (mise)
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Cache Deno modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Setup Python venv
+        run: just venv
+
+      - name: Structural validate
+        run: just validate
+
+      - name: Deno tests
+        run: deno test src/skills/trimatrix/

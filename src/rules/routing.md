@@ -11,19 +11,18 @@ description: >-
 
 ## Overview
 
-Trimatrix routes every prompt through a deterministic classifier before any
-mode runs. The classifier is signal-based: a fixed set of lexical, structural,
-and context signals are extracted from the prompt, normalized, weighted, and
-summed into a score in `[0.0, 1.0]`. The score maps to a tier (T1/T2/T3).
-A small set of override gates short-circuit the scorer when the signal is
-unambiguous (explicit scope marker, cross-repo flag, resume reference).
-Weights below are starting values; they will be tuned from observed routing
-decisions.
+Trimatrix routes every prompt through a deterministic classifier before any mode
+runs. The classifier is signal-based: a fixed set of lexical, structural, and
+context signals are extracted from the prompt, normalized, weighted, and summed
+into a score in `[0.0, 1.0]`. The score maps to a tier (T1/T2/T3). A small set
+of override gates short-circuit the scorer when the signal is unambiguous
+(explicit scope marker, cross-repo flag, resume reference). Weights below are
+starting values; they will be tuned from observed routing decisions.
 
 ## Override Gates
 
-Override gates are checked **first**, in order. The first matching gate wins
-and skips scoring entirely.
+Override gates are checked **first**, in order. The first matching gate wins and
+skips scoring entirely.
 
 <override-gates evaluation="first-match-wins">
   <gate name="scope:quick" result="force T1">
@@ -56,9 +55,9 @@ and skips scoring entirely.
 
 ## Signal Categories
 
-Signals are computed by the UserPromptSubmit hook (lexical + structural) and
-the in-skill router (context, which needs session state). Each signal
-normalizes to `[0, 1]`.
+Signals are computed by the UserPromptSubmit hook (lexical + structural) and the
+in-skill router (context, which needs session state). Each signal normalizes to
+`[0, 1]`.
 
 <signals total-weight="0.975" headroom="0.025">
   <category name="lexical">
@@ -104,7 +103,7 @@ normalizes to `[0, 1]`.
     </signal>
   </category>
 
-  <category name="structural">
+<category name="structural">
     <signal name="estimated_subtasks" weight="0.15">
       <extract>Lead-side estimate: enumerated steps / "and then" / "after that".</extract>
       <bin range="<=1" value="0.0"/>
@@ -130,7 +129,7 @@ normalizes to `[0, 1]`.
     </signal>
   </category>
 
-  <category name="context">
+<category name="context">
     <signal name="prior_session_failures" weight="0.025">
       <extract>Count of prior FAILED nodes in this session (lead-side).</extract>
       <bin range="0" value="0.0"/>
@@ -152,7 +151,8 @@ normalizes to `[0, 1]`.
   </category>
 </signals>
 
-Sum of enumerated weights = 0.975. Reserved headroom = 0.025. Combined budget = 1.0.
+Sum of enumerated weights = 0.975. Reserved headroom = 0.025. Combined budget =
+1.0.
 
 ## Scoring
 
