@@ -3539,6 +3539,8 @@ export function execWithStdin(
       }
     });
     proc.on("close", (code) => {
+      // Snapshot listener counts before cleanup so test hooks can observe them.
+      __forTesting._onProcClose?.(proc);
       try {
         if (code === 0) resolve(stdout);
         else reject(new Error(`${cmd} exited ${code}: ${stderr}`));
@@ -3552,6 +3554,15 @@ export function execWithStdin(
     proc.stdin.end();
   });
 }
+
+/**
+ * Test-only hooks. Never set in production paths.
+ * _onProcClose is called with the ChildProcess immediately before cleanup()
+ * runs, allowing tests to assert pre-cleanup listener counts.
+ */
+export const __forTesting: {
+  _onProcClose?: (proc: ReturnType<typeof spawn>) => void;
+} = {};
 
 /** Real BrainExec wired to execWithStdin / execFileAsync. */
 const brainExec: BrainExec = {
@@ -3673,11 +3684,21 @@ export async function consumeRuntimeStateFile(
   } catch {
     return null;
   }
+  let parsed: Record<string, unknown> | null = null;
   try {
-    return JSON.parse(data);
+    parsed = JSON.parse(data);
+  } catch {
+    // Corrupt file — treat as missing, same as read failure.
   } finally {
-    await unlink(path).catch(() => {});
+    await unlink(path).catch((err) => {
+      // Best-effort cleanup; log for diagnosability but never block the caller.
+      console.debug(
+        `[unimatrix] consumeRuntimeStateFile: unlink failed for ${path}:`,
+        err,
+      );
+    });
   }
+  return parsed;
 }
 
 function formatTaskTable(
@@ -4076,7 +4097,7 @@ server.tool(
       sessionLabel: checkpoint.sessionLabel ?? undefined,
     };
 
-    // TODO(unm-b96 follow-up): memoize 3× concurrent brain tasks list per checkpoint
+    // TODO(unm-b96.4): memoize 3× concurrent brain tasks list per checkpoint
     const [tasksInProgress, tasksOpen, tasksBlocked] = await Promise.all([
       queryBrainTasks("in_progress"),
       queryBrainTasks("open"),
