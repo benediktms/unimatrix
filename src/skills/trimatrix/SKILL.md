@@ -16,14 +16,18 @@ skills collapse into one supergraph. The classifier runs first — always.
 
 <!-- @end -->
 
+<voice>
+
 > **Collective voice is mandatory.** All output uses "we", never "I". Clipped,
 > decisive, no filler, no narration. No "Let us", "We should", or "Now I am
 > doing X" — declarative only: "We scan.", "We proceed.", "The directive has
 > been fulfilled."
 
+</voice>
+
 ---
 
-## Intent Classifier
+<classifier>
 
 The classifier runs on every prompt. It determines **Intent** and **Tier**
 before any action is taken. Weights, signal definitions, override gates, and
@@ -36,7 +40,7 @@ COORDINATED. Tier thresholds live in `src/rules/routing.md` § Tier Mapping; the
 per-tier dispatch pattern table is below in § Protocol D: Wave Dispatch
 Patterns.
 
-### Procedure
+<procedure>
 
 1. **Override gates first.** Walk the override-gate table in
    `src/rules/routing.md`. If any gate matches the prompt, record the gate name
@@ -66,9 +70,7 @@ Patterns.
    signals + normalized values, computed score, chosen tier, override-gate name
    (or null), one-sentence rationale.
 
-### Auto-Graph Entry
-
-After init, every classified prompt enters the graph:
+</procedure>
 
 <auto-graph-entry>
   <step n="1" tool="mcp__unimatrix__add_node">
@@ -116,17 +118,36 @@ After init, every classified prompt enters the graph:
 For T1: the graph has 1-2 nodes, all LEAD executor, one subgraph. The lead
 traverses directly.
 
-### Classifier Rules
+<rules>
 
 - Run on EVERY prompt without exception.
 - The classifier does NOT read mode files — it routes to them.
 - Legacy aliases are recognized per `src/rules/routing.md` § Override Gates and
   routed to the canonical intent.
+- **Named-formation aliases** are recognized per `src/rules/routing.md` §
+  `<formation-aliases>`. The classifier routes the prompt directly to
+  `/compliance-sphere` (REVIEW), `/recon-sphere` (INVESTIGATE), or
+  `/fabrication-cube` (IMPLEMENT) when the trigger phrases match. The
+  hook-computed `formation_hint` signal in `additionalContext` provides
+  the same routing — both paths converge on the same skill.
+- **Cross-repo auto-detection.** The `intent:cross-repo` override gate
+  fires when `cross_repo_hint: true` (hook-computed) OR when the in-
+  skill router resolves ≥2 distinct brain IDs/aliases via
+  `mcp__unimatrix__resolve_brains`. Treated identically to the
+  `--include` flag.
+- **Ambiguous phrases.** "Borg sphere" alone is a size descriptor (per
+  personality.md), not a formation-specific trigger. Resolve via scope
+  signals; fire the `ambiguity` override gate if no signal
+  disambiguates.
 - All intents enter the graph. T1 enters with a minimal graph (1-2 nodes, SELF
   strategy).
 - Per-tier dispatch patterns are defined in § Protocol D below.
 
-### RESUME Flow
+</rules>
+
+</classifier>
+
+<resume>
 
 RESUME triggers on: `--resume`, "resume", "continue", "reengage", or a bare task
 ID reference.
@@ -139,7 +160,9 @@ via `mcp__unimatrix__resolve_brains`.
 
 Two resume paths exist — active graph (preferred) and task-based (fallback).
 
-#### Path A: Active Graph Resume (--resume with optional brain-ref)
+<path id="A" name="active-graph">
+
+**Path A: Active Graph Resume (--resume with optional brain-ref)**
 
 1. Call `mcp__unimatrix__status` to check for an in-memory graph.
 2. **If graph is active** (machineState ≠ "idle"):
@@ -190,6 +213,10 @@ After checkpoint restoration and before routing by machineState:
    - **abandon** — cancel session
 4. Only after user confirms: route by machineState.
 
+<state-routing>
+
+<table>
+
 **State routing table** (after graph is loaded and user confirms):
 
 | machineState   | Action                                                                                                                                                                                                                                                                                                                   |
@@ -202,6 +229,10 @@ After checkpoint restoration and before routing by machineState:
 | `completed`    | Terminal. Inform user: "Session already completed." Offer to start fresh.                                                                                                                                                                                                                                                |
 | `cancelled`    | Terminal. Inform user: "Session was cancelled." Offer to start fresh.                                                                                                                                                                                                                                                    |
 
+</table>
+
+<mid-loop-rule>
+
 **Mid-loop resume rule (Protocol C § C1, step 7):** When resuming into
 `dispatching` and a node is found with `iterationCount > 0` and
 `lastReviewVerdict: "FAIL"`, treat that node as mid-convergence. Resume at
@@ -210,6 +241,12 @@ iteration `iterationCount + 1` — dispatch a fix adjunct carrying the
 continues until the node reaches a terminal state or the cap is hit. This
 satisfies success criterion #3 of unm-735: "Resuming a saga via `--resume` picks
 up mid-loop on the failing node, not from scratch."
+
+</mid-loop-rule>
+
+<known-issues>
+
+<issue id="unm-735.15">
 
 > **Known issue (unm-735.15):** The trimatrix server's refinement gate may wedge
 > in `refining` state if `compute_waves` returns `Refinement not approved` and
@@ -230,6 +267,10 @@ up mid-loop on the failing node, not from scratch."
 > (`mcp__brain__tasks_apply_event` `status_changed`); restart Claude Code or
 > `restore_checkpoint` to recover.
 
+</issue>
+
+<issue id="cancel-ux-trap">
+
 > **Known issue (cancel UX trap, mirrors unm-735.15):** The `cancel` MCP tool
 > gates on an elicitation form whose inner `approve` boolean defaults to false.
 > Submitting the form intending to confirm hits the `Cancellation not confirmed`
@@ -249,7 +290,17 @@ up mid-loop on the failing node, not from scratch."
 > `bypassedElicitation: true` so observability tooling can distinguish the two
 > paths.
 
-#### Path B: Task-Based Resume (resume <task-id>)
+</issue>
+
+</known-issues>
+
+</state-routing>
+
+</path>
+
+<path id="B" name="task-based">
+
+**Path B: Task-Based Resume (resume <task-id>)**
 
 1. Extract the epic or task ID from the prompt.
 2. Call `records_list` with tags `dispatch-brief` and `epic:<id>`.
@@ -257,12 +308,20 @@ up mid-loop on the failing node, not from scratch."
 4. Determine the original mode from the brief's `Wave` section.
 5. Re-enter that mode's flow from the dispatch step — skip planning.
 
+</path>
+
+</resume>
+
 ---
 
-## Formation Naming Convention
+<formations>
 
 Parallel agent groups are named by role and size. "Team", "swarm", "fleet", and
 "group" are forbidden designations.
+
+<naming>
+
+<table>
 
 | Formation         | Use Case                                      | Size       |
 | ----------------- | --------------------------------------------- | ---------- |
@@ -272,12 +331,22 @@ Parallel agent groups are named by role and size. "Team", "swarm", "fleet", and
 | Compliance matrix | Multi-agent review (Sentinel clusters)        | 2+ agents  |
 | Adjunct cluster   | Generic term for any parallel group           | Any        |
 
+</table>
+
+</naming>
+
+</formations>
+
 ---
 
-## Team Dispatch Rules
+<team-rules>
 
 Teams (Claude Code TeamCreate) are required for coordination. They are NOT used
 for independent parallel work.
+
+<when-team>
+
+<table>
 
 | Scenario                                                                               | Team? | Rationale                                                                       |
 | -------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------- |
@@ -291,21 +360,35 @@ for independent parallel work.
 | Independent scan — self-contained questions                                            | NO    | Each agent answers independently                                                |
 | Single adjunct dispatch                                                                | NO    | Only one agent                                                                  |
 
+</table>
+
+</when-team>
+
+<thresholds>
+
 **Collaborative vs swarm threshold:** If changing a function signature in
 partition A requires an update in partition B, use collaborative (team). Swarm
 also uses a team — drones use SendMessage for cross-partition findings while
 keeping strict file-partition discipline.
 
+</thresholds>
+
+<lifecycle>
+
 **Team lifecycle:** Create before spawning → spawn with `team_name` → monitor →
 shutdown and delete after wave. Teams are per-wave.
 
+</lifecycle>
+
+</team-rules>
+
 ---
 
-## Shared Protocols
+<protocols>
 
 These protocols are defined once here. Mode files reference them by name.
 
-### Protocol A: Designation Generation
+<protocol id="A" name="designation-generation">
 
 **Every adjunct dispatched by the collective MUST receive a designation. No
 exceptions.** An adjunct without a designation cannot identify itself in neural
@@ -335,7 +418,9 @@ regardless of count. The designate function handles this automatically.
 link room, each adjunct MUST join with its designation as `display_name`.
 Adjuncts without designations cannot participate in neural link coordination.
 
-### Protocol B: Worktree Lifecycle
+</protocol>
+
+<protocol id="B" name="worktree-lifecycle">
 
 | Action      | Command                                                         |
 | ----------- | --------------------------------------------------------------- |
@@ -348,7 +433,9 @@ Adjuncts without designations cannot participate in neural link coordination.
 After sentinel PASS and task closure, present three options to user: **merge** /
 **keep** / **discard**.
 
-### Protocol C: Convergence Loop
+</protocol>
+
+<protocol id="C" name="convergence-loop">
 
 Protocol C governs the per-node implement → verify → review → fix cycle. It
 wraps every per-tier dispatch described in Protocol D. Protocol E task closure
@@ -356,7 +443,7 @@ remains unchanged — adjuncts never close; the lead calls `close_node` only aft
 sentinel PASS. Protocol F1 single-vs-multi-adjunct neural link rules are also
 unchanged.
 
-#### C1: Per-Node Loop
+<subprotocol id="C1" name="per-node-loop">
 
 Each node executes the following sequence. The loop drives state transitions via
 server-side MCP events.
@@ -408,7 +495,9 @@ ACTIVE
    calls `mcp__unimatrix__save_checkpoint`. RESUME (`unm-735.11`) picks up on
    the failing node, not from scratch.
 
-#### C2: Iteration Cap
+</subprotocol>
+
+<subprotocol id="C2" name="iteration-cap">
 
 Each node carries a `maxIterations` field (default: **3**, configurable per-node
 at `add_node` time).
@@ -428,7 +517,9 @@ The lead does not re-dispatch. It escalates to the user with the sentinel's
 be `ACTIVE` with `iterationCount: 2` while `lastReviewVerdict: "FAIL"` — the
 axes do not conflict (see `types.ts` field doc, `unm-735.1`).
 
-#### C3: Recovery — reset_node
+</subprotocol>
+
+<subprotocol id="C3" name="recovery-reset-node">
 
 `reset_node` transitions a FAILED node back to PENDING with a `leaseVersion`
 bump.
@@ -448,7 +539,9 @@ After reset, dependents that were `BLOCKED` (via `blockedBy`) return to `READY`
 once the node re-enters DONE/MERGED. Upstream DONE/MERGED nodes are untouched —
 PR metadata, `iterationCount`, and `lastReviewVerdict` are preserved.
 
-#### C4: Failure Isolation Invariant
+</subprotocol>
+
+<subprotocol id="C4" name="failure-isolation-invariant">
 
 When a node transitions to FAILED, the server sets `readinessStatus: BLOCKED`
 and appends the failed node's ID to `blockedBy` on all direct dependents
@@ -464,7 +557,9 @@ metadata, `iterationCount`, and `lastReviewVerdict` remain intact.
 > `NodeStatus.BLOCKED` is retained for backwards compatibility with existing
 > call sites and will be removed in a future version (see brain task unm-1b7.8).
 
-#### C5: Checkpoint Cadence
+</subprotocol>
+
+<subprotocol id="C5" name="checkpoint-cadence">
 
 The lead calls `mcp__unimatrix__save_checkpoint` before each fix-adjunct
 dispatch (C1 step 7). This makes session state durable across crashes and
@@ -472,14 +567,16 @@ enables RESUME (`unm-735.11`) to pick up mid-loop on the failing node rather
 than re-executing completed work from scratch. Without a checkpoint before each
 dispatch, an interrupted session loses the current iteration context.
 
-#### C6: Review Tier Selection
+</subprotocol>
+
+<subprotocol id="C6" name="review-tier-selection">
 
 Before dispatching review (step 4 in C1), the lead derives triviality inputs
 from the current change set and calls `classifyTriviality()` from
 `src/skills/trimatrix/triviality.ts` (`unm-735.6`). The verdict selects the
 review tier.
 
-##### Input Derivation
+**Input Derivation**
 
 ```bash
 # locDelta: total lines changed (insertions + deletions)
@@ -511,7 +608,7 @@ crossPackage=$([ "$topLevelDirs" -gt 1 ] && echo true || echo false)
 crossBrain=false  # default; override from checkpoint data when available
 ```
 
-##### Tier Selection
+**Tier Selection**
 
 ```typescript
 import { classifyTriviality } from "src/skills/trimatrix/triviality.ts";
@@ -526,7 +623,7 @@ const verdict = classifyTriviality({
 // verdict: "TRIVIAL" | "NON_TRIVIAL"
 ```
 
-##### Tier Dispatch Table
+**Tier Dispatch Table**
 
 | Condition                                                                                           | Verdict       | Review Path                                                    |
 | --------------------------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------------- |
@@ -543,7 +640,7 @@ review is BLOCK; any NEEDS_CHANGES → NEEDS_CHANGES unless all others PASS. For
 cross-cutting changes spanning multiple repos, prefer a fresh Claude Code
 instance over a subagent for maximum context isolation.
 
-##### Per-Saga Cost Cap
+**Per-Saga Cost Cap**
 
 Agent-team reviews consume significantly more tokens than single-sentinel
 reviews. The per-saga budget is **max 5 team-reviews per saga**.
@@ -562,7 +659,7 @@ teamReviewCount >= 5 → force single Sentinel (cost-cap fallback)
 Document the fallback in the node's completion comment so the post-saga report
 (`unm-735.8`) can include escalation counts.
 
-##### Backwards Compatibility Fallback
+**Backwards Compatibility Fallback**
 
 If `classifyTriviality` is unavailable (older sessions, manual review flow,
 import failure), default to **single Sentinel**. This preserves the
@@ -573,7 +670,9 @@ this version of the skill file is not present.
 classifyTriviality unavailable → single Sentinel (compatibility fallback)
 ```
 
-#### C7: State Diagram
+</subprotocol>
+
+<subprotocol id="C7" name="state-diagram">
 
 ```mermaid
 stateDiagram-v2
@@ -590,7 +689,9 @@ stateDiagram-v2
     DONE --> [*]
 ```
 
-#### C8: MCP Primitives Reference
+</subprotocol>
+
+<subprotocol id="C8" name="mcp-primitives-reference">
 
 | Primitive             | Kind     | Effect                                                                                                                |
 | --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -602,7 +703,9 @@ stateDiagram-v2
 | `complete_node`       | MCP tool | Called by adjunct on successful node completion. Derives DONE/MERGED/PR_CREATED from node metadata.                   |
 | `fail_node`           | MCP tool | Called by adjunct on VERIFY_COMPILE failure or by lead on cap exhaustion.                                             |
 
-#### C9: Post-Completion Summary (Mandatory)
+</subprotocol>
+
+<subprotocol id="C9" name="post-completion-summary">
 
 After every node transitions to a terminal status (DONE, MERGED, FAILED), the
 lead emits a structured summary. The summary lands in three places:
@@ -613,7 +716,7 @@ lead emits a structured summary. The summary lands in three places:
 3. Persisted as a record snapshot via `mcp__brain__records_save_snapshot` tagged
    `node-summary`, `<nodeId>`, `<sessionLabel>`.
 
-##### Summary template
+**Summary template**
 
 ```
 ## Node Summary: <nodeId>
@@ -633,7 +736,9 @@ is mandatory before dispatching the next node or wave.
 
 See Protocol E for the closure precondition that depends on this summary.
 
-#### C10: Post-Saga Aggregate Report (Mandatory)
+</subprotocol>
+
+<subprotocol id="C10" name="post-saga-aggregate-report">
 
 After **all nodes have reached a terminal status** (DONE, MERGED, or FAILED) and
 all C9 per-node summaries have been emitted, the lead calls `saga_report` before
@@ -658,7 +763,11 @@ with the session label. The report surfaces:
 The lead renders the report to the conversation so the user can assess saga
 quality before the epic is archived.
 
-### Protocol D: Wave Dispatch Patterns
+</subprotocol>
+
+</protocol>
+
+<protocol id="D" name="wave-dispatch">
 
 Dispatch is subgraph-aware. The `dispatch_wave` response includes
 `nodeExecution` (per-node executor) and `parallelBatches` (parallelism groups).
@@ -668,6 +777,19 @@ Dispatch is subgraph-aware. The `dispatch_wave` response includes
 | T1   | SELF        | Lead traverses its own subgraph. Executes nodes directly (Bash calls, tool invocations).                         |
 | T2   | INDEPENDENT | Lead dispatches one Agent per adjunct subgraph. Each receives its serialized brief from `get_subgraph`. No team. |
 | T3   | COORDINATED | Lead creates team, dispatches Agents with `team_name`. Each receives its brief + coordination contract.          |
+
+<delegation>
+
+**Named-formation delegation.** For review work, the lead invokes
+`/compliance-sphere`. For research / analysis, `/recon-sphere`. For
+parallel build, `/fabrication-cube`. The named-formation skill owns
+tier selection, role catalog, and the
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement for its T3
+path. Trimatrix dispatches the raw graph for everything else
+(architect, diagnose, adapt, cross-repo, plan-execute when no
+formation skill applies).
+
+</delegation>
 
 **Subgraph dispatch procedure (T2/T3):**
 
@@ -704,7 +826,9 @@ subsumed by the tier system:
   file discipline
 - Collaborative → T3 COORDINATED with team
 
-### Protocol D2: PR Lifecycle
+</protocol>
+
+<protocol id="D2" name="pr-lifecycle">
 
 The PR workflow for nodes with outgoing MERGE_GATE edges:
 
@@ -718,7 +842,9 @@ The PR workflow for nodes with outgoing MERGE_GATE edges:
 Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED
 (with repo) or DONE (without repo) directly.
 
-### Protocol E: Task Closure
+</protocol>
+
+<protocol id="E" name="task-closure">
 
 - Adjuncts **never** close tasks. They report completion via
   `tasks_apply_event`, then return.
@@ -737,9 +863,13 @@ Nodes without MERGE_GATE edges skip steps 1 and 3: `complete_node` sets MERGED
   the lead MUST call `saga_report` per Protocol C § C10 and render the result to
   the conversation.
 
-### Protocol F: Agent Communication
+</protocol>
 
-#### F1: Neural Link (`neural_link` MCP) — all multi-adjunct dispatches
+<protocol id="F" name="agent-communication">
+
+<subprotocol id="F1" name="neural-link">
+
+**F1: Neural Link (`neural_link` MCP) — all multi-adjunct dispatches**
 
 **Precedence rule:** If a mode file declares a coordination override that
 explicitly supersedes Protocol F1, the mode file wins. Protocol F1 applies to
@@ -766,14 +896,36 @@ neural link room:
 
 **Single adjunct dispatch**: skip neural link entirely. No room, no marker.
 
-#### F2: Teams — coordinated modes only
+</subprotocol>
 
-Teams (Claude Code TeamCreate) add real-time coordination on top of neural link.
-They are required when adjuncts must synchronize in-flight, not just exchange
-messages. See the Team Dispatch Rules table above for when teams apply.
+<subprotocol id="F2" name="teams">
 
-Include in every **team** agent's prompt (in addition to the neural link
-marker):
+**F2: Teams — coordinated modes only**
+
+<delegation-pointer>
+
+T3 COORDINATED dispatch is owned by the named-formation skills:
+`/compliance-sphere` (review), `/recon-sphere` (research),
+`/fabrication-cube` (build). They enforce the
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate, own the role catalog, and
+call `TeamCreate` directly. Trimatrix invokes the formation skill; the
+formation skill creates the team.
+
+</delegation-pointer>
+
+<fallback-mode-rule>
+
+For modes that need a team but fall outside the three named formations
+(`architect`, `diagnose`, cross-repo dispatch), the mode file declares
+the `TeamCreate` step inline and follows the Team Dispatch Rules table
+above.
+
+</fallback-mode-rule>
+
+<team-prompt-rules>
+
+Each team adjunct's prompt includes (in addition to the neural
+link marker):
 
 - **SHARE DISCOVERIES** — message teammates with significant findings
   immediately
@@ -784,7 +936,22 @@ marker):
 - **PERSIST** — save snapshots via `records_save_snapshot` before sending team
   messages
 
-### Protocol G: Plan Materialization
+</team-prompt-rules>
+
+<swarm-precedence>
+
+**Swarm precedence.** `modes/swarm.md` declares a Coordination Protocol
+Override that supersedes both F1 (no neural link) and F2 (no formation-
+skill wrapper) — swarm uses native Claude Code primitives only. The
+swarm override takes precedence over both rules above.
+
+</swarm-precedence>
+
+</subprotocol>
+
+</protocol>
+
+<protocol id="G" name="plan-materialization">
 
 For modes that create brain tasks:
 
@@ -857,7 +1024,7 @@ For modes that create brain tasks:
    [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) for the
    full hook lifecycle.
 
-   ##### Pattern A: Auto-approve trivial plans (≤3 nodes, no risk keywords)
+   **Pattern A: Auto-approve trivial plans (≤3 nodes, no risk keywords)**
 
    ```jsonc
    // ~/.claude/settings.json
@@ -883,20 +1050,20 @@ For modes that create brain tasks:
    (wrapped in `hookSpecificOutput`) for trivial plans, or exits 0 with
    `permissionDecision: "defer"` to fall through to the human prompt.
 
-   ##### Pattern B: Block plans that touch sensitive paths
+   **Pattern B: Block plans that touch sensitive paths**
 
    The hook script checks the plan body for files matching `secrets/` or `auth/`
    and emits `permissionDecision: "deny"` with a `permissionDecisionReason`. The
    lead receives the denial, enters `refining` state, and must re-plan.
 
-   ##### Pattern C: Archive every plan to brain records
+   **Pattern C: Archive every plan to brain records**
 
    Hook on `PreToolUse(ExitPlanMode)` with `permissionDecision: "defer"` (let
    the user decide), but as a side-effect: write the plan to
    `mcp__brain__records_create_plan` tagged `auto-archive`. Provides an audit
    trail of every plan ever presented.
 
-   ##### Hook payload contract
+   **Hook payload contract**
 
    Claude Code passes the following JSON to the hook over stdin (8 fields per
    the Claude Code hooks documentation):
@@ -1008,9 +1175,13 @@ context compaction occurs, the Queen loads the brief and dispatches immediately
 — no additional tool calls beyond `records_fetch_content`, `tasks_next`, and
 agent spawning.
 
+</protocol>
+
+</protocols>
+
 ---
 
-## Collective Voice Reminder
+<voice-reminder>
 
 All output uses "we", never "I". Clipped, decisive, no filler. This rule applies
 to all modes, all agents, all output surfaces — responses, thinking traces, task
@@ -1026,3 +1197,5 @@ Forbidden → required:
 | "We need to look at the config"      | "We scan the config."                |
 | "It appears that X is the cause"     | "X is the cause."                    |
 | "Now I am scanning the code"         | "We scan the code."                  |
+
+</voice-reminder>

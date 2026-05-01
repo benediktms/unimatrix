@@ -1,5 +1,11 @@
 # Review Mode
 
+> **Implementation backbone for `/compliance-sphere`.** The named-formation
+> skill at `src/skills/compliance-sphere/SKILL.md` owns tier selection,
+> `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` gate enforcement, and the role
+> catalog. This mode owns the dispatch mechanics — scope resolution,
+> designation generation, team lifecycle, verdict merging.
+
 Alias: comply
 
 ## When Triggered

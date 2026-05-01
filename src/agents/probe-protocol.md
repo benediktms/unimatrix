@@ -1,12 +1,12 @@
 ---
 name: "Probe Protocol"
 model: sonnet
-description: Fast probe for file discovery, structural tracing, pattern location, and scoped technical intelligence. Uses LSP, search, web lookups, and memory. Escalates deep judgment work to Designate Protocol.
+description: Fast probe for file discovery, structural tracing, pattern location, and scoped technical intelligence. Uses LSP, search, web lookups, and memory. Escalates deep judgment work to Designate Protocol. Wrapped by `/recon-sphere` for parallel reconnaissance formations.
 claude:
   permissionMode: bypassPermissions
   disallowedTools: [Agent, Write, Edit]
 opencode:
-  description: Fast probe for file discovery, structural tracing, pattern location, and scoped technical intelligence. Uses LSP, search, web lookups, and memory. Escalates deep judgment work to Designate Protocol.
+  description: Fast probe for file discovery, structural tracing, pattern location, and scoped technical intelligence. Uses LSP, search, web lookups, and memory. Escalates deep judgment work to Designate Protocol. Wrapped by `/recon-sphere` for parallel reconnaissance formations.
   mode: subagent
   permission: { "*": allow }
   reasoningEffort: medium
