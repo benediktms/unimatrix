@@ -787,3 +787,117 @@ Deno.test("dispatch_wave capability check: rejects nodes whose requirements miss
   assertEquals(mismatches[0].nodeId, "write-node");
   assertEquals(mismatches[0].missing, ["canWrite"]);
 });
+
+// ---------------------------------------------------------------------------
+// Tests: refine + cancel lease invalidation (UNM-1b7.6)
+// ---------------------------------------------------------------------------
+
+Deno.test("fence: refine bumps leaseVersion on all nodes — adjunct's prior WorkPacket is stale", () => {
+  const graph = makeGraph([makeNode("n1")]);
+  const { graph: dispatched, workPackets } = simulateDispatch(graph, ["n1"]);
+  const packet = workPackets[0];
+
+  // Simulate refine: bump leaseVersion on all nodes (mirrors state.ts case "refine")
+  const refinedNodes: Record<string, Node> = {};
+  for (const [nId, node] of Object.entries(dispatched.nodes)) {
+    refinedNodes[nId] = { ...node, leaseVersion: (node.leaseVersion ?? 0) + 1 };
+  }
+  const refinedGraph = { ...dispatched, nodes: refinedNodes };
+
+  // Adjunct tries to complete with original WorkPacket — must fail
+  const err = simulateFenceCheck(
+    refinedGraph,
+    "n1",
+    packet.attemptId,
+    packet.leaseVersion,
+  );
+  assertEquals(err !== null, true);
+  assertEquals(err!.includes("Stale lease"), true);
+});
+
+Deno.test("fence: cancel bumps leaseVersion on PENDING and ACTIVE nodes only", () => {
+  const graph = makeGraph([makeNode("n1"), makeNode("n2")]);
+
+  // n1 dispatched (ACTIVE), n2 stays PENDING
+  const { graph: dispatched, workPackets } = simulateDispatch(graph, ["n1"]);
+  const n1Packet = workPackets[0];
+  const n2LeaseVersionBefore = dispatched.nodes["n2"]?.leaseVersion ?? 0;
+
+  // Simulate cancel: bump PENDING and ACTIVE nodes (mirrors state.ts case "cancel")
+  const cancelledNodes: Record<string, Node> = {};
+  for (const [nId, node] of Object.entries(dispatched.nodes)) {
+    if (
+      node.status === NodeStatus.PENDING ||
+      node.status === NodeStatus.ACTIVE
+    ) {
+      cancelledNodes[nId] = {
+        ...node,
+        leaseVersion: (node.leaseVersion ?? 0) + 1,
+      };
+    } else {
+      cancelledNodes[nId] = node;
+    }
+  }
+  const cancelledGraph = { ...dispatched, nodes: cancelledNodes };
+
+  // n1's WorkPacket is now stale
+  const err = simulateFenceCheck(
+    cancelledGraph,
+    "n1",
+    n1Packet.attemptId,
+    n1Packet.leaseVersion,
+  );
+  assertEquals(err !== null, true);
+  assertEquals(err!.includes("Stale lease"), true);
+
+  // n2's leaseVersion was bumped too
+  assertEquals(
+    (cancelledGraph.nodes["n2"]?.leaseVersion ?? 0) > n2LeaseVersionBefore,
+    true,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Tests: continuous frontier cross-wave (UNM-1b7.5)
+// ---------------------------------------------------------------------------
+
+Deno.test("frontier: wave-2 node with cleared deps appears in currentFrontier even when wave-1 is incomplete", async () => {
+  const { currentFrontier } = await import("./graph.ts");
+
+  // n1 (wave 1, ACTIVE), n2 (wave 2, PENDING, no deps on n1)
+  const n1 = makeNode("n1", { status: NodeStatus.ACTIVE });
+  const n2 = makeNode("n2");
+  const graph = makeGraph([n1, n2]);
+  const waves = [
+    { id: 1, nodes: ["n1"], hasMergeGate: false },
+    { id: 2, nodes: ["n2"], hasMergeGate: false },
+  ];
+
+  const frontier = currentFrontier(graph, waves);
+  // n1 is ACTIVE (not PENDING), n2 is PENDING+READY — only n2 appears
+  assertEquals(frontier.length, 1);
+  assertEquals(frontier[0].nodeId, "n2");
+  assertEquals(frontier[0].wave, 2);
+});
+
+Deno.test("frontier: node with unresolved dep does not appear in frontier", async () => {
+  const { currentFrontier, computeWaves, recomputeReadiness } = await import(
+    "./graph.ts"
+  );
+
+  const n1 = makeNode("n1"); // PENDING, wave 1
+  const n2 = makeNode("n2"); // PENDING, wave 2, but has DEPENDS_ON n1
+  const rawGraph = makeGraph(
+    [n1, n2],
+    [{ from: "n1", to: "n2", type: EdgeType.DEPENDS_ON }],
+  );
+  // recomputeReadiness must run so n2 gets readinessStatus=BLOCKED_BY_DEPENDENCY
+  const graph = recomputeReadiness(rawGraph);
+  const waves = computeWaves(graph);
+
+  const frontier = currentFrontier(graph, waves);
+  // n2 depends on n1 (PENDING, not DONE) — n2 must not appear
+  const nodeIds = frontier.map((e) => e.nodeId);
+  assertEquals(nodeIds.includes("n2"), false);
+  assertEquals(nodeIds.includes("n1"), true);
+});

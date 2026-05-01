@@ -1565,7 +1565,7 @@ server.tool(
 
 server.tool(
   "dispatch_wave",
-  "Activate all nodes in the specified wave and record it as the current wave. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch).",
+  "Activate all nodes in the specified wave and record it as the current wave. Continuous-frontier extension (UNM-1b7.5): also activates any PENDING+READY nodes from later waves whose dependencies have already cleared — ELICIT_GATE nodes in later waves are excluded to preserve gate-halted semantics. Cross-wave activations appear in `crossWaveActivated[]` in the response. Optional `capabilities` parameter enables capability-match gating (UNM-1b7.4): nodes whose `requirements` are not satisfied by the dispatcher's capabilities are rejected up-front with a concrete missing list. Omit `capabilities` to skip the check (backward-compatible unfenced dispatch).",
   {
     waveId: z.coerce.number().int().describe("Wave index to dispatch"),
     capabilities: z.object({
@@ -1732,6 +1732,80 @@ server.tool(
       }
     }
 
+    // Continuous-frontier cross-wave activation (UNM-1b7.5): any PENDING+READY
+    // node in a later wave whose deps have cleared is eligible for activation
+    // now, not forced to wait for its own wave_dispatched call. ELICIT_GATE
+    // nodes in later waves are excluded — they require their own wave dispatch
+    // to preserve gate-halted semantics. External-blocker consultation mirrors
+    // the target-wave loop above.
+    const crossWaveActivated: string[] = [];
+    if (elicitGateIds.length === 0) {
+      const frontier = currentFrontier(workingCp.graph, workingCp.waves);
+      const waveNodeSet = new Set(wave.nodes);
+      for (const entry of frontier) {
+        if (entry.wave <= params.waveId) continue; // only later waves
+        if (waveNodeSet.has(entry.nodeId)) continue; // already handled
+        const crossNode = workingCp.graph.nodes[entry.nodeId];
+        if (!crossNode) continue;
+        if (crossNode.type === NodeType.ELICIT_GATE) continue;
+        // Capability check for cross-wave nodes
+        if (params.capabilities) {
+          const result = validateDispatch(
+            workingCp.graph,
+            entry.nodeId,
+            params.capabilities,
+          );
+          if (!result.ok) continue;
+        }
+        // At-cap FAILED exclusion
+        if (
+          crossNode.status === NodeStatus.FAILED &&
+          (crossNode.iterationCount ?? 0) >= (crossNode.maxIterations ?? 3)
+        ) continue;
+        // External-blocker consultation
+        if (crossNode.taskId) {
+          const { unresolvedCount, blockers } = await getExternalBlockers(
+            crossNode.taskId,
+            brainExec,
+          );
+          if (unresolvedCount > 0) {
+            workingCp = {
+              ...workingCp,
+              graph: {
+                ...workingCp.graph,
+                nodes: {
+                  ...workingCp.graph.nodes,
+                  [entry.nodeId]: {
+                    ...crossNode,
+                    externallyBlocked: true,
+                    externalBlockers: blockers,
+                  },
+                },
+              },
+            };
+            externalBlocked.push({ nodeId: entry.nodeId, blockers });
+            continue;
+          }
+          workingCp = {
+            ...workingCp,
+            graph: {
+              ...workingCp.graph,
+              nodes: {
+                ...workingCp.graph.nodes,
+                [entry.nodeId]: {
+                  ...crossNode,
+                  externallyBlocked: false,
+                  externalBlockers: blockers.length > 0 ? blockers : undefined,
+                },
+              },
+            },
+          };
+        }
+        clearToActivate.push(entry.nodeId);
+        crossWaveActivated.push(entry.nodeId);
+      }
+    }
+
     // Activate regular nodes; set elicit gates to BLOCKED with resolved schema
     let updatedGraph = activateNodes(workingCp.graph, clearToActivate);
     for (const gateId of elicitGateIds) {
@@ -1816,6 +1890,7 @@ server.tool(
             nodeExecution,
             parallelBatches: batches,
             workPackets,
+            ...(crossWaveActivated.length > 0 ? { crossWaveActivated } : {}),
             ...(externalBlocked.length > 0 ? { externalBlocked } : {}),
             ...(capabilityMismatches.length > 0
               ? { capabilityMismatches }
@@ -2913,12 +2988,11 @@ server.tool(
             ok: true,
             frontier,
             batches,
-            // Surface contract: frontier is read-time advisory. dispatch_wave
-            // remains authoritative — fence minting and external-blocker
-            // re-consultation happen there. Two callers reading the same
-            // frontier may both see the same node; only one's dispatch will
-            // succeed (the other's WorkPacket gets invalidated on the next
-            // mint).
+            // algorithmVersion: callers compare this against a cached value to
+            // detect when the frontier algorithm changed and cached results must
+            // be discarded. Sourced from Checkpoint.algorithmVersion, set to
+            // GRAPH_ALGORITHM_VERSION at session init.
+            algorithmVersion: cp.algorithmVersion,
             advisoryNote:
               "Frontier is advisory. dispatch_wave is the authoritative activation point and may reject nodes the frontier listed (stale fence, fresh external blocker, capability mismatch).",
           }),
