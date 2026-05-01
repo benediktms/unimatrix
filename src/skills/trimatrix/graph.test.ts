@@ -584,6 +584,15 @@ Deno.test("waveStatus: all nodes failed → failed", () => {
   assertEquals(waveStatus(g, wave), "failed");
 });
 
+Deno.test("waveStatus: all ELICIT_GATE BLOCKED → pending (not failed)", () => {
+  const g = makeGraph([
+    makeNode({ id: "A", status: NodeStatus.BLOCKED }),
+    makeNode({ id: "B", status: NodeStatus.BLOCKED }),
+  ]);
+  const wave = makeWave(0, ["A", "B"]);
+  assertEquals(waveStatus(g, wave), "pending");
+});
+
 Deno.test("waveStatus: at least one ACTIVE, none failed → active", () => {
   const g = makeGraph([
     makeNode({ id: "A", status: NodeStatus.ACTIVE }),

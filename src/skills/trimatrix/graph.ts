@@ -961,12 +961,13 @@ export function waveStatus(
   );
   if (allTerminal) return "completed";
 
-  const failedOrBlocked = (s: NodeStatus | undefined) =>
-    s === NodeStatus.FAILED || s === NodeStatus.BLOCKED;
-  const allFailed = statuses.every(failedOrBlocked);
+  // NodeStatus.BLOCKED is reserved for ELICIT_GATE nodes awaiting elicitation —
+  // they are pending, not failed. Only FAILED is terminal-not-OK here.
+  const isFailed = (s: NodeStatus | undefined) => s === NodeStatus.FAILED;
+  const allFailed = statuses.every(isFailed);
   if (allFailed) return "failed";
 
-  const hasFailure = statuses.some(failedOrBlocked);
+  const hasFailure = statuses.some(isFailed);
   const hasCompleted = statuses.some(
     (s) =>
       s === NodeStatus.MERGED || s === NodeStatus.PR_CREATED ||

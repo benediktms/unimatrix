@@ -31,12 +31,9 @@ export enum NodeStatus {
   PR_CREATED = "PR_CREATED",
   MERGED = "MERGED",
   /**
-   * @deprecated as of 2.5.0 — execution-vs-topology concerns are split into
-   * `NodeStatus` (execution lifecycle) and `ReadinessStatus` (topology
-   * eligibility). Existing usage of `BLOCKED` is preserved for ELICIT_GATE
-   * pending elicitation; new code should set `readinessStatus` instead and
-   * use `executionStatus` for actual execution lifecycle. Will be removed
-   * once all call sites migrate.
+   * Retained exclusively for ELICIT_GATE nodes awaiting user elicitation.
+   * All topology-blocking semantics have moved to `ReadinessStatus.BLOCKED`.
+   * Do not use for new non-gate nodes — set `readinessStatus` instead.
    */
   BLOCKED = "BLOCKED",
   FAILED = "FAILED",
@@ -644,6 +641,12 @@ export interface Checkpoint {
    * Invariant: `replay(eventLog)` reproduces the materialized checkpoint.
    */
   eventLog?: EventLogEntry[];
+  /**
+   * Algorithm version string for cached deterministic events (e.g. frontier
+   * computation, subgraph partitioning). When the version changes, cached
+   * results are invalidated and recomputed. Format: "<major>.<minor>".
+   */
+  algorithmVersion?: string;
 }
 
 // ---------------------------------------------------------------------------
