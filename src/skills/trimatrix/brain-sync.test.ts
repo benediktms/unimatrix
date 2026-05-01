@@ -283,19 +283,20 @@ Deno.test("writeEpisode: omits importance when undefined", async () => {
 
 Deno.test("searchEpisodes: sends correct JSON-RPC envelope and maps results", async () => {
   // memory.retrieve filters by `kinds: ["episode"]` server-side; the function
-  // trusts the server and does not re-filter client-side.
+  // trusts the server and does not re-filter client-side. The summary id is
+  // extracted from the trailing `sum:<ulid>` segment of the response `uri`.
   const searchResult = {
     results: [
       {
         kind: "episode",
-        memory_id: "sum:ep-1",
+        uri: "synapse://test-brain/episode/sum:ep-1",
         title: "Wave 1",
         tags: ["trimatrix"],
         score: 0.9,
       },
       {
         kind: "episode",
-        memory_id: "sum:ep-2",
+        uri: "synapse://test-brain/episode/sum:ep-2",
         title: "Wave 2",
         tags: ["trimatrix"],
         score: 0.7,
@@ -375,12 +376,12 @@ Deno.test("searchEpisodes: returns empty when brain returns empty results", asyn
   assertEquals(result, []);
 });
 
-Deno.test("searchEpisodes: strips sum: prefix from memory_id", async () => {
+Deno.test("searchEpisodes: extracts summary_id from uri trailing segment, stripping sum: prefix", async () => {
   const searchResult = {
     results: [
       {
         kind: "episode",
-        memory_id: "sum:01ABC",
+        uri: "synapse://test-brain/episode/sum:01ABC",
         title: "Ep",
         tags: [],
         score: 0.9,
@@ -400,6 +401,138 @@ Deno.test("searchEpisodes: strips sum: prefix from memory_id", async () => {
     exec,
   );
   assertEquals(result[0].summary_id, "01ABC");
+});
+
+Deno.test("searchEpisodes: falls back to source_uri when uri is absent", async () => {
+  const searchResult = {
+    results: [
+      {
+        kind: "episode",
+        source_uri: "synapse://other-brain/episode/sum:fallback-ulid",
+        title: "Ep",
+        tags: [],
+        score: 0.5,
+      },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "fallback-ulid");
+});
+
+Deno.test("searchEpisodes: returns empty summary_id when neither uri nor source_uri is present", async () => {
+  const searchResult = {
+    results: [
+      { kind: "episode", title: "Ep", tags: [], score: 0.5 },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "");
+  assertEquals(result[0].title, "Ep");
+});
+
+Deno.test("searchEpisodes: returns empty summary_id when uri lacks /episode/sum: anchor", async () => {
+  // Defensive: the helper anchors on `/episode/sum:` so a URI in an unexpected
+  // shape (no episode segment, no sum: prefix, query/fragment-suffixed path)
+  // returns "" rather than silently producing a garbage trailing-segment id.
+  const searchResult = {
+    results: [
+      {
+        kind: "episode",
+        uri: "synapse://test-brain/some-other-shape/01ABC",
+        title: "Ep",
+        tags: [],
+        score: 0.5,
+      },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "");
+});
+
+Deno.test("searchEpisodes: tolerates query/fragment suffixes on the episode uri", async () => {
+  // The regex anchor `[^/?#]+` stops at `?` or `#`, so suffixed URIs still
+  // produce the bare ulid rather than including the suffix.
+  const searchResult = {
+    results: [
+      {
+        kind: "episode",
+        uri: "synapse://test-brain/episode/sum:01ABC?from=cache",
+        title: "Ep",
+        tags: [],
+        score: 0.5,
+      },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "01ABC");
+});
+
+Deno.test("searchEpisodes: returns empty summary_id when uri value is non-string", async () => {
+  // Brain currently always serializes uri as string; this defensive test pins
+  // the contract so a regression on the brain side cannot produce
+  // "[object Object]"-shaped ids.
+  const searchResult = {
+    results: [
+      { kind: "episode", uri: 42, title: "Ep", tags: [], score: 0.5 },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "");
 });
 
 Deno.test("searchEpisodes: default budget of 800 maps to count of 8", async () => {

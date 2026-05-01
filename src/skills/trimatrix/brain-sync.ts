@@ -259,6 +259,26 @@ export async function writeEpisode(
   }
 }
 
+/**
+ * Extract a bare summary id from a `memory.retrieve` result row.
+ *
+ * The brain returns the canonical id only inside `uri` / `source_uri`, in the
+ * form `synapse://<brain>/episode/sum:<ulid>` — there is no top-level id
+ * field. We anchor on the `/episode/sum:<id>` path component so accidental
+ * URL-shape drift (query strings, fragments, trailing slashes, or unrelated
+ * uri values) does not silently produce garbage ids.
+ *
+ * Returns an empty string when neither field is present, when the value is
+ * not a string, or when the URI does not match the expected episode shape.
+ * Callers tolerate empty ids.
+ */
+function extractSummaryId(row: Record<string, unknown>): string {
+  const raw = row.uri ?? row.source_uri;
+  const uri = typeof raw === "string" ? raw : "";
+  const m = uri.match(/\/episode\/sum:([^/?#]+)/);
+  return m?.[1] ?? "";
+}
+
 // ---------------------------------------------------------------------------
 // searchEpisodes
 // ---------------------------------------------------------------------------
@@ -298,8 +318,7 @@ export async function searchEpisodes(
     const results: Array<Record<string, unknown>> =
       (result as { results?: Array<Record<string, unknown>> })?.results ?? [];
     return results.map((r) => ({
-      // memory_id uses format "sum:{ulid}" — strip prefix for bare summary_id
-      summary_id: String(r.memory_id ?? "").replace(/^sum:/, ""),
+      summary_id: extractSummaryId(r),
       title: r.title as string,
       tags: (r.tags as string[]) ?? [],
       score: r.score as number | undefined,
