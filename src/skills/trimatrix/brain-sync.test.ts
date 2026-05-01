@@ -452,6 +452,89 @@ Deno.test("searchEpisodes: returns empty summary_id when neither uri nor source_
   assertEquals(result[0].title, "Ep");
 });
 
+Deno.test("searchEpisodes: returns empty summary_id when uri lacks /episode/sum: anchor", async () => {
+  // Defensive: the helper anchors on `/episode/sum:` so a URI in an unexpected
+  // shape (no episode segment, no sum: prefix, query/fragment-suffixed path)
+  // returns "" rather than silently producing a garbage trailing-segment id.
+  const searchResult = {
+    results: [
+      {
+        kind: "episode",
+        uri: "synapse://test-brain/some-other-shape/01ABC",
+        title: "Ep",
+        tags: [],
+        score: 0.5,
+      },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "");
+});
+
+Deno.test("searchEpisodes: tolerates query/fragment suffixes on the episode uri", async () => {
+  // The regex anchor `[^/?#]+` stops at `?` or `#`, so suffixed URIs still
+  // produce the bare ulid rather than including the suffix.
+  const searchResult = {
+    results: [
+      {
+        kind: "episode",
+        uri: "synapse://test-brain/episode/sum:01ABC?from=cache",
+        title: "Ep",
+        tags: [],
+        score: 0.5,
+      },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "01ABC");
+});
+
+Deno.test("searchEpisodes: returns empty summary_id when uri value is non-string", async () => {
+  // Brain currently always serializes uri as string; this defensive test pins
+  // the contract so a regression on the brain side cannot produce
+  // "[object Object]"-shaped ids.
+  const searchResult = {
+    results: [
+      { kind: "episode", uri: 42, title: "Ep", tags: [], score: 0.5 },
+    ],
+  };
+  const response = JSON.stringify({
+    result: { content: [{ type: "text", text: JSON.stringify(searchResult) }] },
+  });
+  const { exec } = mockExec({ withStdinReturn: response });
+  const result = await searchEpisodes(
+    "query",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec,
+  );
+  assertEquals(result[0].summary_id, "");
+});
+
 Deno.test("searchEpisodes: default budget of 800 maps to count of 8", async () => {
   const response = JSON.stringify({
     result: {

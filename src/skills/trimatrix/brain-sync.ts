@@ -264,16 +264,19 @@ export async function writeEpisode(
  *
  * The brain returns the canonical id only inside `uri` / `source_uri`, in the
  * form `synapse://<brain>/episode/sum:<ulid>` — there is no top-level id
- * field. We pull the trailing path segment and strip the `sum:` prefix.
+ * field. We anchor on the `/episode/sum:<id>` path component so accidental
+ * URL-shape drift (query strings, fragments, trailing slashes, or unrelated
+ * uri values) does not silently produce garbage ids.
  *
- * Returns an empty string when neither field is present or parseable; callers
- * tolerate empty ids.
+ * Returns an empty string when neither field is present, when the value is
+ * not a string, or when the URI does not match the expected episode shape.
+ * Callers tolerate empty ids.
  */
 function extractSummaryId(row: Record<string, unknown>): string {
-  const uri = String(row.uri ?? row.source_uri ?? "");
-  if (!uri) return "";
-  const last = uri.split("/").pop() ?? "";
-  return last.replace(/^sum:/, "");
+  const raw = row.uri ?? row.source_uri;
+  const uri = typeof raw === "string" ? raw : "";
+  const m = uri.match(/\/episode\/sum:([^/?#]+)/);
+  return m?.[1] ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -315,9 +318,6 @@ export async function searchEpisodes(
     const results: Array<Record<string, unknown>> =
       (result as { results?: Array<Record<string, unknown>> })?.results ?? [];
     return results.map((r) => ({
-      // memory.retrieve returns the summary id embedded in `uri` /
-      // `source_uri` as the trailing path segment, prefixed with `sum:` —
-      // e.g. `synapse://<brain>/episode/sum:01ABC`. Extract and strip.
       summary_id: extractSummaryId(r),
       title: r.title as string,
       tags: (r.tags as string[]) ?? [],
