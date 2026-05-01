@@ -1011,7 +1011,9 @@ export function validateCheckpointAgainstLog(
   } catch (err) {
     return {
       valid: false,
-      reason: `Replay failed: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Replay failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     };
   }
 }

@@ -3370,7 +3370,10 @@ const brainExec: BrainExec = {
 
 // Mutable deps object — logWriter is set when a session initializes so all
 // subsequent transitionWithEffects calls write to the file-based event log.
-const effectDeps = { brainExec, logWriter: undefined as EventLogWriter | undefined };
+const effectDeps = {
+  brainExec,
+  logWriter: undefined as EventLogWriter | undefined,
+};
 const transitionWithEffects = createEffectRunner(effectDeps);
 
 /**

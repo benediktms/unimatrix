@@ -3,7 +3,6 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import { EventLogWriter } from "./event-log-writer.ts";
 import type { EventLogEntry } from "./types.ts";
