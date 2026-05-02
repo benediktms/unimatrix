@@ -33,8 +33,7 @@
  *   J — Cross-brain saga via mock checkpoints: two repos, nodes split across
  *       both. Assert per-repo iteration isolation and aggregate saga_report.
  *
- * Author: Four of Seven, Senary Drone Protocol of Trimatrix 702
- * Hardening pass: Four of Four, Tertiary Drone Protocol of Trimatrix 702 (UNM-735.16)
+ * Originating tasks: UNM-735, UNM-735.16
  */
 
 import { assertEquals, assertThrows } from "@std/assert";

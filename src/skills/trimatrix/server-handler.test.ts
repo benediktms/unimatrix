@@ -6,7 +6,7 @@
  * These tests do NOT spin up a full MCP server or spawn a real MCP transport.
  * They exercise the pure-function call-chains that server.ts tool handlers
  * delegate to, with injected BrainExec mocks. Response shapes asserted here
- * mirror what the handler returns — if Two of Four changes the contract, these
+ * mirror what the handler returns — if the handler contract changes, these
  * tests will catch the regression.
  *
  * Coverage:

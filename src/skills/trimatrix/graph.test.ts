@@ -1604,11 +1604,11 @@ Deno.test("serializeSubgraphBrief: produces valid markdown for adjunct subgraph"
   const waves = computeWaves(g);
   const sgs = computeSubgraphs(g, waves, Tier.T2, SubgraphStrategy.INDEPENDENT);
   const adjunctSg = sgs.find((s) => s.executor === Executor.ADJUNCT)!;
-  adjunctSg.assignee = "Three of Five";
+  adjunctSg.assignee = "drone-adjunct-0";
 
   const brief = serializeSubgraphBrief(g, adjunctSg);
   assertEquals(brief.includes("## Subgraph:"), true);
-  assertEquals(brief.includes("Three of Five"), true);
+  assertEquals(brief.includes("drone-adjunct-0"), true);
   assertEquals(brief.includes("### Traversal Order"), true);
   assertEquals(brief.includes("[IMPLEMENTATION]"), true);
   assertEquals(brief.includes("[VERIFY_COMPILE]"), true);

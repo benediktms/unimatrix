@@ -380,7 +380,6 @@ Deno.test("buildPlan: multiple explicit subgraphs sorted by slug", () => {
 // ---------------------------------------------------------------------------
 // Gap coverage (MEDIUM-D2): single-node, max-fan-out, all-completed,
 // mixed-status renderings — UNM-735.16 Delta
-// Four of Four, Tertiary Drone Protocol of Trimatrix 702
 // ---------------------------------------------------------------------------
 
 Deno.test("materializePlan(markdown): single-node graph — valid output, no errors", () => {

@@ -169,7 +169,9 @@ OPPOSE and the others cannot refute it.
   dispatch under the sphere label hides the gate failure. Announce, then
   downshift or stop.
 - **Skipping the designation step.** Undesignated adjuncts cannot identify
-  themselves in neural link rooms or task comments.
+  themselves in neural link rooms (`display_name`) or coordination logs.
+  Designations stay in voice/coordination surfaces only — never in brain task
+  fields, commit messages, or PR artifacts (voice-confinement contract).
 - **Letting `--matrix` force T3 without gate check.** The `--matrix` flag
   (defined in `modes/review.md` § Tier Selection) forces the _non-trivial_
   compliance-matrix path; the gate still owns the T3 decision. </anti_patterns>

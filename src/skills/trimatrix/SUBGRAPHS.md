@@ -227,7 +227,7 @@ sorted by `auto-<hash>` ID. Within each subgraph, nodes appear in topological
 
 ## Subgraph: web-drone — Web UI drone (explicit)
 
-**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Two of Three ·
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** drone-adjunct-1 ·
 **Coordination:** NONE · **Outcome:** active **Completion:** ALL · **Failure:**
 FAIL_FAST
 
@@ -237,7 +237,7 @@ FAIL_FAST
 
 ## Subgraph: auto-abc12345 (derived)
 
-**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** Three of Three ·
+**Executor:** ADJUNCT · **Tier:** T2 · **Assignee:** drone-adjunct-2 ·
 **Coordination:** NONE · **Outcome:** pending **Completion:** ALL · **Failure:**
 FAIL_FAST
 

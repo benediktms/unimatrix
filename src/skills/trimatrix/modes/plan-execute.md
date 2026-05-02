@@ -117,8 +117,12 @@ wave computation:
 1. `mcp__unimatrix__init` with empty repos (`repos: []` for single-repo mode).
 2. For each subtask, `mcp__unimatrix__add_node`:
    - `id`: the brain task ID (links graph node to brain task)
-   - `type`: based on assignee — `IMPLEMENTATION` for Drone, `RECON` for Probe,
-     `VALIDATION` for Sentinel, `ANALYSIS` for Designate
+   - `type`: based on the subtask's intended adjunct role —
+     `IMPLEMENTATION` (drone-protocol), `RECON` (probe-protocol),
+     `VALIDATION` (sentinel-protocol), `ANALYSIS` (designate-protocol). Derive
+     the role from the subtask description, NOT from the brain task `assignee`
+     field — `assignee` must remain free of persona/role names per the
+     voice-confinement contract.
    - `label`: task title
    - `tags`: optional classification (wave dispatch mode, feature area)
    - Omit `repo` and `worktreeBranch` (single-repo mode)

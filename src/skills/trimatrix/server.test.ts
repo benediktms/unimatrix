@@ -215,7 +215,7 @@ Deno.test("list_subgraphs wiring: derived and explicit split correctly", () => {
     derived: true,
     nodes: ["n2", "n3"],
     edges: [],
-    assignee: "Two of Three",
+    assignee: "drone-adjunct-0",
     executor: Executor.ADJUNCT,
     tier: Tier.T2,
     coordination: { mode: CoordinationMode.PARTITIONED },

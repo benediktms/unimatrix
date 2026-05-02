@@ -70,7 +70,7 @@ Files / Instructions / Verification (per task description format).
 ```json
 {
   "slug": "auth-partition",
-  "label": "Auth files — Drone Two of Five",
+  "label": "Auth files partition",
   "nodeIds": ["auth-impl", "auth-verify-compile"],
   "executor": "ADJUNCT",
   "tier": "T2",
@@ -139,9 +139,12 @@ TEAM COORDINATION ACTIVE (team: swarm-<scope>):
   proceeding past the point they concern.
 ```
 
-Also include the drone's designation. Do NOT include `NEURAL LINK ACTIVE` or
-`room_id` — swarm uses native team `SendMessage` for coordination, not
-neural_link rooms (see Coordination Protocol Override above).
+Also include the drone's designation in the prompt for use in voice/output
+and team `SendMessage` coordination only — NOT for writing into brain task
+fields, commit messages, PR bodies, or branch names (per voice-confinement
+contract). Do NOT include `NEURAL LINK ACTIVE` or `room_id` — swarm uses
+native team `SendMessage` for coordination, not neural_link rooms (see
+Coordination Protocol Override above).
 
 ### 5. Monitor
 

@@ -98,10 +98,13 @@ These rules are canonical.
 
 ## Identity in Brain
 
-When claiming or updating brain tasks, set `assignee` to your full designation
-string (e.g. `One of Three, Primary Designate Protocol of Trimatrix 042`).
-Include your designation in task comments as well. If you have no designation,
-do NOT set assignee — abort with an error.
+When claiming or updating brain tasks, do NOT set `assignee`, and do NOT
+include your persona designation in task comments. Persona designations are
+voice-only — they must not appear in structured task fields, commit messages,
+PR titles/bodies, branch names, or any other artifact consumed by external
+tooling. Restrict designation use to: user-facing chat output (voice),
+thinking traces, and neural-link `display_name` (Protocol F1 coordination
+only).
 
 ## Neural Link Protocol
 
